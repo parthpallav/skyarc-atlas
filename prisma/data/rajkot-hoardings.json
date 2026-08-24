@@ -1,0 +1,167 @@
+[
+  {
+    "iid": "G-1507",
+    "latitude": 22.291,
+    "longitude": 70.785556,
+    "area": "Amin Marg",
+    "location": "Nr. Jankalyan Railway Crossing, Towards Astron Chowk, Amin Marg Facing, Right",
+    "widthFt": 20,
+    "heightFt": 20,
+    "sqft": 400,
+    "light": "BL"
+  },
+  {
+    "iid": "G-1524",
+    "latitude": 22.273827,
+    "longitude": 70.757329,
+    "area": "Kalawad Road",
+    "location": "AG Chowk Flyover, Nr. Jaddus Hotel, Nana Mauva Circle Facing",
+    "widthFt": 40,
+    "heightFt": 10,
+    "sqft": 400,
+    "light": "BL"
+  },
+  {
+    "iid": "H-0101",
+    "latitude": 22.260944,
+    "longitude": 70.787472,
+    "area": "150 Feet Ring Road",
+    "location": "Mavdi Circle, Nr. Umiya Chowk, Reliance Mall Facing",
+    "widthFt": 20,
+    "heightFt": 20,
+    "sqft": 400,
+    "light": "BL"
+  },
+  {
+    "iid": "H-0083",
+    "latitude": 22.311667,
+    "longitude": 70.768111,
+    "area": "150 Feet Ring Road",
+    "location": "Towards Synergy Hospital, Above Ramapir circle bridge, Raiya Circle Facing, RHS",
+    "widthFt": 40,
+    "heightFt": 20,
+    "sqft": 800,
+    "light": "FL"
+  },
+  {
+    "iid": "H-0078",
+    "latitude": 22.321833,
+    "longitude": 70.843694,
+    "area": "Ahmedabad Highway",
+    "location": "Near Greenland Circle, Opposite Audi Showroom, Highway Facing",
+    "widthFt": 50,
+    "heightFt": 25,
+    "sqft": 1250,
+    "light": "NL"
+  },
+  {
+    "iid": "H-1409",
+    "latitude": 22.331417,
+    "longitude": 70.765776,
+    "area": "150 Feet Ring Road",
+    "location": "Towards University Road, Nr. Crystal Mall, Ring Road Facing",
+    "widthFt": 30,
+    "heightFt": 15,
+    "sqft": 450,
+    "light": "FL"
+  },
+  {
+    "iid": "H-0259",
+    "latitude": 22.238992,
+    "longitude": 70.75931,
+    "area": "New 250ft Ring Road",
+    "location": "Nr. Petrol Pump, Patidar Chowk, Shapar Facing",
+    "widthFt": 60,
+    "heightFt": 25,
+    "sqft": 1500,
+    "light": "NL"
+  },
+  {
+    "iid": "H-0071",
+    "latitude": 22.290694,
+    "longitude": 70.761,
+    "area": "Sadhuwasawani Road",
+    "location": "Opp. Sadhuwasawani School, University Road Facing, Upper",
+    "widthFt": 30,
+    "heightFt": 15,
+    "sqft": 450,
+    "light": "FL"
+  },
+  {
+    "iid": "H-0021",
+    "latitude": 22.290472,
+    "longitude": 70.795444,
+    "area": "Yagnik Road",
+    "location": "Nr. Swami Vivekanand Statue, Malaviya Chowk Facing",
+    "widthFt": 20,
+    "heightFt": 20,
+    "sqft": 400,
+    "light": "FL"
+  },
+  {
+    "iid": "H-0034",
+    "latitude": 22.303167,
+    "longitude": 70.792278,
+    "area": "Tagore Road",
+    "location": "Tagore Road Towards Astron Chowk Post Office, Bhakti Chowk Facing",
+    "widthFt": 30,
+    "heightFt": 15,
+    "sqft": 450,
+    "light": "NL"
+  },
+  {
+    "iid": "H-0056",
+    "latitude": 22.298556,
+    "longitude": 70.778889,
+    "area": "Kalawad Road",
+    "location": "Kalawad Road Nr. Big Bazaar, Towards Race Course, LHS",
+    "widthFt": 40,
+    "heightFt": 10,
+    "sqft": 400,
+    "light": "BL"
+  },
+  {
+    "iid": "GH-0099",
+    "latitude": 22.17,
+    "longitude": 70.68,
+    "area": "Shapar",
+    "location": "Shapar Industrial Area, Nr. Main Highway Entry, GIDC Facing",
+    "widthFt": 40,
+    "heightFt": 10,
+    "sqft": 400,
+    "light": "NL"
+  },
+  {
+    "iid": "H-0112",
+    "latitude": 22.305833,
+    "longitude": 70.801944,
+    "area": "Nana Mauva Road",
+    "location": "Nana Mauva Circle, Towards AG Chowk, Flyover Facing",
+    "widthFt": 20,
+    "heightFt": 20,
+    "sqft": 400,
+    "light": "BL"
+  },
+  {
+    "iid": "H-0138",
+    "latitude": 22.287222,
+    "longitude": 70.770556,
+    "area": "150 Feet Ring Road",
+    "location": "150 Feet Ring Road, Nr. Essar Petrol Pump, Madhapar Facing",
+    "widthFt": 60,
+    "heightFt": 20,
+    "sqft": 1200,
+    "light": "FL"
+  },
+  {
+    "iid": "H-0165",
+    "latitude": 22.315444,
+    "longitude": 70.755667,
+    "area": "Kalawad Road",
+    "location": "Kalawad Road Metoda GIDC, Near Main Entry Gate Facing",
+    "widthFt": 40,
+    "heightFt": 20,
+    "sqft": 800,
+    "light": "NL"
+  }
+]

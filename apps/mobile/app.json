@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "SkyArc Atlas",
+    "slug": "skyarc-atlas",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "skyarc-atlas",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "in.skyarc.atlas"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0f172a"
+      },
+      "package": "in.skyarc.atlas"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow SkyArc Atlas to capture location survey photos and videos."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow SkyArc Atlas to capture GPS for billboard locations."
+        }
+      ],
+      "expo-sqlite",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

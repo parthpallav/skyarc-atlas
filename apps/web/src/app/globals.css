@@ -1,0 +1,134 @@
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+:root {
+  /* SkyArc brand — purple accent, black sidebar, lavender workspace */
+  --skyarc-purple: #a855f7;
+  --skyarc-purple-dark: #9333ea;
+  --skyarc-purple-light: #c084fc;
+  --skyarc-purple-muted: #e9d5ff;
+  --skyarc-black: #000000;
+  --skyarc-surface: #f5f3ff;
+  --skyarc-card: #ffffff;
+  --skyarc-border: #e9d5ff;
+  --skyarc-text: #1a1a1a;
+  --skyarc-muted: #6b7280;
+  --skyarc-on-dark: #ffffff;
+  --skyarc-on-dark-muted: #a1a1aa;
+  --skyarc-success: #10b981;
+  --skyarc-warning: #f59e0b;
+  --skyarc-danger: #ef4444;
+
+  --background: var(--skyarc-surface);
+  --foreground: var(--skyarc-text);
+  --card: var(--skyarc-card);
+  --primary: var(--skyarc-purple);
+  --muted: var(--skyarc-muted);
+  --sidebar: var(--skyarc-black);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #d8b4fe transparent;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-white bg-primary hover:bg-skyarc-purple-dark rounded-lg transition-colors shadow-sm;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center px-4 py-2.5 text-sm font-medium text-slate-800 bg-white border border-violet-200 hover:bg-violet-50 rounded-lg transition-colors;
+  }
+
+  .card-surface {
+    @apply bg-card border border-violet-100 rounded-xl shadow-sm;
+  }
+
+  .map-location-hover-popup .maplibregl-popup-content,
+  .map-location-click-popup .maplibregl-popup-content {
+    padding: 0;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  }
+
+  .map-location-hover-popup .maplibregl-popup-tip,
+  .map-location-click-popup .maplibregl-popup-tip {
+    border-top-color: #fff;
+  }
+
+  .map-popup-card {
+    min-width: 200px;
+    max-width: 280px;
+    background: #fff;
+  }
+
+  .map-popup-image {
+    display: block;
+    width: 100%;
+    object-fit: cover;
+    background: #f1f5f9;
+  }
+
+  .map-popup-no-image {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f1f5f9;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .map-popup-body {
+    padding: 8px 10px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .map-popup-title {
+    font-size: 13px;
+    line-height: 1.3;
+    color: #0f172a;
+  }
+
+  .map-popup-road {
+    font-size: 11px;
+    color: #64748b;
+  }
+
+  .map-popup-coords {
+    font-size: 10px;
+    color: #94a3b8;
+    margin-top: 2px;
+  }
+
+  .map-popup-link {
+    font-size: 11px;
+    font-weight: 600;
+    color: #7c3aed;
+    text-decoration: none;
+    margin-top: 6px;
+  }
+
+  .map-popup-link:hover {
+    text-decoration: underline;
+  }
+}

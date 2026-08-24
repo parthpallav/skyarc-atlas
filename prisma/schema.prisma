@@ -1,0 +1,446 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MEDIA_PLANNER
+  SALES
+  FIELD_OPERATOR
+  VIEWER
+}
+
+enum Provenance {
+  USER_PROVIDED
+  OBSERVED
+  DERIVED
+  ESTIMATED
+  AI_INFERRED
+  UNKNOWN
+}
+
+enum AssetKind {
+  PHOTO
+  APPROACH_VIDEO
+  REVERSE_PHOTO
+  VOICE_NOTE
+  OTHER
+}
+
+enum PhotoView {
+  FRONT
+  APPROACH
+  LEFT
+  RIGHT
+  REVERSE
+  SURROUNDING
+  OTHER
+}
+
+enum UploadStatus {
+  PENDING
+  UPLOADING
+  UPLOADED
+  FAILED
+  RETRYING
+}
+
+enum SurveyStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  SUBMITTED
+}
+
+enum InventoryStatus {
+  AVAILABLE
+  RESERVED
+  UNAVAILABLE
+  UNKNOWN
+}
+
+enum ScoreStatus {
+  INCOMPLETE
+  COMPUTED
+  STALE
+}
+
+enum AIAnalysisStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+enum AIOperation {
+  LOCATION_IMAGE_ANALYSIS
+  LOCATION_SUMMARIZATION
+  CAMPAIGN_BRIEF_PARSE
+  ADVERTISER_CLASSIFY
+  MEDIA_PLAN_EXPLAIN
+}
+
+enum ParseStatus {
+  PENDING
+  PARSED
+  FAILED
+}
+
+enum MediaPlanStatus {
+  DRAFT
+  PROPOSED
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  email         String    @unique
+  passwordHash  String
+  name          String
+  role          UserRole
+  deactivatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  refreshTokens RefreshToken[]
+  locations     Location[]
+}
+
+model RefreshToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  tokenHash   String    @unique
+  deviceLabel String?
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Location {
+  id              String       @id @default(uuid()) @db.Uuid
+  name            String
+  latitude        Float
+  longitude       Float
+  accuracyM       Float?
+  capturedAt      DateTime?
+  address         String?
+  road            String?
+  roadType        String?
+  junction        String?
+  orientationDeg  Float?
+  mountingType    String?
+  mountingNotes   String?
+  surveyStatus    SurveyStatus @default(DRAFT)
+  archivedAt      DateTime?
+  createdByUserId String       @db.Uuid
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  createdBy    User                @relation(fields: [createdByUserId], references: [id])
+  assets       LocationAsset[]
+  screens      Screen[]
+  attributes   LocationAttribute[]
+  scores       LocationScore[]
+  survey       LocationSurvey?
+  analyses     AIAnalysis[]
+  recommendations Recommendation[]
+
+  @@index([createdByUserId])
+  @@index([latitude, longitude])
+}
+
+model LocationSurvey {
+  id                  String   @id @default(uuid()) @db.Uuid
+  locationId          String   @unique @db.Uuid
+  checklist           Json     @default("{}")
+  voiceNoteAssetId    String?  @db.Uuid
+  freeTextObservation String?
+  syncState           String   @default("PENDING")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+}
+
+model LocationAsset {
+  id             String       @id @default(uuid()) @db.Uuid
+  locationId     String       @db.Uuid
+  kind           AssetKind
+  view           PhotoView    @default(OTHER)
+  r2Key          String
+  contentType    String
+  byteSize       Int?
+  checksumSha256 String?
+  width          Int?
+  height         Int?
+  durationMs     Int?
+  capturedAt     DateTime?
+  capturedLat    Float?
+  capturedLng    Float?
+  uploadStatus   UploadStatus @default(PENDING)
+  confirmedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  location  Location             @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  evidences AIAnalysisEvidence[]
+
+  @@index([locationId, kind])
+  @@index([locationId, view])
+}
+
+model Screen {
+  id                 String          @id @default(uuid()) @db.Uuid
+  locationId         String          @db.Uuid
+  label              String
+  inventoryStatus    InventoryStatus @default(UNKNOWN)
+  operatingHoursJson Json?
+  loopDurationSec    Int?
+  slotDurationSec    Int?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  location    Location             @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  specification ScreenSpecification?
+  inventories Inventory[]
+}
+
+model ScreenSpecification {
+  id              String   @id @default(uuid()) @db.Uuid
+  screenId        String   @unique @db.Uuid
+  widthMm         Float?
+  heightMm        Float?
+  resolutionW     Int?
+  resolutionH     Int?
+  aspectRatio     String?
+  orientation     String?
+  mountingHeightM Float?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  screen Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
+}
+
+model LocationAttribute {
+  id           String     @id @default(uuid()) @db.Uuid
+  locationId   String     @db.Uuid
+  key          String
+  valueJson    Json
+  unit         String?
+  provenance   Provenance @default(UNKNOWN)
+  confidence   Float?
+  source       String?
+  model        String?
+  evidenceJson Json?
+  observedAt   DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, key])
+}
+
+model ScoringConfig {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String
+  isActive   Boolean  @default(false)
+  weightsJson Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  scores LocationScore[]
+}
+
+model LocationScore {
+  id                String      @id @default(uuid()) @db.Uuid
+  locationId        String      @db.Uuid
+  scoringConfigId   String      @db.Uuid
+  overallScore      Float
+  overallConfidence Float
+  status            ScoreStatus @default(INCOMPLETE)
+  componentsJson    Json
+  computedAt        DateTime
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  location      Location      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  scoringConfig ScoringConfig @relation(fields: [scoringConfigId], references: [id])
+
+  @@index([locationId])
+}
+
+model AIAnalysis {
+  id          String           @id @default(uuid()) @db.Uuid
+  operation   AIOperation
+  status      AIAnalysisStatus @default(QUEUED)
+  provider    String?
+  model       String?
+  inputHash   String?
+  latencyMs   Int?
+  confidence  Float?
+  errorCode   String?
+  outputJson  Json?
+  locationId  String?          @db.Uuid
+  campaignId  String?          @db.Uuid
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  location   Location?            @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  campaign   Campaign?            @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  evidences  AIAnalysisEvidence[]
+  recommendations Recommendation[]
+
+  @@index([status, createdAt])
+}
+
+model AIAnalysisEvidence {
+  id         String  @id @default(uuid()) @db.Uuid
+  analysisId String  @db.Uuid
+  assetId    String? @db.Uuid
+  label      String
+  excerpt    String?
+  confidence Float?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  analysis AIAnalysis    @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  asset    LocationAsset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+}
+
+model AdvertiserCategory {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  advertisers Advertiser[]
+}
+
+model Advertiser {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String
+  categoryId String?  @db.Uuid
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  category AdvertiserCategory? @relation(fields: [categoryId], references: [id])
+  campaigns Campaign[]
+}
+
+model Campaign {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  advertiserId String   @db.Uuid
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  advertiser      Advertiser       @relation(fields: [advertiserId], references: [id])
+  brief           CampaignBrief?
+  mediaPlans      MediaPlan[]
+  analyses        AIAnalysis[]
+  recommendations Recommendation[]
+}
+
+model CampaignBrief {
+  id                       String      @id @default(uuid()) @db.Uuid
+  campaignId               String      @unique @db.Uuid
+  sourceText               String?
+  sourceTextHash           String?
+  structuredRequirementsJson Json?
+  parseStatus              ParseStatus @default(PENDING)
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model Inventory {
+  id           String          @id @default(uuid()) @db.Uuid
+  screenId     String          @db.Uuid
+  productCode  String
+  notes        String?
+  status       InventoryStatus @default(UNKNOWN)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  screen        Screen          @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  rateCards     RateCard[]
+  mediaPlanItems MediaPlanItem[]
+  recommendations Recommendation[]
+}
+
+model RateCard {
+  id            String     @id @default(uuid()) @db.Uuid
+  inventoryId   String     @db.Uuid
+  currency      String     @default("INR")
+  period        String
+  amount        Decimal    @db.Decimal(12, 2)
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  provenance    Provenance @default(UNKNOWN)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+}
+
+model MediaPlan {
+  id         String          @id @default(uuid()) @db.Uuid
+  campaignId String          @db.Uuid
+  name       String
+  status     MediaPlanStatus @default(DRAFT)
+  totalBudget Decimal?       @db.Decimal(14, 2)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  campaign Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  items    MediaPlanItem[]
+}
+
+model MediaPlanItem {
+  id               String   @id @default(uuid()) @db.Uuid
+  mediaPlanId      String   @db.Uuid
+  inventoryId      String   @db.Uuid
+  budgetAllocated  Decimal  @db.Decimal(14, 2)
+  explanationText  String?
+  rank             Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  mediaPlan MediaPlan @relation(fields: [mediaPlanId], references: [id], onDelete: Cascade)
+  inventory Inventory @relation(fields: [inventoryId], references: [id])
+}
+
+model Recommendation {
+  id              String   @id @default(uuid()) @db.Uuid
+  campaignId      String   @db.Uuid
+  locationId      String?  @db.Uuid
+  inventoryId     String?  @db.Uuid
+  rank            Int
+  score           Float
+  reasonCodesJson Json?
+  explanation     String?
+  analysisId      String?  @db.Uuid
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  campaign  Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  location  Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  inventory Inventory? @relation(fields: [inventoryId], references: [id], onDelete: SetNull)
+  analysis  AIAnalysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+}
