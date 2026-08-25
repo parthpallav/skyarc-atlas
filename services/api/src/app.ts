@@ -16,6 +16,7 @@ import { surveyRoutes } from "./modules/surveys/routes.js";
 import { assetRoutes } from "./modules/assets/routes.js";
 import { screenRoutes } from "./modules/screens/routes.js";
 import { intelligenceRoutes } from "./modules/intelligence/routes.js";
+import { organizationRoutes } from "./modules/organizations/routes.js";
 import { campaignRoutes, mediaPlanRoutes } from "./modules/media-plans/routes.js";
 import { startAnalysisRunner } from "./workers/analysis-runner.js";
 import { success } from "./lib/response.js";
@@ -46,6 +47,7 @@ export async function buildApp() {
       await assetRoutes(api, storage, env);
       await screenRoutes(api);
       await intelligenceRoutes(api, ai);
+      await organizationRoutes(api);
       await campaignRoutes(api, ai);
       await mediaPlanRoutes(api, env);
     },

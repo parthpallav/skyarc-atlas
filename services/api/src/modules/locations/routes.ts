@@ -15,7 +15,12 @@ import {
   canReadLocations,
   canWriteLocation,
   isReadOnly,
+  canAccessLocation,
 } from "../../lib/rbac.js";
+import {
+  buildLocationListWhere,
+  organizationIdForNewLocation,
+} from "../../lib/org-scope.js";
 import { forbidden, notFound } from "../../lib/errors.js";
 import { coverUrlsForLocations } from "../../lib/asset-url.js";
 import {
@@ -86,10 +91,7 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
     if (cached) return cached;
 
     const skip = (query.page - 1) * query.limit;
-    const where =
-      request.user.role === "FIELD_OPERATOR"
-        ? { createdByUserId: request.user.id, archivedAt: null }
-        : { archivedAt: null };
+    const where = buildLocationListWhere(request.user);
 
     const locations = await prisma.location.findMany({
       where,
@@ -134,6 +136,7 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
         mountingNotes: body.mountingNotes,
         surveyStatus: SurveyStatus.DRAFT,
         createdByUserId: request.user.id,
+        organizationId: organizationIdForNewLocation(request.user),
       },
       update: {
         name: body.name,
@@ -221,6 +224,7 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
 
     const location = await prisma.location.findUnique({ where: { id } });
     if (!location) throw notFound("Location not found");
+    if (!canAccessLocation(request.user, location)) throw forbidden();
     const covers = await coverUrlsForLocations(env, [id]);
     const response = success(serializeLocation(location, covers.get(id)));
     setCachedLocationResponse(cacheKey, response);
@@ -231,7 +235,7 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
     const id = uuidSchema.parse((request.params as { id: string }).id);
     const existing = await prisma.location.findUnique({ where: { id } });
     if (!existing) throw notFound("Location not found");
-    if (!canWriteLocation(request.user, existing.createdByUserId) || isReadOnly(request.user)) {
+    if (!canWriteLocation(request.user, existing) || isReadOnly(request.user)) {
       throw forbidden();
     }
     const body = updateLocationBodySchema.parse(request.body);
@@ -251,7 +255,7 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
     const id = uuidSchema.parse((request.params as { id: string }).id);
     const existing = await prisma.location.findUnique({ where: { id } });
     if (!existing || existing.archivedAt) throw notFound("Location not found");
-    if (!canWriteLocation(request.user, existing.createdByUserId) || isReadOnly(request.user)) {
+    if (!canWriteLocation(request.user, existing) || isReadOnly(request.user)) {
       throw forbidden();
     }
 

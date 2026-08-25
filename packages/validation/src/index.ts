@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   AssetKind,
   InventoryStatus,
+  OrganizationStatus,
+  OrganizationType,
   Provenance,
   ScoreStatus,
   SurveyStatus,
@@ -64,9 +66,29 @@ export const userSchema = z.object({
   email: z.string().email(),
   name: z.string(),
   role: z.nativeEnum(UserRole),
+  organizationId: uuidSchema.nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   deactivatedAt: z.string().datetime().nullable(),
+});
+
+export const organizationSchema = z.object({
+  id: uuidSchema,
+  name: z.string(),
+  type: z.nativeEnum(OrganizationType),
+  status: z.nativeEnum(OrganizationStatus),
+  memberCount: z.number().int().nonnegative().optional(),
+  locationCount: z.number().int().nonnegative().optional(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const createOrganizationBodySchema = z.object({
+  name: z.string().min(1).max(200),
+});
+
+export const updateOrganizationStatusBodySchema = z.object({
+  status: z.nativeEnum(OrganizationStatus),
 });
 
 export const createUserBodySchema = z.object({
@@ -74,6 +96,7 @@ export const createUserBodySchema = z.object({
   password: z.string().min(8),
   name: z.string().min(1),
   role: z.nativeEnum(UserRole),
+  organizationId: uuidSchema.optional(),
 });
 
 export const updateUserBodySchema = z.object({

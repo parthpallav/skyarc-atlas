@@ -158,7 +158,7 @@ export async function assetRoutes(
       const locationId = uuidSchema.parse((request.params as { id: string }).id);
       const location = await prisma.location.findUnique({ where: { id: locationId } });
       if (!location) throw notFound("Location not found");
-      if (!canWriteLocation(request.user, location.createdByUserId) || isReadOnly(request.user)) {
+      if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
         throw forbidden();
       }
 
@@ -244,7 +244,7 @@ export async function assetRoutes(
       const assetId = uuidSchema.parse((request.params as { assetId: string }).assetId);
       const location = await prisma.location.findUnique({ where: { id: locationId } });
       if (!location) throw notFound("Location not found");
-      if (!canWriteLocation(request.user, location.createdByUserId) || isReadOnly(request.user)) {
+      if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
         throw forbidden();
       }
 
@@ -281,7 +281,7 @@ export async function assetRoutes(
       const locationId = uuidSchema.parse((request.params as { id: string }).id);
       const location = await prisma.location.findUnique({ where: { id: locationId } });
       if (!location) throw notFound("Location not found");
-      if (!canWriteLocation(request.user, location.createdByUserId) || isReadOnly(request.user)) {
+      if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
         throw forbidden();
       }
 

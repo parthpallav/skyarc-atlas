@@ -74,7 +74,7 @@ export async function screenRoutes(fastify: FastifyInstance) {
       const locationId = uuidSchema.parse((request.params as { id: string }).id);
       const location = await prisma.location.findUnique({ where: { id: locationId } });
       if (!location) throw notFound("Location not found");
-      if (!canWriteLocation(request.user, location.createdByUserId) || isReadOnly(request.user)) {
+      if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
         throw forbidden();
       }
       const body = createScreenBodySchema.parse(request.body);
@@ -99,7 +99,7 @@ export async function screenRoutes(fastify: FastifyInstance) {
       include: { location: true },
     });
     if (!screen) throw notFound("Screen not found");
-    if (!canWriteLocation(request.user, screen.location.createdByUserId) || isReadOnly(request.user)) {
+    if (!canWriteLocation(request.user, screen.location) || isReadOnly(request.user)) {
       throw forbidden();
     }
     const body = updateScreenBodySchema.parse(request.body);
@@ -123,7 +123,7 @@ export async function screenRoutes(fastify: FastifyInstance) {
         include: { location: true },
       });
       if (!screen) throw notFound("Screen not found");
-      if (!canWriteLocation(request.user, screen.location.createdByUserId) || isReadOnly(request.user)) {
+      if (!canWriteLocation(request.user, screen.location) || isReadOnly(request.user)) {
         throw forbidden();
       }
       const body = upsertScreenSpecBodySchema.parse(request.body);

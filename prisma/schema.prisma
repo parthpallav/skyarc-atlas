@@ -13,6 +13,21 @@ enum UserRole {
   SALES
   FIELD_OPERATOR
   VIEWER
+  VENDOR_ADMIN
+  VENDOR_OPS
+  CLIENT_VIEWER
+}
+
+enum OrganizationType {
+  INTERNAL
+  VENDOR
+  CLIENT
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  BLACKLISTED
 }
 
 enum Provenance {
@@ -100,17 +115,35 @@ enum MediaPlanStatus {
 }
 
 model User {
-  id            String    @id @default(uuid()) @db.Uuid
-  email         String    @unique
-  passwordHash  String
-  name          String
-  role          UserRole
-  deactivatedAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String    @id @default(uuid()) @db.Uuid
+  email          String    @unique
+  passwordHash   String
+  name           String
+  role           UserRole
+  organizationId String?   @db.Uuid
+  deactivatedAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
+  organization  Organization? @relation(fields: [organizationId], references: [id])
   refreshTokens RefreshToken[]
   locations     Location[]
+
+  @@index([organizationId])
+}
+
+model Organization {
+  id        String             @id @default(uuid()) @db.Uuid
+  name      String
+  type      OrganizationType
+  status    OrganizationStatus @default(ACTIVE)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  members   User[]
+  locations Location[]
+
+  @@index([type, status])
 }
 
 model RefreshToken {
@@ -144,11 +177,13 @@ model Location {
   mountingNotes   String?
   surveyStatus    SurveyStatus @default(DRAFT)
   archivedAt      DateTime?
+  organizationId  String?      @db.Uuid
   createdByUserId String       @db.Uuid
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
-  createdBy    User                @relation(fields: [createdByUserId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  createdBy    User          @relation(fields: [createdByUserId], references: [id])
   assets       LocationAsset[]
   screens      Screen[]
   attributes   LocationAttribute[]
@@ -158,6 +193,7 @@ model Location {
   recommendations Recommendation[]
 
   @@index([createdByUserId])
+  @@index([organizationId])
   @@index([latitude, longitude])
 }
 

@@ -16,6 +16,7 @@ function serializeUser(user: {
   email: string;
   name: string;
   role: string;
+  organizationId: string | null;
   createdAt: Date;
   updatedAt: Date;
   deactivatedAt: Date | null;
@@ -25,6 +26,7 @@ function serializeUser(user: {
     email: user.email,
     name: user.name,
     role: user.role,
+    organizationId: user.organizationId,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
     deactivatedAt: toIso(user.deactivatedAt),
@@ -53,6 +55,7 @@ export async function userRoutes(fastify: FastifyInstance) {
         passwordHash,
         name: body.name,
         role: body.role,
+        organizationId: body.organizationId,
       },
     });
     return success(serializeUser(user));

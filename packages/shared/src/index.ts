@@ -4,8 +4,26 @@ export const UserRole = {
   SALES: "SALES",
   FIELD_OPERATOR: "FIELD_OPERATOR",
   VIEWER: "VIEWER",
+  VENDOR_ADMIN: "VENDOR_ADMIN",
+  VENDOR_OPS: "VENDOR_OPS",
+  CLIENT_VIEWER: "CLIENT_VIEWER",
 } as const;
 export type UserRole = (typeof UserRole)[keyof typeof UserRole];
+
+export const OrganizationType = {
+  INTERNAL: "INTERNAL",
+  VENDOR: "VENDOR",
+  CLIENT: "CLIENT",
+} as const;
+export type OrganizationType = (typeof OrganizationType)[keyof typeof OrganizationType];
+
+export const OrganizationStatus = {
+  ACTIVE: "ACTIVE",
+  SUSPENDED: "SUSPENDED",
+  BLACKLISTED: "BLACKLISTED",
+} as const;
+export type OrganizationStatus =
+  (typeof OrganizationStatus)[keyof typeof OrganizationStatus];
 
 export const Provenance = {
   USER_PROVIDED: "USER_PROVIDED",
