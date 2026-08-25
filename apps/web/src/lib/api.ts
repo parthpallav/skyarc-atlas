@@ -1,5 +1,6 @@
 import { createApiClient } from "@skyarc/api-client";
 
+// Empty string = same-origin (Vercel rewrites proxy to VPS API over HTTPS).
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 export interface StoredUser {
