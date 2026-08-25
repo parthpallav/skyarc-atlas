@@ -1,20 +1,5 @@
+# Production compose for Hostinger VPS (API only — uses Supabase Postgres).
 services:
-  postgres:
-    image: postgis/postgis:16-3.4
-    environment:
-      POSTGRES_USER: skyarc
-      POSTGRES_PASSWORD: skyarc
-      POSTGRES_DB: skyarc_atlas
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U skyarc -d skyarc_atlas"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   api:
     build:
       context: .
@@ -22,16 +7,23 @@ services:
     ports:
       - "3001:3001"
     environment:
-      DATABASE_URL: postgresql://skyarc:skyarc@postgres:5432/skyarc_atlas
-      JWT_ACCESS_SECRET: change-me-access-secret-min-32-chars-long
-      JWT_REFRESH_SECRET: change-me-refresh-secret-min-32-chars-long
-      AI_PROVIDER: stub
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_URL: ${DIRECT_URL}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      R2_BUCKET: ${R2_BUCKET}
+      R2_ENDPOINT: ${R2_ENDPOINT}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
+      AI_PROVIDER: ${AI_PROVIDER:-openrouter}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      AI_MODEL: ${AI_MODEL:-openrouter/free}
       PORT: 3001
-      CORS_ORIGINS: http://localhost:3000,http://localhost:8081
       NODE_ENV: production
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-volumes:
-  postgres_data:
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      DATABASE_USE_DIRECT: "true"
+    restart: unless-stopped

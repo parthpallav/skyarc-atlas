@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: skyarc
+      POSTGRES_PASSWORD: skyarc
+      POSTGRES_DB: skyarc_atlas
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skyarc -d skyarc_atlas"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://skyarc:skyarc@postgres:5432/skyarc_atlas
+      JWT_ACCESS_SECRET: change-me-access-secret-min-32-chars-long
+      JWT_REFRESH_SECRET: change-me-refresh-secret-min-32-chars-long
+      AI_PROVIDER: stub
+      PORT: 3001
+      CORS_ORIGINS: http://localhost:3000,http://localhost:8081
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
