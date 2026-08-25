@@ -1,0 +1,5 @@
+{
+  "installCommand": "cd ../.. && pnpm install",
+  "buildCommand": "cd ../.. && NODE_ENV=production pnpm turbo build --filter=@skyarc/web",
+  "framework": "nextjs"
+}
