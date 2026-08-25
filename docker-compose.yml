@@ -25,5 +25,5 @@ services:
       PORT: 3001
       NODE_ENV: production
       CORS_ORIGINS: ${CORS_ORIGINS}
-      DATABASE_USE_DIRECT: "true"
+      DATABASE_USE_POOLER: "false"
     restart: unless-stopped
