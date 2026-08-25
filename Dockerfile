@@ -12,10 +12,12 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/services/api/dist ./services/api/dist
-COPY --from=builder /app/services/api/package.json ./services/api/
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/services/api ./services/api
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/docs ./docs
 EXPOSE 3001
-CMD ["node", "services/api/dist/server.js"]
+WORKDIR /app/services/api
+CMD ["node", "dist/server.js"]
