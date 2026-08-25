@@ -31,7 +31,8 @@ export default function RootLayout() {
         <Stack.Screen name="location/create" options={{ title: "New survey" }} />
         <Stack.Screen name="location/[id]" options={{ title: "Location" }} />
         <Stack.Screen name="location/edit/[id]" options={{ title: "Edit location" }} />
-        <Stack.Screen name="campaign/[id]" options={{ title: "Campaign" }} />
+        <Stack.Screen name="campaign/[id]/index" options={{ title: "Campaign" }} />
+        <Stack.Screen name="campaign/[id]/plan/[planId]" options={{ title: "Media plan" }} />
       </Stack>
     </SafeAreaProvider>
   );

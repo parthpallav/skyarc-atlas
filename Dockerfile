@@ -18,6 +18,7 @@ COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/services/api ./services/api
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/docs ./docs
+COPY scripts/docker-entrypoint.sh /app/scripts/docker-entrypoint.sh
+RUN chmod +x /app/scripts/docker-entrypoint.sh
 EXPOSE 3001
-WORKDIR /app/services/api
-CMD ["node", "dist/server.js"]
+ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]

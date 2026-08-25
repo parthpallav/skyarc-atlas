@@ -13,12 +13,8 @@ const DEFAULT_SCORING_WEIGHTS = {
   DATA_CONFIDENCE: 5,
 } as const;
 
-/** Use direct connection for scripts — avoids Supabase pooler prepared-statement errors. */
-const prisma = new PrismaClient({
-  datasources: {
-    db: { url: process.env.DIRECT_URL ?? process.env.DATABASE_URL },
-  },
-});
+/** Self-hosted Postgres — single DATABASE_URL for scripts and runtime. */
+const prisma = new PrismaClient();
 
 async function main() {
   const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@skyarc.in";

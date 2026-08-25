@@ -1,10 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient({
-  datasources: {
-    db: { url: process.env.DIRECT_URL ?? process.env.DATABASE_URL },
-  },
-});
+const prisma = new PrismaClient();
 
 const statements = [
   `CREATE EXTENSION IF NOT EXISTS postgis`,

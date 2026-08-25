@@ -10,7 +10,12 @@
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'no lint configured'",
-    "test": "vitest run"
+    "test": "vitest run",
+    "eas:init": "eas init",
+    "eas:build:preview": "eas build --profile preview --platform all",
+    "eas:build:production": "eas build --profile production --platform all",
+    "eas:submit:ios": "eas submit --platform ios --profile production --latest",
+    "eas:submit:android": "eas submit --platform android --profile production --latest"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
@@ -42,6 +47,7 @@
   "devDependencies": {
     "@babel/core": "^7.26.0",
     "@types/react": "~19.1.17",
+    "eas-cli": "^16.3.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }

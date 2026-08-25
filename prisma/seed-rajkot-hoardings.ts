@@ -2,7 +2,7 @@
  * Import Rajkot hoarding inventory from prisma/data/rajkot-hoardings.json
  * Fetches reference images from Google Street View (or OSM static map fallback).
  *
- * Requires: DIRECT_URL or DATABASE_URL, admin user from db:seed
+ * Requires: DATABASE_URL, admin user from db:seed
  * Optional: GOOGLE_MAPS_API_KEY (Street View + satellite fallback)
  * Optional: R2_* for image upload (skips upload if unset)
  */
@@ -39,11 +39,7 @@ const LIGHT_LABELS: Record<HoardingRow["light"], string> = {
   NL: "non_lit",
 };
 
-const prisma = new PrismaClient({
-  datasources: {
-    db: { url: process.env.DIRECT_URL ?? process.env.DATABASE_URL },
-  },
-});
+const prisma = new PrismaClient();
 
 function feetToMm(ft: number): number {
   return Math.round(ft * 304.8);

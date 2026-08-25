@@ -1,5 +1,26 @@
-# Production compose for Hostinger VPS (API only — uses Supabase Postgres).
+# Production: API + self-hosted PostGIS on the same VPS (no external DB).
 services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-skyarc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-skyarc_atlas}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./prisma/docker-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-skyarc} -d ${POSTGRES_DB:-skyarc_atlas}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -7,8 +28,7 @@ services:
     ports:
       - "3001:3001"
     environment:
-      DATABASE_URL: ${DATABASE_URL}
-      DIRECT_URL: ${DIRECT_URL}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
@@ -25,5 +45,10 @@ services:
       PORT: 3001
       NODE_ENV: production
       CORS_ORIGINS: ${CORS_ORIGINS}
-      DATABASE_USE_POOLER: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  postgres_data:

@@ -4,11 +4,7 @@
 import { PrismaClient } from "@prisma/client";
 import { SAMPLE_CAMPAIGN, SAMPLE_CAMPAIGN_BRIEF } from "../packages/shared/src/campaign-brief.js";
 
-const prisma = new PrismaClient({
-  datasources: {
-    db: { url: process.env.DIRECT_URL ?? process.env.DATABASE_URL },
-  },
-});
+const prisma = new PrismaClient();
 
 async function main() {
   const existing = await prisma.campaign.findFirst({

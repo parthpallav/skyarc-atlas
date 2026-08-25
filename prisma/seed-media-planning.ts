@@ -8,11 +8,7 @@ import {
   estimateFactorScores,
 } from "../services/api/src/lib/media-planning/insights.js";
 
-const prisma = new PrismaClient({
-  datasources: {
-    db: { url: process.env.DIRECT_URL ?? process.env.DATABASE_URL },
-  },
-});
+const prisma = new PrismaClient();
 
 const RATE_PER_SQFT_INR = 80;
 
