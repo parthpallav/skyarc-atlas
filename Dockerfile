@@ -1,9 +1,10 @@
 FROM node:22-alpine AS base
+RUN apk add --no-cache openssl libc6-compat
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 FROM base AS deps
 WORKDIR /app
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.base.json ./
 COPY packages ./packages
 COPY services/api/package.json ./services/api/
 COPY prisma ./prisma
@@ -13,7 +14,7 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN pnpm db:generate && pnpm build --filter=@skyarc/api
+RUN pnpm db:generate && pnpm --filter @skyarc/api build
 
 FROM base AS runner
 WORKDIR /app
