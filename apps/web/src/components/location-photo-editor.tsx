@@ -2,11 +2,14 @@
 
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Loader2, RefreshCw } from "lucide-react";
+import { Camera, Loader2, RefreshCw, Video } from "lucide-react";
 import {
   PHOTO_VIEW_LABELS,
   PhotoView,
   SURVEY_PHOTO_VIEWS,
+  isLocationMediaContentType,
+  isVideoContentType,
+  maxBytesForContentType,
 } from "@skyarc/shared";
 import { createWebApiClient } from "@/lib/api";
 import { LocationImage } from "@/components/location-image";
@@ -17,6 +20,7 @@ interface AssetRow {
   view: PhotoView;
   viewLabel?: string;
   url: string | null;
+  contentType?: string;
   uploadStatus: string;
 }
 
@@ -25,13 +29,16 @@ interface LocationPhotoEditorProps {
 }
 
 const VIEW_HINTS: Partial<Record<PhotoView, string>> = {
-  [PhotoView.FRONT]: "Full face of the hoarding",
+  [PhotoView.FRONT]: "Full face of the hoarding or digital screen video",
   [PhotoView.APPROACH]: "Road view approaching the site",
   [PhotoView.LEFT]: "Left side angle",
   [PhotoView.RIGHT]: "Right side angle",
   [PhotoView.REVERSE]: "Rear / reverse angle",
   [PhotoView.SURROUNDING]: "Surroundings & landmarks",
 };
+
+const ACCEPT_MEDIA =
+  "image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/webm,video/x-m4v";
 
 export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
   const queryClient = useQueryClient();
@@ -56,7 +63,7 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
   const uploadMutation = useMutation({
     mutationFn: async ({ view, file }: { view: PhotoView; file: File }) => {
       const client = createWebApiClient();
-      const contentType = file.type.startsWith("image/") ? file.type : "image/jpeg";
+      const contentType = resolveUploadContentType(file);
       return client.uploadLocationPhoto(locationId, view, file, contentType);
     },
     onMutate: ({ view }) => {
@@ -69,12 +76,25 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
       await queryClient.invalidateQueries({ queryKey: ["locations"] });
     },
     onError: (err) => {
-      setError(err instanceof Error ? err.message : "Photo upload failed");
+      setError(err instanceof Error ? err.message : "Upload failed");
     },
     onSettled: () => {
       setUploadingView(null);
     },
   });
+
+  function resolveUploadContentType(file: File): string {
+    if (file.type && isLocationMediaContentType(file.type)) {
+      return file.type;
+    }
+    const name = file.name.toLowerCase();
+    if (name.endsWith(".mov")) return "video/quicktime";
+    if (name.endsWith(".webm")) return "video/webm";
+    if (name.endsWith(".mp4") || name.endsWith(".m4v")) return "video/mp4";
+    if (name.endsWith(".png")) return "image/png";
+    if (name.endsWith(".webp")) return "image/webp";
+    return "image/jpeg";
+  }
 
   function openPicker(view: PhotoView) {
     fileInputs.current[view]?.click();
@@ -82,12 +102,19 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
 
   function handleFile(view: PhotoView, file: File | undefined) {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setError("Please choose an image file (JPEG, PNG, or WebP).");
+    const contentType = resolveUploadContentType(file);
+    if (!isLocationMediaContentType(contentType)) {
+      setError("Please choose an image (JPEG, PNG, WebP) or video (MP4, MOV, WebM).");
       return;
     }
-    if (file.size > 8 * 1024 * 1024) {
-      setError("Image must be 8 MB or smaller.");
+    const maxBytes = maxBytesForContentType(contentType);
+    if (file.size > maxBytes) {
+      const limitMb = Math.round(maxBytes / (1024 * 1024));
+      setError(
+        isVideoContentType(contentType)
+          ? `Video must be ${limitMb} MB or smaller.`
+          : `Image must be ${limitMb} MB or smaller.`
+      );
       return;
     }
     uploadMutation.mutate({ view, file });
@@ -106,7 +133,8 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        Tap a slot to replace or add a photo. Each angle keeps one image (same as the mobile survey).
+        Tap a slot to add or replace a photo or video. Use video for digital screen
+        captures (MP4, MOV, or WebM up to 200 MB).
       </p>
 
       {error && (
@@ -120,6 +148,9 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
           const asset = assetsByView.get(view);
           const isUploading = uploadingView === view;
           const label = PHOTO_VIEW_LABELS[view];
+          const isVideo = asset?.contentType
+            ? isVideoContentType(asset.contentType)
+            : false;
 
           return (
             <div
@@ -141,8 +172,9 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
                     alt={`${label} view`}
                     aspect="video"
                     className="rounded-none border-0"
+                    contentType={asset?.contentType}
                   />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/35 transition-colors flex items-center justify-center">
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/35 transition-colors flex items-center justify-center pointer-events-none">
                     <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1.5 text-white text-xs font-semibold bg-black/50 px-2.5 py-1.5 rounded-full">
                       {isUploading ? (
                         <>
@@ -157,14 +189,17 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
                       ) : (
                         <>
                           <Camera className="w-3.5 h-3.5" />
-                          Add photo
+                          Add media
                         </>
                       )}
                     </span>
                   </div>
                 </div>
                 <div className="px-3 py-2 border-t border-violet-100">
-                  <p className="text-xs font-semibold text-slate-800">{label}</p>
+                  <p className="text-xs font-semibold text-slate-800 flex items-center gap-1">
+                    {label}
+                    {isVideo && <Video className="w-3 h-3 text-primary" />}
+                  </p>
                   <p className="text-[11px] text-muted truncate">{VIEW_HINTS[view]}</p>
                 </div>
               </button>
@@ -173,7 +208,7 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
                   fileInputs.current[view] = el;
                 }}
                 type="file"
-                accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                accept={ACCEPT_MEDIA}
                 className="hidden"
                 onChange={(e) => {
                   handleFile(view, e.target.files?.[0]);

@@ -16,6 +16,10 @@ import {
   resolvePhotoView,
   slugifyLocationFolder,
   PHOTO_VIEW_LABELS,
+  isLocationMediaContentType,
+  maxBytesForContentType,
+  VIDEO_CONTENT_TYPES,
+  IMAGE_CONTENT_TYPES,
 } from "@skyarc/shared";
 import { MEDIA_LIMITS } from "@skyarc/config";
 import type { StorageProvider } from "../../lib/storage/index.js";
@@ -89,15 +93,10 @@ function sortAssetsByView<T extends { view: string }>(assets: T[]): T[] {
   );
 }
 
-const IMAGE_CONTENT_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/heic",
-  "image/heif",
-] as const;
+const IMAGE_CONTENT_TYPES_LIST = [...IMAGE_CONTENT_TYPES];
+const VIDEO_CONTENT_TYPES_LIST = [...VIDEO_CONTENT_TYPES];
 
-function registerImageBodyParsers(fastify: FastifyInstance) {
+function registerMediaBodyParsers(fastify: FastifyInstance) {
   const parseBuffer = (
     _req: unknown,
     body: Buffer,
@@ -106,7 +105,7 @@ function registerImageBodyParsers(fastify: FastifyInstance) {
     done(null, body);
   };
 
-  for (const contentType of IMAGE_CONTENT_TYPES) {
+  for (const contentType of IMAGE_CONTENT_TYPES_LIST) {
     if (fastify.hasContentTypeParser(contentType)) continue;
     fastify.addContentTypeParser(
       contentType,
@@ -114,6 +113,20 @@ function registerImageBodyParsers(fastify: FastifyInstance) {
       parseBuffer
     );
   }
+
+  for (const contentType of VIDEO_CONTENT_TYPES_LIST) {
+    if (fastify.hasContentTypeParser(contentType)) continue;
+    fastify.addContentTypeParser(
+      contentType,
+      { parseAs: "buffer", bodyLimit: MEDIA_LIMITS.maxVideoBytes },
+      parseBuffer
+    );
+  }
+}
+
+function assetKindForViewUpload(_contentType: string): AssetKind {
+  // View-slot uploads (image or video) share the same per-view R2 path.
+  return AssetKind.PHOTO;
 }
 
 export async function assetRoutes(
@@ -121,7 +134,7 @@ export async function assetRoutes(
   storage: StorageProvider,
   env: Env
 ) {
-  registerImageBodyParsers(fastify);
+  registerMediaBodyParsers(fastify);
 
   fastify.get(
     "/locations/:id/assets",
@@ -150,6 +163,14 @@ export async function assetRoutes(
       }
 
       const body = presignAssetBodySchema.parse(request.body);
+      if (
+        body.kind === AssetKind.PHOTO &&
+        !isLocationMediaContentType(body.contentType)
+      ) {
+        throw validationError(
+          "Photo assets must use an image or supported video content type"
+        );
+      }
       const maxBytes = maxBytesForKind(body.kind);
       if (body.byteSize > maxBytes) {
         throw validationError(`File exceeds max size of ${maxBytes} bytes`);
@@ -266,24 +287,28 @@ export async function assetRoutes(
 
       const query = uploadAssetQuerySchema.parse(request.query);
       const contentType = request.headers["content-type"] ?? "image/jpeg";
-      if (!contentType.startsWith("image/")) {
-        throw validationError("Content-Type must be an image");
+      if (!isLocationMediaContentType(contentType)) {
+        throw validationError(
+          "Content-Type must be an image (JPEG, PNG, WebP, HEIC) or video (MP4, MOV, WebM)"
+        );
       }
 
       const body = request.body;
       if (!body || !Buffer.isBuffer(body) || body.length === 0) {
-        throw validationError("Image body is required");
+        throw validationError("Media body is required");
       }
-      if (body.length > MEDIA_LIMITS.maxImageBytes) {
-        throw validationError(`File exceeds max size of ${MEDIA_LIMITS.maxImageBytes} bytes`);
+      const maxBytes = maxBytesForContentType(contentType);
+      if (body.length > maxBytes) {
+        throw validationError(`File exceeds max size of ${maxBytes} bytes`);
       }
 
       const view = query.view;
       const assetId = randomUUID();
       const locationFolder = slugifyLocationFolder(location.name, locationId);
+      const kind = assetKindForViewUpload(contentType);
       const r2Key = buildAssetKey({
         locationFolder,
-        kind: AssetKind.PHOTO,
+        kind,
         view,
         assetId,
         contentType,
@@ -301,7 +326,7 @@ export async function assetRoutes(
         data: {
           id: assetId,
           locationId,
-          kind: AssetKind.PHOTO,
+          kind,
           view,
           r2Key,
           contentType,

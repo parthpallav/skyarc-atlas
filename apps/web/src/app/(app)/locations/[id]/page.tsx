@@ -15,6 +15,7 @@ interface AssetRow {
   view?: string;
   viewLabel?: string;
   sortOrder?: number;
+  contentType?: string;
   uploadStatus: string;
 }
 
@@ -93,6 +94,7 @@ export default function LocationDetailPage() {
           kind: a.kind,
           viewLabel: a.viewLabel,
           sortOrder: a.sortOrder,
+          contentType: a.contentType,
         }))
       : location.coverImageUrl
         ? [{ id: "cover", url: location.coverImageUrl, kind: "PHOTO", viewLabel: "Front" }]

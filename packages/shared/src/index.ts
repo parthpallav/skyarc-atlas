@@ -158,9 +158,58 @@ export function extensionFromContentType(contentType: string): string {
   if (ct.includes("jpeg") || ct.includes("jpg")) return "jpg";
   if (ct.includes("png")) return "png";
   if (ct.includes("webp")) return "webp";
-  if (ct.includes("mp4")) return "mp4";
+  if (ct.includes("heic")) return "heic";
+  if (ct.includes("heif")) return "heif";
+  if (ct.includes("quicktime") || ct.includes("mov")) return "mov";
+  if (ct.includes("webm")) return "webm";
+  if (ct.includes("mp4") || ct.includes("m4v")) return "mp4";
   if (ct.includes("m4a") || ct.includes("mp4a")) return "m4a";
   return "bin";
+}
+
+export const IMAGE_CONTENT_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+] as const;
+
+export const VIDEO_CONTENT_TYPES = [
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-m4v",
+] as const;
+
+export const MEDIA_SIZE_LIMITS = {
+  maxImageBytes: 8 * 1024 * 1024,
+  maxVideoBytes: 200 * 1024 * 1024,
+  maxVoiceBytes: 10 * 1024 * 1024,
+} as const;
+
+export function isImageContentType(contentType: string): boolean {
+  return contentType.toLowerCase().startsWith("image/");
+}
+
+export function isVideoContentType(contentType: string): boolean {
+  return contentType.toLowerCase().startsWith("video/");
+}
+
+export function isLocationMediaContentType(contentType: string): boolean {
+  const ct = contentType.toLowerCase();
+  return (
+    isImageContentType(ct) ||
+    (VIDEO_CONTENT_TYPES as readonly string[]).some((allowed) => allowed === ct)
+  );
+}
+
+export function maxBytesForContentType(contentType: string): number {
+  if (isVideoContentType(contentType)) return MEDIA_SIZE_LIMITS.maxVideoBytes;
+  if (contentType.toLowerCase().startsWith("audio/")) {
+    return MEDIA_SIZE_LIMITS.maxVoiceBytes;
+  }
+  return MEDIA_SIZE_LIMITS.maxImageBytes;
 }
 
 export function resolvePhotoView(kind: AssetKind, view?: PhotoView): PhotoView {

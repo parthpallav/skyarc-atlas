@@ -10,6 +10,7 @@ interface GalleryImage {
   kind?: string;
   viewLabel?: string;
   sortOrder?: number;
+  contentType?: string | null;
 }
 
 interface ImageGalleryProps {
@@ -40,6 +41,7 @@ export function ImageGallery({ images, altPrefix }: ImageGalleryProps) {
           alt={`${altPrefix} — ${active?.viewLabel ?? active?.kind ?? "photo"}`}
           aspect="wide"
           className="w-full"
+          contentType={active?.contentType}
         />
         {active?.viewLabel && (
           <p className="text-sm font-medium text-slate-700 mt-2">{active.viewLabel} view</p>
@@ -62,6 +64,7 @@ export function ImageGallery({ images, altPrefix }: ImageGalleryProps) {
                 alt={`${altPrefix} — ${img.viewLabel ?? "thumbnail"}`}
                 aspect="video"
                 className="w-28 rounded-t-lg rounded-b-none"
+                contentType={img.contentType}
               />
               {img.viewLabel && (
                 <span className="block text-[10px] font-semibold text-center py-1 bg-white text-slate-600 truncate px-1">

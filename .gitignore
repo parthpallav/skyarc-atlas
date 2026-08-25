@@ -11,3 +11,5 @@ coverage/
 *.tsbuildinfo
 .prisma/
 .deploy/
+.vercel
+.env*

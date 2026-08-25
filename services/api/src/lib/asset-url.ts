@@ -1,5 +1,5 @@
 import type { Env } from "@skyarc/config";
-import { photoViewSortKey } from "@skyarc/shared";
+import { photoViewSortKey, isImageContentType } from "@skyarc/shared";
 import type { StorageProvider } from "./storage/types.js";
 
 /** Public CDN URL when R2 bucket has public access configured. */
@@ -38,7 +38,7 @@ export async function coverUrlsForLocations(
       locationId: { in: locationIds },
       uploadStatus: "UPLOADED",
     },
-    select: { locationId: true, r2Key: true, view: true },
+    select: { locationId: true, r2Key: true, view: true, contentType: true },
   });
 
   const byLocation = new Map<string, typeof assets>();
@@ -49,9 +49,12 @@ export async function coverUrlsForLocations(
   }
 
   for (const [locationId, list] of byLocation) {
-    const sorted = [...list].sort(
-      (a, b) => photoViewSortKey(a.view) - photoViewSortKey(b.view)
-    );
+    const sorted = [...list].sort((a, b) => {
+      const aImage = isImageContentType(a.contentType) ? 0 : 1;
+      const bImage = isImageContentType(b.contentType) ? 0 : 1;
+      if (aImage !== bImage) return aImage - bImage;
+      return photoViewSortKey(a.view) - photoViewSortKey(b.view);
+    });
     const best = sorted[0];
     if (!best) continue;
     const url = publicAssetUrl(env, best.r2Key);
