@@ -18,6 +18,7 @@ const readRoles: string[] = [
   UserRole.MEDIA_PLANNER,
   UserRole.FIELD_OPERATOR,
   UserRole.VENDOR,
+  UserRole.CLIENT_VIEWER,
   UserRole.SALES,
   UserRole.VIEWER,
   UserRole.VENDOR_ADMIN,

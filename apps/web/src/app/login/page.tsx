@@ -136,50 +136,61 @@ function LoginForm() {
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
               Quick demo logins:
             </p>
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => {
-                  setEmail("admin@skyarc.in");
+                  setEmail("admin@skyarcads.com");
                   setPassword("ChangeMe123!");
                 }}
                 className="p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-left transition-colors"
               >
-                <span className="font-semibold text-slate-800 block">Superadmin</span>
-                <span className="text-slate-500 text-[11px]">admin@skyarc.in</span>
+                <span className="font-semibold text-slate-800 block truncate">Superadmin</span>
+                <span className="text-slate-500 text-[11px] truncate block">admin@skyarcads.com</span>
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  setEmail("planner@skyarc.in");
+                  setEmail("planner@skyarcads.com");
                   setPassword("ChangeMe123!");
                 }}
                 className="p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-left transition-colors"
               >
-                <span className="font-semibold text-slate-800 block">Media Planner</span>
-                <span className="text-slate-500 text-[11px]">planner@skyarc.in</span>
+                <span className="font-semibold text-slate-800 block truncate">Media Planner</span>
+                <span className="text-slate-500 text-[11px] truncate block">planner@skyarcads.com</span>
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  setEmail("brandalyst@skyarc.in");
+                  setEmail("brandalyst@skyarcads.com");
                   setPassword("ChangeMe123!");
                 }}
                 className="p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-left transition-colors"
               >
-                <span className="font-semibold text-slate-800 block">Vendor (Brandalyst)</span>
-                <span className="text-slate-500 text-[11px]">brandalyst@skyarc.in</span>
+                <span className="font-semibold text-slate-800 block truncate">Vendor (Owner)</span>
+                <span className="text-slate-500 text-[11px] truncate block">brandalyst@skyarcads.com</span>
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  setEmail("operator@skyarc.in");
+                  setEmail("customer@skyarcads.com");
                   setPassword("ChangeMe123!");
                 }}
-                className="p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-left transition-colors"
+                className="p-2 rounded-lg bg-violet-50 hover:bg-violet-100 border border-violet-200 text-left transition-colors"
               >
-                <span className="font-semibold text-slate-800 block">Field Operator</span>
-                <span className="text-slate-500 text-[11px]">operator@skyarc.in</span>
+                <span className="font-semibold text-primary block truncate">Brand Customer</span>
+                <span className="text-slate-500 text-[11px] truncate block">customer@skyarcads.com</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail("operator@skyarcads.com");
+                  setPassword("ChangeMe123!");
+                }}
+                className="p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-left transition-colors sm:col-span-2"
+              >
+                <span className="font-semibold text-slate-800 block truncate">Field Operator</span>
+                <span className="text-slate-500 text-[11px] truncate block">operator@skyarcads.com</span>
               </button>
             </div>
             <p className="text-[11px] text-slate-400 mt-2 text-center">

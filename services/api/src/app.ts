@@ -25,7 +25,10 @@ import { success } from "./lib/response.js";
 
 export async function buildApp() {
   const env = loadEnv();
-  const fastify = Fastify({ logger: true });
+  const fastify = Fastify({
+    logger: true,
+    bodyLimit: 50 * 1024 * 1024, // 50MB for batch Excel imports and media payloads
+  });
   const storage = createStorageProvider(env);
   const ai = createAIProvider(env);
 

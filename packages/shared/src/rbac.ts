@@ -14,7 +14,7 @@ export interface LocationRecord {
   archivedAt?: Date | null;
 }
 
-/** Map legacy DB/JWT roles to the five MVP roles. */
+/** Map legacy DB/JWT roles to the core MVP roles. */
 export function normalizeUserRole(role: string): UserRole {
   switch (role) {
     case UserRole.SUPERADMIN:
@@ -22,13 +22,13 @@ export function normalizeUserRole(role: string): UserRole {
     case UserRole.MEDIA_PLANNER:
     case UserRole.FIELD_OPERATOR:
     case UserRole.VENDOR:
+    case UserRole.CLIENT_VIEWER:
       return role as UserRole;
     case UserRole.VENDOR_ADMIN:
     case UserRole.VENDOR_OPS:
       return UserRole.VENDOR;
     case UserRole.SALES:
     case UserRole.VIEWER:
-    case UserRole.CLIENT_VIEWER:
       return UserRole.MEDIA_PLANNER;
     default:
       return UserRole.MEDIA_PLANNER;
@@ -57,16 +57,20 @@ export function isVendorRole(role: UserRole | string): boolean {
   return normalizeUserRole(role) === UserRole.VENDOR;
 }
 
-export function isClientUser(_user: Pick<AuthUser, "role">): boolean {
-  return false;
+export function isClientUser(user: Pick<AuthUser, "role">): boolean {
+  return normalizedRole(user) === UserRole.CLIENT_VIEWER;
 }
 
 export function isReadOnly(user: Pick<AuthUser, "role">): boolean {
-  return user.role === UserRole.VIEWER || user.role === UserRole.VENDOR_OPS;
+  return (
+    user.role === UserRole.VIEWER ||
+    user.role === UserRole.VENDOR_OPS ||
+    user.role === UserRole.CLIENT_VIEWER
+  );
 }
 
 export function canAccessCampaigns(user: Pick<AuthUser, "role">): boolean {
-  return isInternalUser(user);
+  return isInternalUser(user) || isClientUser(user);
 }
 
 export function canAccessAdmin(user: Pick<AuthUser, "role">): boolean {
@@ -77,7 +81,10 @@ export function canAccessAdmin(user: Pick<AuthUser, "role">): boolean {
 export function canAccessLocations(user: Pick<AuthUser, "role">): boolean {
   const role = normalizedRole(user);
   return (
-    isInternalUser(user) || role === UserRole.VENDOR || role === UserRole.FIELD_OPERATOR
+    isInternalUser(user) ||
+    role === UserRole.VENDOR ||
+    role === UserRole.FIELD_OPERATOR ||
+    role === UserRole.CLIENT_VIEWER
   );
 }
 
@@ -90,7 +97,7 @@ export function canAccessLocation(user: AuthUser, location: LocationRecord): boo
     return isInternalUser(user);
   }
 
-  if (isInternalUser(user)) {
+  if (isInternalUser(user) || isClientUser(user)) {
     return true;
   }
 
@@ -159,6 +166,9 @@ export function getDefaultLandingPath(role: UserRole | string): string {
     normalized === UserRole.MEDIA_PLANNER
   ) {
     return "/dashboard";
+  }
+  if (normalized === UserRole.CLIENT_VIEWER) {
+    return "/campaigns";
   }
   if (normalized === UserRole.VENDOR || normalized === UserRole.FIELD_OPERATOR) {
     return "/locations";

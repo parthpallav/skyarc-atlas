@@ -59,7 +59,7 @@ export function buildLocationListWhere(
   }
 
   if (isClientUser(user)) {
-    throw forbidden();
+    return base;
   }
 
   return base;

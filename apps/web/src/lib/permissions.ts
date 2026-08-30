@@ -91,6 +91,12 @@ export function isVendorPortalUser(user: StoredUser): boolean {
   return isVendorRole(user.role);
 }
 
-export function roleLabel(role: UserRole): string {
+export function roleLabel(role: UserRole | string): string {
+  if (role === UserRole.CLIENT_VIEWER) return "Brand Customer / Advertiser";
+  if (role === UserRole.SUPERADMIN) return "Superadmin";
+  if (role === UserRole.ADMIN) return "Admin";
+  if (role === UserRole.MEDIA_PLANNER) return "Media Planner";
+  if (role === UserRole.FIELD_OPERATOR) return "Field Operator";
+  if (role === UserRole.VENDOR) return "Vendor / Media Owner";
   return role.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
