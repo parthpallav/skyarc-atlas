@@ -457,19 +457,19 @@ export const importInventoryItemSchema = z.object({
   area: z.string().optional(),
   locationDescription: z.string().optional(),
   mediaType: z.string().default("STATIC_BILLBOARD"),
-  widthFt: z.number().positive().optional(),
-  heightFt: z.number().positive().optional(),
-  sqft: z.number().positive().optional(),
+  widthFt: z.number().nonnegative().optional(),
+  heightFt: z.number().nonnegative().optional(),
+  sqft: z.number().nonnegative().optional(),
   lightingType: z.string().optional(),
   availableFrom: z.string().optional(),
-  cardRateAmount: z.number().positive().optional(),
-  discountedRateAmount: z.number().positive().optional(),
+  cardRateAmount: z.number().nonnegative().optional(),
+  discountedRateAmount: z.number().nonnegative().optional(),
   ratePeriod: z.string().default("monthly"),
 });
 
 export const importInventoryBatchBodySchema = z.object({
   vendorOrgName: z.string().optional(),
-  vendorAdminEmail: z.string().email().optional(),
+  vendorAdminEmail: z.string().email().optional().or(z.literal("")),
   items: z.array(importInventoryItemSchema).min(1).max(500),
 });
 

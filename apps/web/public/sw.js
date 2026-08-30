@@ -37,18 +37,29 @@ self.addEventListener("fetch", (event) => {
   // Only handle GET requests
   if (event.request.method !== "GET") return;
 
-  const url = new URL(event.request.url);
-
-  // Don't intercept API or non-http requests
-  if (url.pathname.startsWith("/api") || url.port === "3001" || !url.protocol.startsWith("http")) {
+  let url;
+  try {
+    url = new URL(event.request.url);
+  } catch {
     return;
   }
 
-  // Network-first for dynamic navigation, fallback to cache
+  // Don't intercept API, non-http, external assets, or dev/HMR requests
+  if (
+    url.pathname.startsWith("/api") ||
+    url.port === "3001" ||
+    !url.protocol.startsWith("http") ||
+    url.origin !== self.location.origin ||
+    url.pathname.includes("_next/webpack-hmr")
+  ) {
+    return;
+  }
+
+  // Network-first for dynamic navigation, fallback to cache or offline response
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        if (response.status === 200) {
+        if (response && response.status === 200) {
           const resClone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, resClone).catch(() => {});
@@ -56,8 +67,14 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       })
-      .catch(() => {
-        return caches.match(event.request);
+      .catch(async () => {
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        return new Response("Offline", {
+          status: 503,
+          statusText: "Service Unavailable",
+          headers: { "Content-Type": "text/plain" },
+        });
       })
   );
 });
