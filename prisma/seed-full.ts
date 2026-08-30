@@ -192,50 +192,87 @@ async function main() {
     },
   });
 
-  // Users
-  const admin = await prisma.user.upsert({
-    where: { email: "admin@skyarc.in" },
-    update: { organizationId: skyarcOrg.id, role: UserRole.ADMIN },
+  const clientOrg = await prisma.organization.upsert({
+    where: { id: "00000000-0000-4000-8000-000000000004" },
+    update: {
+      name: "Balaji Foods & Retail FMCG",
+      type: OrganizationType.CLIENT,
+    },
     create: {
-      email: "admin@skyarc.in",
+      id: "00000000-0000-4000-8000-000000000004",
+      name: "Balaji Foods & Retail FMCG",
+      type: OrganizationType.CLIENT,
+    },
+  });
+
+  // Users across all functional roles
+  const admin = await prisma.user.upsert({
+    where: { email: "admin@skyarcads.com" },
+    update: { organizationId: skyarcOrg.id, role: UserRole.SUPERADMIN },
+    create: {
+      email: "admin@skyarcads.com",
       passwordHash: adminPasswordHash,
       name: "Skyarc Superadmin",
-      role: UserRole.ADMIN,
+      role: UserRole.SUPERADMIN,
       organizationId: skyarcOrg.id,
     },
   });
 
   await prisma.user.upsert({
-    where: { email: "planner@skyarc.in" },
+    where: { email: "planner@skyarcads.com" },
     update: { organizationId: skyarcOrg.id, role: UserRole.MEDIA_PLANNER },
     create: {
-      email: "planner@skyarc.in",
+      email: "planner@skyarcads.com",
       passwordHash: userPasswordHash,
-      name: "Aarav Mehta (Planner)",
+      name: "Aarav Mehta (Media Planner)",
       role: UserRole.MEDIA_PLANNER,
       organizationId: skyarcOrg.id,
     },
   });
 
   await prisma.user.upsert({
-    where: { email: "brandalyst@skyarc.in" },
+    where: { email: "brandalyst@skyarcads.com" },
     update: { organizationId: brandalystOrg.id, role: UserRole.VENDOR },
     create: {
-      email: "brandalyst@skyarc.in",
+      email: "brandalyst@skyarcads.com",
       passwordHash: userPasswordHash,
-      name: "Brandalyst Partner",
+      name: "Brandalyst Media (Vendor)",
       role: UserRole.VENDOR,
       organizationId: brandalystOrg.id,
     },
   });
 
   await prisma.user.upsert({
-    where: { email: "operator@skyarc.in" },
+    where: { email: "apex@skyarcads.com" },
+    update: { organizationId: apexOrg.id, role: UserRole.VENDOR },
+    create: {
+      email: "apex@skyarcads.com",
+      passwordHash: userPasswordHash,
+      name: "Apex Outdoor (Vendor)",
+      role: UserRole.VENDOR,
+      organizationId: apexOrg.id,
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { email: "customer@skyarcads.com" },
+    update: { organizationId: clientOrg.id, role: UserRole.CLIENT_VIEWER },
+    create: {
+      email: "customer@skyarcads.com",
+      passwordHash: userPasswordHash,
+      name: "Pooja Shah (Brand Advertiser)",
+      role: UserRole.CLIENT_VIEWER,
+      organizationId: clientOrg.id,
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { email: "operator@skyarcads.com" },
     update: { organizationId: skyarcOrg.id, role: UserRole.FIELD_OPERATOR },
     create: {
-      email: "operator@skyarc.in",
+      email: "operator@skyarcads.com",
       passwordHash: userPasswordHash,
-      name: "Rohan Dave (Field Ops)",
+      name: "Rohan Dave (Field Operator)",
       role: UserRole.FIELD_OPERATOR,
       organizationId: skyarcOrg.id,
     },
@@ -762,8 +799,13 @@ async function main() {
   }
 
   console.log("\nFull database seed completed successfully:");
-  console.log(`  - Organizations: Skyarc Media, Brandalyst Media Network, Apex Outdoor`);
-  console.log(`  - Users: admin@skyarc.in, planner@skyarc.in, brandalyst@skyarc.in, operator@skyarc.in`);
+  console.log(`  - Organizations: Skyarc Media (Internal), Brandalyst Media Network (Vendor), Apex Outdoor (Vendor), Balaji Foods (Client)`);
+  console.log(`  - Seeded Production Users across all roles:`);
+  console.log(`      • Superadmin:      admin@skyarcads.com`);
+  console.log(`      • Media Planner:   planner@skyarcads.com`);
+  console.log(`      • Vendor (Owner):  brandalyst@skyarcads.com, apex@skyarcads.com`);
+  console.log(`      • Brand Customer:  customer@skyarcads.com`);
+  console.log(`      • Field Operator:  operator@skyarcads.com`);
   console.log(`  - Total Billboard Locations seeded: ${seededSites}`);
   console.log(`  - Campaigns seeded: 2 live campaigns with guided briefs`);
   console.log(`  - Pre-generated Media Plans: 3 fully optimized proposals with allocated sites & PDF export`);

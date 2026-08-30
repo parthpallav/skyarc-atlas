@@ -1,8 +1,21 @@
 import { createApiClient } from "@skyarc/api-client";
 import { UserRole, type UserRole as UserRoleType } from "@skyarc/shared";
 
-// Empty string = same-origin (Vercel rewrites proxy to VPS API over HTTPS).
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+export function getApiBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") {
+      return "http://localhost:3001";
+    }
+    // In production (e.g. atlas.skyarcads.com or Vercel preview), use same-origin relative path
+    // which Next.js rewrites to the VPS backend over HTTP without triggering browser Mixed Content blocks.
+    return "";
+  }
+  return "http://localhost:3001";
+}
 
 export interface StoredUser {
   id: string;
@@ -96,7 +109,7 @@ export function clearTokens() {
 
 export function createWebApiClient() {
   return createApiClient({
-    baseUrl: API_URL,
+    baseUrl: getApiBaseUrl(),
     getAccessToken: () => getStoredToken(),
     getRefreshToken: () => getStoredRefreshToken(),
     onTokenRefreshed: (tokens) => {

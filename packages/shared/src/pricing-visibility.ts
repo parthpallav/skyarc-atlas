@@ -19,7 +19,8 @@ export function canViewClientPricing(user: Pick<AuthUser, "role">): boolean {
   return (
     role === UserRole.SUPERADMIN ||
     role === UserRole.ADMIN ||
-    role === UserRole.MEDIA_PLANNER
+    role === UserRole.MEDIA_PLANNER ||
+    role === UserRole.CLIENT_VIEWER
   );
 }
 
@@ -42,8 +43,14 @@ export function canViewVendorPricing(
   user: Pick<AuthUser, "role" | "organizationId">,
   inventory: InventoryOwnership
 ): boolean {
-  if (canViewClientPricing(user)) return true;
   const role = normalizeUserRole(user.role);
+  if (
+    role === UserRole.SUPERADMIN ||
+    role === UserRole.ADMIN ||
+    role === UserRole.MEDIA_PLANNER
+  ) {
+    return true;
+  }
   if (role !== UserRole.VENDOR) return false;
   return ownsInventory(user, inventory);
 }
