@@ -45,7 +45,7 @@ export default function LoginScreen() {
           source={{ uri: SKYARC_LOGO_WHITE_URL }}
           style={styles.logo}
           resizeMode="contain"
-          accessibilityLabel="SkyArc"
+          accessibilityLabel="Skyarc"
         />
         <Text style={styles.atlasLabel}>Atlas</Text>
         <Text style={styles.tagline}>{SKYARC_BRAND.tagline.toUpperCase()}</Text>

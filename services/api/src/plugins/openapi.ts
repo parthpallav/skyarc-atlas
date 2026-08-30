@@ -8,14 +8,14 @@ export default fp(async (fastify) => {
   const specPath = resolve(process.cwd(), "../../docs/openapi.yaml");
   let spec: Record<string, unknown> = {
     openapi: "3.1.0",
-    info: { title: "SkyArc Atlas API", version: "1.0.0" },
+    info: { title: "Skyarc Atlas API", version: "1.0.0" },
     paths: {},
   };
 
   try {
     const yaml = readFileSync(specPath, "utf-8");
     // Minimal YAML parse for openapi info - full spec served as static
-    spec = { openapi: "3.1.0", info: { title: "SkyArc Atlas API", version: "1.0.0" }, paths: {} };
+    spec = { openapi: "3.1.0", info: { title: "Skyarc Atlas API", version: "1.0.0" }, paths: {} };
     void yaml;
   } catch {
     // spec file may not exist yet during first build

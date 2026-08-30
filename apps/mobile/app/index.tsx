@@ -14,7 +14,7 @@ export default function Index() {
     });
   }, []);
 
-  if (!ready) return <LoadingScreen message="Starting SkyArc Atlas..." />;
+  if (!ready) return <LoadingScreen message="Starting Skyarc Atlas..." />;
   if (!authed) return <Redirect href="/login" />;
   return <Redirect href="/(tabs)/locations" />;
 }

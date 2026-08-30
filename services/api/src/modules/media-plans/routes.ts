@@ -20,7 +20,7 @@ import { prisma } from "../../lib/prisma.js";
 import { success, listMeta } from "../../lib/response.js";
 import { canReadLocations, isReadOnly } from "../../lib/rbac.js";
 import { forbidden, notFound, validationError, AppError } from "../../lib/errors.js";
-import { AIOperation } from "@skyarc/shared";
+import { AIOperation, canViewClientPricing, deriveSkyarcMarginPercent, parseSkyarcLocationCommercial, skyarcRevenueFromRates } from "@skyarc/shared";
 
 function serializeMediaPlan(
   plan: {
@@ -42,11 +42,13 @@ function serializeMediaPlan(
       createdAt: Date;
       updatedAt: Date;
       inventory: {
+        rateCards?: Array<{ amount: unknown }>;
         screen: {
           location: {
             id: string;
             name: string;
             road: string | null;
+            organizationId: string | null;
             attributes?: Array<{ key: string; valueJson: unknown }>;
             scores?: Array<{
               overallScore: number;
@@ -58,7 +60,11 @@ function serializeMediaPlan(
       };
     }>;
   },
-  coverUrls: Map<string, string>
+  coverUrls: Map<string, string>,
+  commercial?: {
+    showPricing: boolean;
+    clientRateByLocation: Map<string, number>;
+  }
 ) {
   const enrichedItems = plan.items.map((item) => {
     const location = item.inventory.screen.location;
@@ -77,6 +83,30 @@ function serializeMediaPlan(
       componentsJson: scoreRow?.componentsJson,
     });
 
+    const vendorRate = Number(item.inventory.rateCards?.[0]?.amount ?? 0);
+    const explicitClientRate = commercial?.clientRateByLocation.get(location.id);
+    let pricing: Record<string, number> | undefined;
+    if (commercial?.showPricing && (vendorRate > 0 || explicitClientRate != null)) {
+      pricing = {};
+      if (vendorRate > 0) {
+        pricing.vendorRate = vendorRate;
+      }
+      if (explicitClientRate != null) {
+        const clientRate = Math.round(explicitClientRate);
+        pricing.clientRate = clientRate;
+        if (vendorRate > 0) {
+          pricing.skyarcRevenue = skyarcRevenueFromRates(vendorRate, clientRate);
+          const implied = deriveSkyarcMarginPercent(vendorRate, clientRate);
+          if (implied != null) {
+            pricing.impliedMarginPercent = implied;
+          }
+        }
+      }
+      if (Object.keys(pricing).length === 0) {
+        pricing = undefined;
+      }
+    }
+
     return {
       id: item.id,
       mediaPlanId: item.mediaPlanId,
@@ -93,6 +123,7 @@ function serializeMediaPlan(
         coverImageUrl: coverUrls.get(location.id) ?? null,
       },
       insights,
+      ...(pricing ? { pricing } : {}),
     };
   });
 
@@ -119,6 +150,7 @@ const mediaPlanInclude = {
     include: {
       inventory: {
         include: {
+          rateCards: { take: 1, orderBy: { effectiveFrom: "desc" as const } },
           screen: {
             include: {
               location: {
@@ -126,6 +158,7 @@ const mediaPlanInclude = {
                   id: true,
                   name: true,
                   road: true,
+                  organizationId: true,
                   attributes: true,
                   scores: { orderBy: { computedAt: "desc" as const }, take: 1 },
                 },
@@ -161,7 +194,16 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
     if (!canReadLocations(request.user)) throw forbidden();
     const query = paginationQuerySchema.parse(request.query);
     const skip = (query.page - 1) * query.limit;
+    const where = query.q
+      ? {
+          OR: [
+            { name: { contains: query.q, mode: "insensitive" as const } },
+            { advertiser: { name: { contains: query.q, mode: "insensitive" as const } } },
+          ],
+        }
+      : {};
     const campaigns = await prisma.campaign.findMany({
+      where,
       skip,
       take: query.limit,
       include: {
@@ -171,7 +213,7 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
       },
       orderBy: { createdAt: "desc" },
     });
-    const total = await prisma.campaign.count();
+    const total = await prisma.campaign.count({ where });
     return success(campaigns, listMeta(query.page, query.limit, total));
   });
 
@@ -222,14 +264,22 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
       advertiserId = advertiser.id;
     }
 
+    const hasStructured = Boolean(
+      body.structuredRequirements && Object.keys(body.structuredRequirements).length > 0
+    );
+
     const campaign = await prisma.campaign.create({
       data: {
         name: body.name,
         advertiserId,
-        ...(body.briefText
+        ...(body.briefText || hasStructured
           ? {
               brief: {
-                create: { sourceText: body.briefText },
+                create: {
+                  sourceText: body.briefText ?? "",
+                  structuredRequirementsJson: (body.structuredRequirements as object) ?? undefined,
+                  parseStatus: hasStructured ? "PARSED" : "PENDING",
+                },
               },
             }
           : {}),
@@ -249,10 +299,23 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
       if (!campaign) throw notFound("Campaign not found");
 
       const body = updateCampaignBriefBodySchema.parse(request.body);
+      const hasStructured = Boolean(
+        body.structuredRequirements && Object.keys(body.structuredRequirements).length > 0
+      );
+
       const brief = await prisma.campaignBrief.upsert({
         where: { campaignId },
-        create: { campaignId, sourceText: body.sourceText, parseStatus: "PENDING" },
-        update: { sourceText: body.sourceText, parseStatus: "PENDING" },
+        create: {
+          campaignId,
+          sourceText: body.sourceText ?? "",
+          structuredRequirementsJson: (body.structuredRequirements as object) ?? undefined,
+          parseStatus: hasStructured ? "PARSED" : "PENDING",
+        },
+        update: {
+          sourceText: body.sourceText ?? undefined,
+          structuredRequirementsJson: (body.structuredRequirements as object) ?? undefined,
+          parseStatus: hasStructured ? "PARSED" : undefined,
+        },
       });
       return success(brief);
     }
@@ -300,12 +363,36 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
 }
 
 export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
+  async function buildCommercialContext(
+    user: { role: import("@skyarc/shared").UserRole },
+    locationIds: string[]
+  ) {
+    if (!canViewClientPricing(user)) return undefined;
+    const locations = await prisma.location.findMany({
+      where: { id: { in: locationIds } },
+      select: { id: true, skyarcCommercialJson: true },
+    });
+    const clientRateByLocation = new Map<string, number>();
+    for (const location of locations) {
+      const skyarcCommercial = parseSkyarcLocationCommercial(location.skyarcCommercialJson);
+      if (skyarcCommercial.clientRateAmount != null) {
+        clientRateByLocation.set(location.id, skyarcCommercial.clientRateAmount);
+      }
+    }
+    return {
+      showPricing: true,
+      clientRateByLocation,
+    };
+  }
+
   async function serializeWithCovers(
-    plan: Parameters<typeof serializeMediaPlan>[0]
+    plan: Parameters<typeof serializeMediaPlan>[0],
+    user: Parameters<typeof buildCommercialContext>[0]
   ) {
     const locationIds = plan.items.map((item) => item.inventory.screen.location.id);
     const covers = await coverUrlsForLocations(env, locationIds);
-    return serializeMediaPlan(plan, covers);
+    const commercial = await buildCommercialContext(user, locationIds);
+    return serializeMediaPlan(plan, covers, commercial);
   }
 
   fastify.post(
@@ -334,7 +421,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       }
 
       return success({
-        plan: await serializeWithCovers(result.plan),
+        plan: await serializeWithCovers(result.plan, request.user),
         totalAllocated: result.totalAllocated,
         diagnostics: result.diagnostics,
       });
@@ -355,7 +442,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       });
       if (!plan) throw notFound("Media plan not found");
 
-      return success(await serializeWithCovers(plan));
+      return success(await serializeWithCovers(plan, request.user));
     }
   );
 
@@ -374,6 +461,81 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
 
       await prisma.mediaPlan.delete({ where: { id: planId } });
       return success({ deleted: true, id: planId });
+    }
+  );
+
+  fastify.post(
+    "/campaigns/:campaignId/media-plans/:planId/export/pdf",
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      if (!canViewClientPricing(request.user)) throw forbidden();
+
+      const campaignId = uuidSchema.parse((request.params as { campaignId: string }).campaignId);
+      const planId = uuidSchema.parse((request.params as { planId: string }).planId);
+
+      const campaign = await prisma.campaign.findUnique({
+        where: { id: campaignId },
+        include: {
+          advertiser: true,
+          brief: true,
+        },
+      });
+      if (!campaign) throw notFound("Campaign not found");
+
+      const plan = await prisma.mediaPlan.findFirst({
+        where: { id: planId, campaignId },
+        include: mediaPlanInclude,
+      });
+      if (!plan) throw notFound("Media plan not found");
+
+      const serialized = await serializeWithCovers(plan, request.user);
+      const briefJson = campaign.brief?.structuredRequirementsJson;
+      const brief =
+        briefJson && typeof briefJson === "object"
+          ? (briefJson as import("../../lib/ai/campaign-brief-parse.js").ParsedCampaignBrief)
+          : null;
+
+      const { buildMediaPlanPdf } = await import("../../lib/media-planning/export-pdf.js");
+      const itemById = new Map(plan.items.map((item) => [item.id, item]));
+      const pdfBuffer = await buildMediaPlanPdf({
+        advertiserName: campaign.advertiser.name,
+        campaignName: campaign.name,
+        planName: plan.name,
+        planStatus: plan.status,
+        planUpdatedAt: plan.updatedAt,
+        generatedAt: new Date(),
+        totalBudget: plan.totalBudget != null ? Number(plan.totalBudget) : null,
+        brief,
+        items: serialized.items.map((item) => {
+          const raw = itemById.get(item.id);
+          return {
+            rank: item.rank,
+            productCode: raw?.inventory.productCode ?? "—",
+            inventoryType: raw?.inventory.inventoryType ?? "DIGITAL",
+            locationName: item.location?.name ?? "—",
+            road: item.location?.road ?? null,
+            screenLabel: raw?.inventory.screen.label ?? null,
+            clientRate: item.pricing?.clientRate ?? null,
+            budgetAllocated: item.budgetAllocated,
+            explanationText: item.explanationText,
+          };
+        }),
+        assumptions: [
+          "Customer-facing prices are set explicitly by Skyarc per location.",
+          brief?.constraints?.length
+            ? `Constraints: ${brief.constraints.join("; ")}`
+            : "Standard Skyarc planning assumptions apply.",
+          serialized.summary
+            ? `Plan covers ${serialized.summary.siteCount} sites with blended visibility score ${Math.round(serialized.summary.avgVisibility)}.`
+            : "Site mix optimized for campaign brief requirements.",
+        ],
+      });
+
+      const safeName = plan.name.replace(/[^a-zA-Z0-9-_]+/g, "-").slice(0, 64);
+      return reply
+        .header("Content-Type", "application/pdf")
+        .header("Content-Disposition", `attachment; filename="${safeName || "media-plan"}.pdf"`)
+        .send(pdfBuffer);
     }
   );
 }

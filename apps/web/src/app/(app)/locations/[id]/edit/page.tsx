@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { SurveyStatus } from "@skyarc/shared";
 import { createWebApiClient } from "@/lib/api";
+import { usePermissions } from "@/hooks/use-permissions";
 import { PageHeader } from "@/components/page-header";
 import { LocationPhotoEditor } from "@/components/location-photo-editor";
 
@@ -18,6 +19,7 @@ export default function LocationEditPage() {
   const id = params.id;
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { canEditLocation } = usePermissions();
 
   const [name, setName] = useState("");
   const [latitude, setLatitude] = useState("");
@@ -42,6 +44,17 @@ export default function LocationEditPage() {
 
   useEffect(() => {
     if (!location) return;
+    const record = {
+      id: String(location.id ?? id),
+      createdByUserId: String(location.createdByUserId ?? ""),
+      organizationId:
+        location.organizationId != null ? String(location.organizationId) : null,
+      archivedAt: location.archivedAt as Date | null | undefined,
+    };
+    if (!canEditLocation(record)) {
+      router.replace(`/locations/${id}`);
+      return;
+    }
     setName(String(location.name ?? ""));
     setLatitude(String(location.latitude ?? ""));
     setLongitude(String(location.longitude ?? ""));
@@ -52,7 +65,7 @@ export default function LocationEditPage() {
     setMountingType(String(location.mountingType ?? ""));
     setMountingNotes(String(location.mountingNotes ?? ""));
     setSurveyStatus(String(location.surveyStatus ?? SurveyStatus.DRAFT));
-  }, [location]);
+  }, [location, canEditLocation, id, router]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {

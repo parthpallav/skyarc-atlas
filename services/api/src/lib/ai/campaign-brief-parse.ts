@@ -91,7 +91,7 @@ export function buildCampaignBriefParsePrompt(briefText: string): {
   user: string;
 } {
   return {
-    system: `You are a senior DOOH media strategist at SkyArc Atlas. Extract structured campaign requirements from client briefs for out-of-home (billboard/hoarding) planning in India.
+    system: `You are a senior DOOH media strategist at Skyarc Atlas. Extract structured campaign requirements from client briefs for out-of-home (billboard/hoarding) planning in India.
 
 Rules:
 - Return ONLY valid JSON matching the schema below. No markdown, no commentary.

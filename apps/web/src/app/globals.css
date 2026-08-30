@@ -3,7 +3,7 @@
 @import "tailwindcss/utilities";
 
 :root {
-  /* SkyArc brand — purple accent, black sidebar, lavender workspace */
+  /* Skyarc brand — purple accent, black sidebar, lavender workspace */
   --skyarc-purple: #a855f7;
   --skyarc-purple-dark: #9333ea;
   --skyarc-purple-light: #c084fc;
@@ -28,14 +28,32 @@
   --sidebar: var(--skyarc-black);
 }
 
+html,
 body {
   background: var(--background);
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  overscroll-behavior-y: contain;
+  min-height: 100%;
+  min-height: -webkit-fill-available;
 }
 
 .safe-top {
   padding-top: env(safe-area-inset-top, 0);
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.safe-left {
+  padding-left: env(safe-area-inset-left, 0);
+}
+
+.safe-right {
+  padding-right: env(safe-area-inset-right, 0);
 }
 
 @layer utilities {

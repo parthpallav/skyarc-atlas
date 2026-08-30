@@ -34,7 +34,7 @@ export function getApiClient() {
 
 export async function login(email: string, password: string) {
   const client = getApiClient();
-  const result = await client.login(email, password, "SkyArc Atlas Mobile");
+  const result = await client.login(email, password, "Skyarc Atlas Mobile");
   await saveTokens(result.data.accessToken, result.data.refreshToken);
   return result.data.user;
 }

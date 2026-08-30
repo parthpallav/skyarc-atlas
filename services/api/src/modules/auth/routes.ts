@@ -1,14 +1,13 @@
-import { createHash, randomBytes } from "node:crypto";
-import type { FastifyInstance } from "fastify";
-import argon2 from "argon2";
 import type { Env } from "@skyarc/config";
-import {
-  loginBodySchema,
-  refreshBodySchema,
-} from "@skyarc/validation";
+import type { FastifyInstance } from "fastify";
+import { createHash, randomBytes } from "node:crypto";
+import argon2 from "argon2";
+import { OrganizationStatus, UserRole, normalizeUserRole } from "@skyarc/shared";
+import { loginBodySchema, refreshBodySchema } from "@skyarc/validation";
 import { prisma } from "../../lib/prisma.js";
 import { success } from "../../lib/response.js";
 import { unauthorized } from "../../lib/errors.js";
+import type { AuthUser } from "../../lib/rbac.js";
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -23,6 +22,29 @@ function parseExpiry(exp: string): number {
   return value * (multipliers[unit] ?? 60);
 }
 
+function authPayload(user: {
+  id: string;
+  role: UserRole;
+  email: string;
+  organizationId: string | null;
+}): AuthUser {
+  return {
+    id: user.id,
+    role: normalizeUserRole(user.role) as UserRole,
+    email: user.email,
+    organizationId: user.organizationId,
+  };
+}
+
+async function assertOrganizationActive(organizationId: string | null): Promise<void> {
+  if (!organizationId) return;
+
+  const org = await prisma.organization.findUnique({ where: { id: organizationId } });
+  if (!org || org.status !== OrganizationStatus.ACTIVE) {
+    throw unauthorized("Organization access suspended");
+  }
+}
+
 export async function authRoutes(fastify: FastifyInstance, env: Env) {
   fastify.post("/auth/login", async (request) => {
     const body = loginBodySchema.parse(request.body);
@@ -32,10 +54,12 @@ export async function authRoutes(fastify: FastifyInstance, env: Env) {
     const valid = await argon2.verify(user.passwordHash, body.password);
     if (!valid) throw unauthorized("Invalid credentials");
 
-    const accessToken = fastify.jwt.sign(
-      { id: user.id, role: user.role, email: user.email },
-      { expiresIn: env.JWT_ACCESS_EXPIRES_IN }
-    );
+    await assertOrganizationActive(user.organizationId);
+
+    const payload = authPayload(user);
+    const accessToken = fastify.jwt.sign(payload, {
+      expiresIn: env.JWT_ACCESS_EXPIRES_IN,
+    });
 
     const refreshToken = randomBytes(48).toString("hex");
     const expiresIn = parseExpiry(env.JWT_REFRESH_EXPIRES_IN);
@@ -57,7 +81,8 @@ export async function authRoutes(fastify: FastifyInstance, env: Env) {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role,
+        role: normalizeUserRole(user.role),
+        organizationId: user.organizationId,
       },
     });
   });
@@ -77,10 +102,11 @@ export async function authRoutes(fastify: FastifyInstance, env: Env) {
     const user = stored.user;
     if (user.deactivatedAt) throw unauthorized("Invalid refresh token");
 
-    const accessToken = fastify.jwt.sign(
-      { id: user.id, role: user.role, email: user.email },
-      { expiresIn: env.JWT_ACCESS_EXPIRES_IN }
-    );
+    await assertOrganizationActive(user.organizationId);
+
+    const accessToken = fastify.jwt.sign(authPayload(user), {
+      expiresIn: env.JWT_ACCESS_EXPIRES_IN,
+    });
 
     return success({
       accessToken,

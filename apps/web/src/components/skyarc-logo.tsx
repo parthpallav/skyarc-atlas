@@ -2,7 +2,7 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { SKYARC_LOGO_WHITE_URL } from "@/lib/brand";
 
-interface SkyArcLogoProps {
+interface SkyarcLogoProps {
   /** Display height in pixels — width scales automatically */
   height?: number;
   className?: string;
@@ -12,20 +12,20 @@ interface SkyArcLogoProps {
   collapsed?: boolean;
 }
 
-export function SkyArcLogo({
+export function SkyarcLogo({
   height = 40,
   className,
   subtitle,
   priority,
   collapsed,
-}: SkyArcLogoProps) {
+}: SkyarcLogoProps) {
   const width = Math.round(height * 3.8);
 
   return (
     <div className={cn("flex flex-col min-w-0", className)}>
       <Image
         src={SKYARC_LOGO_WHITE_URL}
-        alt="SkyArc"
+        alt="Skyarc"
         width={width}
         height={height}
         priority={priority}

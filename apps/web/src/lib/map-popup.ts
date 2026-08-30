@@ -4,6 +4,8 @@ export interface MapLocationPin {
   latitude: number;
   longitude: number;
   road?: string | null;
+  address?: string | null;
+  junction?: string | null;
   coverImageUrl?: string | null;
 }
 

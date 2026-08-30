@@ -7,7 +7,7 @@ import {
 } from "@skyarc/validation";
 import { prisma } from "../../lib/prisma.js";
 import { success } from "../../lib/response.js";
-import { canWriteLocation, isReadOnly } from "../../lib/rbac.js";
+import { canWriteLocation, isReadOnly, canAccessLocation } from "../../lib/rbac.js";
 import { forbidden, notFound } from "../../lib/errors.js";
 
 function serializeScreen(screen: {
@@ -40,6 +40,10 @@ export async function screenRoutes(fastify: FastifyInstance) {
     { preHandler: [fastify.authenticate] },
     async (request) => {
       const locationId = uuidSchema.parse((request.params as { id: string }).id);
+      const location = await prisma.location.findUnique({ where: { id: locationId } });
+      if (!location) throw notFound("Location not found");
+      if (!canAccessLocation(request.user, location)) throw forbidden();
+
       const screens = await prisma.screen.findMany({
         where: { locationId },
         include: { specification: true },
@@ -74,7 +78,7 @@ export async function screenRoutes(fastify: FastifyInstance) {
       const locationId = uuidSchema.parse((request.params as { id: string }).id);
       const location = await prisma.location.findUnique({ where: { id: locationId } });
       if (!location) throw notFound("Location not found");
-      if (!canWriteLocation(request.user, location.createdByUserId) || isReadOnly(request.user)) {
+      if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
         throw forbidden();
       }
       const body = createScreenBodySchema.parse(request.body);
@@ -99,7 +103,7 @@ export async function screenRoutes(fastify: FastifyInstance) {
       include: { location: true },
     });
     if (!screen) throw notFound("Screen not found");
-    if (!canWriteLocation(request.user, screen.location.createdByUserId) || isReadOnly(request.user)) {
+    if (!canWriteLocation(request.user, screen.location) || isReadOnly(request.user)) {
       throw forbidden();
     }
     const body = updateScreenBodySchema.parse(request.body);
@@ -123,7 +127,7 @@ export async function screenRoutes(fastify: FastifyInstance) {
         include: { location: true },
       });
       if (!screen) throw notFound("Screen not found");
-      if (!canWriteLocation(request.user, screen.location.createdByUserId) || isReadOnly(request.user)) {
+      if (!canWriteLocation(request.user, screen.location) || isReadOnly(request.user)) {
         throw forbidden();
       }
       const body = upsertScreenSpecBodySchema.parse(request.body);

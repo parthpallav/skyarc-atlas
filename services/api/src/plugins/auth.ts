@@ -1,7 +1,7 @@
 import fp from "fastify-plugin";
 import fjwt from "@fastify/jwt";
-import type { FastifyReply, FastifyRequest } from "fastify";
 import type { Env } from "@skyarc/config";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { unauthorized } from "../lib/errors.js";
 import type { AuthUser } from "../lib/rbac.js";
 

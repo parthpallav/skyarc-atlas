@@ -2,6 +2,9 @@ import { z } from "zod";
 import {
   AssetKind,
   InventoryStatus,
+  InventoryType,
+  OrganizationStatus,
+  OrganizationType,
   Provenance,
   ScoreStatus,
   SurveyStatus,
@@ -15,7 +18,11 @@ import {
 export const uuidSchema = z.string().uuid();
 export const paginationQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(250).default(20),
+  scope: z.enum(["mine", "discovery", "all"]).optional(),
+  q: z.string().optional(),
+  status: z.string().optional(),
+  type: z.string().optional(),
 });
 
 export const errorDetailSchema = z.object({
@@ -64,9 +71,29 @@ export const userSchema = z.object({
   email: z.string().email(),
   name: z.string(),
   role: z.nativeEnum(UserRole),
+  organizationId: uuidSchema.nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   deactivatedAt: z.string().datetime().nullable(),
+});
+
+export const organizationSchema = z.object({
+  id: uuidSchema,
+  name: z.string(),
+  type: z.nativeEnum(OrganizationType),
+  status: z.nativeEnum(OrganizationStatus),
+  memberCount: z.number().int().nonnegative().optional(),
+  locationCount: z.number().int().nonnegative().optional(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const createOrganizationBodySchema = z.object({
+  name: z.string().min(1).max(200),
+});
+
+export const updateOrganizationStatusBodySchema = z.object({
+  status: z.nativeEnum(OrganizationStatus),
 });
 
 export const createUserBodySchema = z.object({
@@ -74,12 +101,78 @@ export const createUserBodySchema = z.object({
   password: z.string().min(8),
   name: z.string().min(1),
   role: z.nativeEnum(UserRole),
+  organizationId: uuidSchema.optional(),
 });
 
 export const updateUserBodySchema = z.object({
   name: z.string().min(1).optional(),
+  email: z.string().email().optional(),
   role: z.nativeEnum(UserRole).optional(),
   password: z.string().min(8).optional(),
+});
+
+export const requestVendorAvailabilityBodySchema = z.object({
+  campaignId: uuidSchema.optional(),
+  notes: z.string().max(1000).optional(),
+});
+
+export const updateUserMeBodySchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    email: z.string().email().optional(),
+    currentPassword: z.string().min(8).optional(),
+    newPassword: z.string().min(8).optional(),
+  })
+  .refine(
+    (body) => !body.newPassword || Boolean(body.currentPassword),
+    { message: "currentPassword is required when setting newPassword", path: ["currentPassword"] }
+  );
+
+const marginPercentSchema = z.number().min(0).max(99);
+
+export const vendorCommercialTermsSchema = z.object({
+  marginPercent: marginPercentSchema.optional(),
+  defaultRateAmount: z.number().positive().optional(),
+  ratePeriod: z.enum(["daily", "weekly", "monthly"]).optional(),
+  currency: z.string().min(3).max(3).optional(),
+  paymentTermsDays: z.number().int().min(0).max(365).optional(),
+  notes: z.string().max(2000).optional(),
+});
+
+export const organizationCommercialSchema = z.object({
+  skyarcMarginPercent: marginPercentSchema.optional(),
+  defaultMarginPercent: marginPercentSchema.optional(),
+  defaultRateAmount: z.number().positive().optional(),
+  ratePeriod: z.enum(["daily", "weekly", "monthly"]).optional(),
+  currency: z.string().min(3).max(3).optional(),
+  paymentTermsDays: z.number().int().min(0).max(365).optional(),
+  notes: z.string().max(2000).optional(),
+});
+
+export const updateOrganizationCommercialBodySchema = organizationCommercialSchema;
+
+export const updateVendorOrganizationCommercialBodySchema = vendorCommercialTermsSchema
+  .omit({ marginPercent: true })
+  .extend({
+    defaultMarginPercent: marginPercentSchema.optional(),
+  });
+
+export const updateLocationCommercialBodySchema = vendorCommercialTermsSchema;
+
+export const bulkApplyLocationCommercialBodySchema = z.object({
+  locationIds: z.array(uuidSchema).min(1).max(100),
+});
+
+export const updateSkyarcLocationCommercialBodySchema = z.object({
+  clientRateAmount: z.number().positive().optional(),
+  ratePeriod: z.enum(["daily", "weekly", "monthly"]).optional(),
+  currency: z.string().min(3).max(3).optional(),
+  notes: z.string().max(2000).optional(),
+});
+
+export const platformConfigBodySchema = z.object({
+  defaultSkyarcMarginPercent: marginPercentSchema.optional(),
+  currency: z.string().min(3).max(3).optional(),
 });
 
 export const locationSchema = z.object({
@@ -136,10 +229,12 @@ export const createCampaignBodySchema = z.object({
   advertiserId: uuidSchema.optional(),
   advertiserName: z.string().min(1).optional(),
   briefText: z.string().optional(),
+  structuredRequirements: z.record(z.unknown()).optional(),
 });
 
 export const updateCampaignBriefBodySchema = z.object({
-  sourceText: z.string().min(1),
+  sourceText: z.string().optional(),
+  structuredRequirements: z.record(z.unknown()).optional(),
 });
 
 export const optimizeMediaPlanBodySchema = z.object({
@@ -276,6 +371,24 @@ export const upsertScreenSpecBodySchema = z.object({
   mountingHeightM: z.number().optional(),
 });
 
+export const createInventoryBodySchema = z.object({
+  productCode: z.string().min(1).max(64),
+  inventoryType: z.string().min(1).max(64).default(InventoryType.DIGITAL),
+  notes: z.string().max(500).optional(),
+  status: z.nativeEnum(InventoryStatus).default(InventoryStatus.AVAILABLE),
+  staticSpecsJson: z.record(z.unknown()).optional(),
+});
+
+export const updateInventoryBodySchema = createInventoryBodySchema.partial();
+
+export const createRateCardBodySchema = z.object({
+  currency: z.string().min(3).max(3).default("INR"),
+  period: z.string().min(1).max(32),
+  amount: z.number().positive(),
+  effectiveFrom: z.string().datetime().optional(),
+  effectiveTo: z.string().datetime().nullable().optional(),
+});
+
 export const locationAttributeSchema = z.object({
   id: uuidSchema,
   locationId: uuidSchema,
@@ -333,6 +446,35 @@ export const aiAnalysisSchema = z.object({
 export const createAnalysisBodySchema = z.object({
   operation: z.nativeEnum(AIOperation).default(AIOperation.LOCATION_IMAGE_ANALYSIS),
 });
+
+export const importInventoryItemSchema = z.object({
+  name: z.string().min(1),
+  iid: z.string().optional(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  city: z.string().optional(),
+  district: z.string().optional(),
+  area: z.string().optional(),
+  locationDescription: z.string().optional(),
+  mediaType: z.string().default("STATIC_BILLBOARD"),
+  widthFt: z.number().positive().optional(),
+  heightFt: z.number().positive().optional(),
+  sqft: z.number().positive().optional(),
+  lightingType: z.string().optional(),
+  availableFrom: z.string().optional(),
+  cardRateAmount: z.number().positive().optional(),
+  discountedRateAmount: z.number().positive().optional(),
+  ratePeriod: z.string().default("monthly"),
+});
+
+export const importInventoryBatchBodySchema = z.object({
+  vendorOrgName: z.string().optional(),
+  vendorAdminEmail: z.string().email().optional(),
+  items: z.array(importInventoryItemSchema).min(1).max(500),
+});
+
+export type ImportInventoryItem = z.infer<typeof importInventoryItemSchema>;
+export type ImportInventoryBatchBody = z.infer<typeof importInventoryBatchBodySchema>;
 
 export const healthSchema = z.object({
   status: z.literal("ok"),

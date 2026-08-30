@@ -1,48 +1,48 @@
-import { UserRole } from "@skyarc/shared";
+import { UserRole, normalizeUserRole } from "@skyarc/shared";
+import {
+  canAccessLocation,
+  canWriteLocation,
+  isInternalUser,
+  isReadOnly,
+  isVendorUser,
+  type AuthUser,
+  type LocationRecord,
+} from "@skyarc/shared";
 import { forbidden } from "./errors.js";
 
-export interface AuthUser {
-  id: string;
-  role: UserRole;
-  email: string;
-}
+export type { AuthUser, LocationRecord };
 
-const readRoles: UserRole[] = [
+const readRoles: string[] = [
+  UserRole.SUPERADMIN,
   UserRole.ADMIN,
   UserRole.MEDIA_PLANNER,
-  UserRole.SALES,
   UserRole.FIELD_OPERATOR,
+  UserRole.VENDOR,
+  UserRole.SALES,
   UserRole.VIEWER,
+  UserRole.VENDOR_ADMIN,
+  UserRole.VENDOR_OPS,
 ];
 
 export function requireRole(user: AuthUser, allowed: UserRole[]): void {
-  if (!allowed.includes(user.role)) {
+  const normalized = normalizeUserRole(user.role);
+  const allowedNormalized = allowed.map((r) => normalizeUserRole(r));
+  if (!allowedNormalized.includes(normalized)) {
     throw forbidden();
   }
 }
 
 export function canReadLocations(user: AuthUser): boolean {
-  return readRoles.includes(user.role);
+  return readRoles.includes(user.role) || readRoles.includes(normalizeUserRole(user.role));
 }
 
 export function canManageUsers(user: AuthUser): boolean {
-  return user.role === UserRole.ADMIN;
+  const role = normalizeUserRole(user.role);
+  return role === UserRole.SUPERADMIN || role === UserRole.ADMIN;
 }
 
-export function canWriteLocation(
-  user: AuthUser,
-  createdByUserId: string
-): boolean {
-  if (user.role === UserRole.ADMIN) return true;
-  if (user.role === UserRole.FIELD_OPERATOR) {
-    return user.id === createdByUserId;
-  }
-  if (user.role === UserRole.MEDIA_PLANNER || user.role === UserRole.SALES) {
-    return true;
-  }
-  return false;
+export function canManageOrganizations(user: AuthUser): boolean {
+  return canManageUsers(user);
 }
 
-export function isReadOnly(user: AuthUser): boolean {
-  return user.role === UserRole.VIEWER;
-}
+export { canAccessLocation, canWriteLocation, isInternalUser, isReadOnly, isVendorUser };

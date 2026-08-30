@@ -3,10 +3,6 @@
  * Run after db:seed:rajkot (or whenever plans return 0 sites).
  */
 import { PrismaClient, ScoreStatus } from "@prisma/client";
-import {
-  buildScoreComponentsFromFactors,
-  estimateFactorScores,
-} from "../services/api/src/lib/media-planning/insights.js";
 
 const prisma = new PrismaClient();
 
@@ -27,6 +23,71 @@ function estimateScore(sqft: number, lightingType?: string | null): number {
   if (light.includes("front") || light === "fl") score += 4;
 
   return Math.min(92, score);
+}
+
+function clampScore(v: number): number {
+  return Math.max(0, Math.min(100, Math.round(v)));
+}
+
+function estimateFactorScores(input: {
+  sqft: number;
+  lightingType?: string | null;
+  road?: string | null;
+}): Record<string, number> {
+  const { sqft, lightingType, road } = input;
+  let visibility = 55;
+  if (sqft >= 600) visibility += 28;
+  else if (sqft >= 400) visibility += 20;
+  else if (sqft >= 200) visibility += 12;
+  else visibility += 4;
+
+  const light = (lightingType ?? "").toLowerCase();
+  if (light.includes("back") || light === "bl") visibility += 10;
+  else if (light.includes("front") || light === "fl") visibility += 5;
+
+  let approach = 58;
+  const r = (road ?? "").toLowerCase();
+  if (r.includes("ring") || r.includes("150")) approach += 24;
+  else if (r.includes("kalawad") || r.includes("yagnik") || r.includes("main")) approach += 18;
+  else if (r.includes("road") || r.includes("circle")) approach += 10;
+
+  const audience = r.includes("kalawad") || r.includes("yagnik") ? 82 : 70;
+  const brand = r.includes("150") || r.includes("kalawad") ? 78 : 68;
+  const commercial = sqft >= 400 ? 76 : 64;
+  const clutter = 62;
+  const quality = light.includes("back") ? 80 : 68;
+
+  return {
+    visibility: clampScore(visibility),
+    approach_exposure: clampScore(approach),
+    audience_fit: audience,
+    brand_suitability: brand,
+    commercial_fit: commercial,
+    visual_competition: clutter,
+    location_quality: quality,
+    data_confidence: 65,
+  };
+}
+
+const FACTOR_MAP: Record<string, string> = {
+  visibility: "VISIBILITY",
+  audience_fit: "AUDIENCE_FIT",
+  commercial_fit: "COMMERCIAL_FIT",
+  approach_exposure: "APPROACH_EXPOSURE",
+  brand_suitability: "BRAND_SUITABILITY",
+  visual_competition: "VISUAL_COMPETITION",
+  location_quality: "LOCATION_QUALITY",
+  data_confidence: "DATA_CONFIDENCE",
+};
+
+function buildScoreComponentsFromFactors(factorScores: Record<string, number>) {
+  return Object.entries(factorScores).map(([attrKey, score]) => ({
+    factor: FACTOR_MAP[attrKey] ?? attrKey.toUpperCase(),
+    score,
+    confidence: 0.65,
+    status: ScoreStatus.COMPUTED,
+    evidence: ["estimated from site survey attributes"],
+  }));
 }
 
 async function main() {

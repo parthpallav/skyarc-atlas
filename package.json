@@ -11,12 +11,14 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts",
+    "db:seed": "tsx prisma/seed-full.ts",
+    "db:seed:basic": "tsx prisma/seed.ts",
+    "db:seed:full": "tsx prisma/seed-full.ts",
     "db:seed:rajkot": "tsx prisma/seed-rajkot-hoardings.ts",
     "db:seed:campaign": "tsx prisma/seed-demo-campaign.ts",
     "db:seed:media-planning": "tsx prisma/seed-media-planning.ts",
     "db:postgis": "tsx prisma/apply-postgis.ts",
-    "db:setup": "prisma db push && tsx prisma/apply-postgis.ts && tsx prisma/seed.ts",
+    "db:setup": "prisma db push && tsx prisma/apply-postgis.ts && tsx prisma/seed-full.ts",
     "openapi:generate": "pnpm --filter @skyarc/validation run build && pnpm --filter @skyarc/api run openapi:generate"
   },
   "devDependencies": {
