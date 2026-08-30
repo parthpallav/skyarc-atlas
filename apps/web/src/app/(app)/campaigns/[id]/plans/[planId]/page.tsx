@@ -100,7 +100,7 @@ export default function MediaPlanDetailPage() {
   const planId = params.planId;
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { authUser } = usePermissions();
+  const { authUser, isClient } = usePermissions();
   const canExportPdf = authUser ? canViewClientPricing(authUser) : false;
 
   const [viewMode, setViewMode] = useState<"customer" | "internal">("customer");
@@ -248,34 +248,36 @@ export default function MediaPlanDetailPage() {
         }
       />
 
-      {/* View Mode Toggle: Customer Visual Presentation vs Internal Analytics */}
-      <div className="flex items-center justify-between p-1.5 bg-slate-100 rounded-2xl border border-slate-200">
-        <button
-          type="button"
-          onClick={() => setViewMode("customer")}
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
-            viewMode === "customer"
-              ? "bg-white text-primary shadow-xs"
-              : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
-          <Sparkles className="w-4 h-4 text-amber-500" />
-          Customer Presentation Mode (Visual Brand Pitch)
-        </button>
+      {/* View Mode Toggle: Customer Visual Presentation vs Internal Analytics (Internal roles only) */}
+      {!isClient && (
+        <div className="flex items-center justify-between p-1.5 bg-slate-100 rounded-2xl border border-slate-200">
+          <button
+            type="button"
+            onClick={() => setViewMode("customer")}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
+              viewMode === "customer"
+                ? "bg-white text-primary shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            Customer Presentation Mode (Visual Brand Pitch)
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setViewMode("internal")}
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
-            viewMode === "internal"
-              ? "bg-white text-slate-900 shadow-xs"
-              : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
-          <Layers className="w-4 h-4 text-slate-500" />
-          Internal Planner & Scoring Analytics
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => setViewMode("internal")}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
+              viewMode === "internal"
+                ? "bg-white text-slate-900 shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <Layers className="w-4 h-4 text-slate-500" />
+            Internal Planner & Scoring Analytics
+          </button>
+        </div>
+      )}
 
       {exportMutation.isError && (
         <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">

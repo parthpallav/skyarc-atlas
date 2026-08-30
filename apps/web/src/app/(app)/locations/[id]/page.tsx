@@ -32,7 +32,7 @@ export default function LocationDetailPage() {
   const id = params.id;
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { canEditLocation, isVendor, isReadOnly, authUser } = usePermissions();
+  const { canEditLocation, isVendor, isReadOnly, isClient, authUser } = usePermissions();
 
   const { data: location, isLoading } = useQuery({
     queryKey: ["location", id],
@@ -141,8 +141,10 @@ export default function LocationDetailPage() {
   };
   const isOwned = (location.isOwned as boolean | undefined) !== false;
   const canEdit = canEditLocation(locationRecord) && isOwned;
-  const showCommercial = isOwned || !isVendor;
+  // Strictly hide internal vendor commercial panel from brand clients
+  const showCommercial = !isClient && (isOwned || !isVendor);
   const canManageSkyarcPricing = authUser ? canViewClientPricing(authUser) : false;
+  const canEditSkyarcPricing = canManageSkyarcPricing && !isClient && !isReadOnly;
 
   const commercialView = isOwned
     ? (location.commercialView as
@@ -241,7 +243,7 @@ export default function LocationDetailPage() {
       {canManageSkyarcPricing && (
         <LocationSkyarcPricingPanel
           locationId={id}
-          canWrite={canManageSkyarcPricing && !isReadOnly}
+          canWrite={canEditSkyarcPricing}
           skyarcCommercialView={skyarcCommercialView}
         />
       )}

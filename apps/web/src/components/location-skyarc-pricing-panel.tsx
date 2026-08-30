@@ -60,19 +60,21 @@ export function LocationSkyarcPricingPanel({
   return (
     <section className="card-surface p-5 sm:p-6 mb-4 border border-violet-200 bg-violet-50/30">
       <h2 className="font-semibold text-slate-900 mb-1">Customer pricing</h2>
-      <p className="text-sm text-muted mb-4">
-        Set the price shown to advertisers for this site. This is independent of the vendor&apos;s
-        rate card — Skyarc decides what the customer pays.
-      </p>
+      {canWrite && (
+        <p className="text-sm text-muted mb-4">
+          Set the price shown to advertisers for this site. This is independent of the vendor&apos;s
+          rate card — Skyarc decides what the customer pays.
+        </p>
+      )}
 
       {skyarcCommercialView && !canWrite && (
-        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mt-3">
           <div>
-            <dt className="text-muted">Customer rate</dt>
-            <dd className="font-medium text-slate-900">
+            <dt className="text-muted">Standard customer rate</dt>
+            <dd className="font-bold text-lg text-slate-900 mt-1">
               {skyarcCommercialView.clientRateAmount != null
                 ? `${skyarcCommercialView.currency} ${skyarcCommercialView.clientRateAmount.toLocaleString()} / ${skyarcCommercialView.ratePeriod ?? "monthly"}`
-                : "Not set"}
+                : "Pricing on request"}
             </dd>
           </div>
         </dl>

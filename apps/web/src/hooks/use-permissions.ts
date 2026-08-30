@@ -1,4 +1,4 @@
-import { isReadOnly, canViewClientPricing } from "@skyarc/shared";
+import { isReadOnly, canViewClientPricing, isClientUser } from "@skyarc/shared";
 import { useAuth } from "@/hooks/use-auth";
 import {
   canAccessRoute,
@@ -19,6 +19,7 @@ export function usePermissions() {
     isAuthenticated: Boolean(user),
     isReadOnly: authUser ? isReadOnly(authUser) : true,
     isVendor: user ? isVendorPortalUser(user) : false,
+    isClient: authUser ? isClientUser(authUser) : false,
     canViewClientPricing: authUser ? canViewClientPricing(authUser) : false,
     roleLabel: user ? roleLabel(user.role) : "",
     canAccessRoute: (pathname: string) => canAccessRoute(user, pathname),

@@ -67,7 +67,7 @@ function statusColor(status: string) {
 }
 
 export default function LocationsPage() {
-  const { isVendor, isReadOnly, canViewClientPricing } = usePermissions();
+  const { isVendor, isReadOnly, canViewClientPricing, isClient } = usePermissions();
   const queryClient = useQueryClient();
 
   const [scope, setScope] = useState<"mine" | "discovery">("mine");
@@ -479,7 +479,7 @@ export default function LocationsPage() {
 
                     {/* Commercial / Customer Pricing View */}
                     <div className="pt-2 border-t border-violet-100 flex items-center justify-between text-xs">
-                      {canViewClientPricing && loc.skyarcCommercialView?.clientRateAmount ? (
+                      {loc.skyarcCommercialView?.clientRateAmount ? (
                         <div>
                           <span className="text-[10px] text-muted uppercase font-semibold block">
                             Client Rate
@@ -491,7 +491,7 @@ export default function LocationsPage() {
                             </span>
                           </span>
                         </div>
-                      ) : loc.commercialView?.defaultRateAmount ? (
+                      ) : !isClient && loc.commercialView?.defaultRateAmount ? (
                         <div>
                           <span className="text-[10px] text-muted uppercase font-semibold block">
                             Vendor Rate
