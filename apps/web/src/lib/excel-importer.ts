@@ -180,7 +180,7 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
         else if (norm === "long" || norm === "longitude" || norm === "lng") colIndexMap.longitude = cIdx;
         else if (norm === "w" || norm === "width" || norm === "width (ft)" || norm === "w(ft)") colIndexMap.width = cIdx;
         else if (norm === "h" || norm === "height" || norm === "height (ft)" || norm === "h(ft)") colIndexMap.height = cIdx;
-        else if (norm === "size" || norm === "dimension") colIndexMap.size = cIdx;
+        else if (norm.startsWith("size") || norm.startsWith("dimension")) colIndexMap.size = cIdx;
         else if (norm === "sqft" || norm === "sq.ft" || norm === "total sqft" || norm === "area (sqft)") colIndexMap.sqft = cIdx;
         else if (norm === "light" || norm === "lighting" || norm === "illumination") colIndexMap.lighting = cIdx;
         else if (norm === "available from" || norm === "availability") colIndexMap.availableFrom = cIdx;
