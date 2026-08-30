@@ -450,11 +450,11 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
                 inventoryType: item.mediaType,
                 notes: item.locationDescription,
                 staticSpecsJson: {
-                  widthFt: item.widthFt,
-                  heightFt: item.heightFt,
+                  widthFt: item.widthFt ?? null,
+                  heightFt: item.heightFt ?? null,
                   sqft: sqftVal,
-                  lightingType: item.lightingType,
-                  availableFrom: item.availableFrom,
+                  lightingType: item.lightingType ?? null,
+                  availableFrom: item.availableFrom ?? null,
                 },
               },
             });
@@ -467,6 +467,56 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
                 amount: rateAmount,
                 effectiveFrom: new Date(),
                 provenance: "USER_PROVIDED",
+              },
+            });
+          } else {
+            // Screen exists but has no inventory or screen doesn't exist
+            let targetScreenId = screen?.id;
+            if (!targetScreenId) {
+              const newScreen = await prisma.screen.create({
+                data: {
+                  locationId: existingLoc.id,
+                  label: item.iid ?? item.name,
+                  inventoryStatus: "AVAILABLE",
+                  ...(item.widthFt && item.heightFt
+                    ? {
+                        specification: {
+                          create: {
+                            widthMm: feetToMm(item.widthFt),
+                            heightMm: feetToMm(item.heightFt),
+                            aspectRatio: `${item.widthFt}:${item.heightFt}`,
+                          },
+                        },
+                      }
+                    : {}),
+                },
+              });
+              targetScreenId = newScreen.id;
+            }
+
+            await prisma.inventory.create({
+              data: {
+                screenId: targetScreenId,
+                productCode: item.iid ?? `INV-${Math.floor(1000 + Math.random() * 9000)}`,
+                inventoryType: item.mediaType,
+                status: "AVAILABLE",
+                notes: item.locationDescription,
+                staticSpecsJson: {
+                  widthFt: item.widthFt ?? null,
+                  heightFt: item.heightFt ?? null,
+                  sqft: sqftVal,
+                  lightingType: item.lightingType ?? null,
+                  availableFrom: item.availableFrom ?? null,
+                },
+                rateCards: {
+                  create: {
+                    currency: "INR",
+                    period: item.ratePeriod ?? "monthly",
+                    amount: rateAmount,
+                    effectiveFrom: new Date(),
+                    provenance: "USER_PROVIDED",
+                  },
+                },
               },
             });
           }
@@ -487,6 +537,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
               commercialJson: {
                 defaultRateAmount: rateAmount,
                 ratePeriod: item.ratePeriod ?? "monthly",
+                currency: "INR",
               },
               skyarcCommercialJson: {
                 clientRateAmount: Math.round(rateAmount * 1.25),
@@ -527,15 +578,17 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
                 create: {
                   label: item.iid ?? item.name,
                   inventoryStatus: "AVAILABLE",
-                  specification: item.widthFt && item.heightFt
+                  ...(item.widthFt && item.heightFt
                     ? {
-                        create: {
-                          widthMm: feetToMm(item.widthFt),
-                          heightMm: feetToMm(item.heightFt),
-                          aspectRatio: `${item.widthFt}:${item.heightFt}`,
+                        specification: {
+                          create: {
+                            widthMm: feetToMm(item.widthFt),
+                            heightMm: feetToMm(item.heightFt),
+                            aspectRatio: `${item.widthFt}:${item.heightFt}`,
+                          },
                         },
                       }
-                    : undefined,
+                    : {}),
                   inventories: {
                     create: {
                       productCode: item.iid ?? `INV-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -543,11 +596,11 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
                       status: "AVAILABLE",
                       notes: item.locationDescription,
                       staticSpecsJson: {
-                        widthFt: item.widthFt,
-                        heightFt: item.heightFt,
+                        widthFt: item.widthFt ?? null,
+                        heightFt: item.heightFt ?? null,
                         sqft: sqftVal,
-                        lightingType: item.lightingType,
-                        availableFrom: item.availableFrom,
+                        lightingType: item.lightingType ?? null,
+                        availableFrom: item.availableFrom ?? null,
                       },
                       rateCards: {
                         create: {
@@ -583,7 +636,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
                 componentsJson: {
                   source: "excel_batch_import",
                   sqft: sqftVal,
-                  lighting: item.lightingType,
+                  lighting: item.lightingType ?? "unknown",
                 },
                 computedAt: new Date(),
               },

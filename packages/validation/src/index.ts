@@ -449,27 +449,27 @@ export const createAnalysisBodySchema = z.object({
 
 export const importInventoryItemSchema = z.object({
   name: z.string().min(1),
-  iid: z.string().optional(),
+  iid: z.string().nullish().transform((v) => v ?? undefined),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
-  city: z.string().optional(),
-  district: z.string().optional(),
-  area: z.string().optional(),
-  locationDescription: z.string().optional(),
-  mediaType: z.string().default("STATIC_BILLBOARD"),
-  widthFt: z.number().nonnegative().optional(),
-  heightFt: z.number().nonnegative().optional(),
-  sqft: z.number().nonnegative().optional(),
-  lightingType: z.string().optional(),
-  availableFrom: z.string().optional(),
-  cardRateAmount: z.number().nonnegative().optional(),
-  discountedRateAmount: z.number().nonnegative().optional(),
-  ratePeriod: z.string().default("monthly"),
+  city: z.string().nullish().transform((v) => v ?? undefined),
+  district: z.string().nullish().transform((v) => v ?? undefined),
+  area: z.string().nullish().transform((v) => v ?? undefined),
+  locationDescription: z.string().nullish().transform((v) => v ?? undefined),
+  mediaType: z.string().nullish().transform((v) => v ?? "STATIC_BILLBOARD"),
+  widthFt: z.number().nonnegative().nullish().transform((v) => v ?? undefined),
+  heightFt: z.number().nonnegative().nullish().transform((v) => v ?? undefined),
+  sqft: z.number().nonnegative().nullish().transform((v) => v ?? undefined),
+  lightingType: z.string().nullish().transform((v) => v ?? undefined),
+  availableFrom: z.string().nullish().transform((v) => v ?? undefined),
+  cardRateAmount: z.number().nonnegative().nullish().transform((v) => v ?? undefined),
+  discountedRateAmount: z.number().nonnegative().nullish().transform((v) => v ?? undefined),
+  ratePeriod: z.string().nullish().transform((v) => v ?? "monthly"),
 });
 
 export const importInventoryBatchBodySchema = z.object({
-  vendorOrgName: z.string().optional(),
-  vendorAdminEmail: z.string().email().optional().or(z.literal("")),
+  vendorOrgName: z.string().nullish().transform((v) => v ?? undefined),
+  vendorAdminEmail: z.string().email().nullish().or(z.literal("")).transform((v) => (v ? v : undefined)),
   items: z.array(importInventoryItemSchema).min(1).max(500),
 });
 

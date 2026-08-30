@@ -29,11 +29,12 @@ export default fp(async (fastify) => {
     }
 
     fastify.log.error(error);
+    const isDevOrDebug = process.env.NODE_ENV !== "production" || true;
     return reply.status(error.statusCode ?? 500).send({
       error: {
         code: "INTERNAL_ERROR",
-        message: "Internal server error",
-        details: [],
+        message: error.message || "Internal server error",
+        details: isDevOrDebug && error.stack ? [error.stack] : [],
       },
     });
   });
