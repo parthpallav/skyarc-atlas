@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { UserRole } from "@skyarc/shared";
-import type { AuthUser } from "../lib/rbac.js";
+import type { AuthUser } from "@skyarc/shared";
 import {
   buildLocationListWhere,
   canAccessLocation,
@@ -53,8 +53,15 @@ describe("organization scoping", () => {
     });
   });
 
-  it("vendor cannot access another vendor location", () => {
-    expect(canAccessLocation(vendorA, locationB)).toBe(false);
+  it("vendor discovery list excludes own org", () => {
+    expect(buildLocationListWhere(vendorA, "discovery")).toEqual({
+      archivedAt: null,
+      NOT: { organizationId: "org-vendor-a" },
+    });
+  });
+
+  it("vendor can browse other vendor locations", () => {
+    expect(canAccessLocation(vendorA, locationB)).toBe(true);
     expect(canAccessLocation(vendorA, locationA)).toBe(true);
   });
 
@@ -79,13 +86,13 @@ describe("organization scoping", () => {
     expect(organizationIdForNewLocation(vendorA)).toBe("org-vendor-a");
   });
 
-  it("client viewer cannot list locations", () => {
+  it("legacy client viewer maps to media planner list scope", () => {
     const client: AuthUser = {
       id: "client-1",
       email: "client@brand.com",
       role: UserRole.CLIENT_VIEWER,
       organizationId: "org-client",
     };
-    expect(() => buildLocationListWhere(client)).toThrow();
+    expect(buildLocationListWhere(client)).toEqual({ archivedAt: null });
   });
 });

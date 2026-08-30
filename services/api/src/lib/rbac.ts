@@ -1,77 +1,48 @@
-import { UserRole } from "@skyarc/shared";
+import { UserRole, normalizeUserRole } from "@skyarc/shared";
+import {
+  canAccessLocation,
+  canWriteLocation,
+  isInternalUser,
+  isReadOnly,
+  isVendorUser,
+  type AuthUser,
+  type LocationRecord,
+} from "@skyarc/shared";
 import { forbidden } from "./errors.js";
-import type { LocationRecord } from "./org-scope.js";
-import { canAccessLocation, isInternalUser, isVendorUser } from "./org-scope.js";
 
-export interface AuthUser {
-  id: string;
-  role: UserRole;
-  email: string;
-  organizationId: string | null;
-}
+export type { AuthUser, LocationRecord };
 
-const readRoles: UserRole[] = [
+const readRoles: string[] = [
+  UserRole.SUPERADMIN,
   UserRole.ADMIN,
   UserRole.MEDIA_PLANNER,
-  UserRole.SALES,
   UserRole.FIELD_OPERATOR,
+  UserRole.VENDOR,
+  UserRole.SALES,
   UserRole.VIEWER,
   UserRole.VENDOR_ADMIN,
   UserRole.VENDOR_OPS,
 ];
 
 export function requireRole(user: AuthUser, allowed: UserRole[]): void {
-  if (!allowed.includes(user.role)) {
+  const normalized = normalizeUserRole(user.role);
+  const allowedNormalized = allowed.map((r) => normalizeUserRole(r));
+  if (!allowedNormalized.includes(normalized)) {
     throw forbidden();
   }
 }
 
 export function canReadLocations(user: AuthUser): boolean {
-  return readRoles.includes(user.role);
+  return readRoles.includes(user.role) || readRoles.includes(normalizeUserRole(user.role));
 }
 
 export function canManageUsers(user: AuthUser): boolean {
-  return user.role === UserRole.ADMIN;
+  const role = normalizeUserRole(user.role);
+  return role === UserRole.SUPERADMIN || role === UserRole.ADMIN;
 }
 
 export function canManageOrganizations(user: AuthUser): boolean {
-  return user.role === UserRole.ADMIN;
+  return canManageUsers(user);
 }
 
-export function canWriteLocation(user: AuthUser, location: LocationRecord): boolean {
-  if (user.role === UserRole.VIEWER || user.role === UserRole.CLIENT_VIEWER) {
-    return false;
-  }
-
-  if (user.role === UserRole.ADMIN) {
-    return true;
-  }
-
-  if (user.role === UserRole.VENDOR_OPS) {
-    return false;
-  }
-
-  if (isVendorUser(user)) {
-    return canAccessLocation(user, location);
-  }
-
-  if (user.role === UserRole.MEDIA_PLANNER || user.role === UserRole.SALES) {
-    return true;
-  }
-
-  if (user.role === UserRole.FIELD_OPERATOR) {
-    return user.id === location.createdByUserId;
-  }
-
-  return false;
-}
-
-export function isReadOnly(user: AuthUser): boolean {
-  return (
-    user.role === UserRole.VIEWER ||
-    user.role === UserRole.CLIENT_VIEWER ||
-    user.role === UserRole.VENDOR_OPS
-  );
-}
-
-export { isInternalUser, isVendorUser, canAccessLocation };
+export { canAccessLocation, canWriteLocation, isInternalUser, isReadOnly, isVendorUser };

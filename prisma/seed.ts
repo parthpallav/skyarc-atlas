@@ -25,21 +25,46 @@ async function main() {
 
   const skyarcOrg = await prisma.organization.upsert({
     where: { id: "00000000-0000-4000-8000-000000000001" },
-    update: { name: "SkyArc" },
+    update: { name: "Skyarc" },
     create: {
       id: "00000000-0000-4000-8000-000000000001",
-      name: "SkyArc",
+      name: "Skyarc",
       type: OrganizationType.INTERNAL,
     },
   });
 
   const demoVendorOrg = await prisma.organization.upsert({
     where: { id: "00000000-0000-4000-8000-000000000002" },
-    update: { name: "Demo Media Owner" },
+    update: {
+      name: "Demo Media Owner",
+      commercialJson: {
+        skyarcMarginPercent: 18,
+        defaultMarginPercent: 12,
+        currency: "INR",
+        paymentTermsDays: 30,
+      },
+    },
     create: {
       id: "00000000-0000-4000-8000-000000000002",
       name: "Demo Media Owner",
       type: OrganizationType.VENDOR,
+      commercialJson: {
+        skyarcMarginPercent: 18,
+        defaultMarginPercent: 12,
+        currency: "INR",
+        paymentTermsDays: 30,
+      },
+    },
+  });
+
+  await prisma.platformConfig.upsert({
+    where: { id: "default" },
+    update: {
+      data: { defaultSkyarcMarginPercent: 15, currency: "INR" },
+    },
+    create: {
+      id: "default",
+      data: { defaultSkyarcMarginPercent: 15, currency: "INR" },
     },
   });
 
@@ -49,7 +74,7 @@ async function main() {
     create: {
       email: adminEmail,
       passwordHash,
-      name: "SkyArc Admin",
+      name: "Skyarc Admin",
       role: UserRole.ADMIN,
       organizationId: skyarcOrg.id,
     },
@@ -57,12 +82,12 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email: vendorEmail },
-    update: { organizationId: demoVendorOrg.id, role: UserRole.VENDOR_ADMIN },
+    update: { organizationId: demoVendorOrg.id, role: UserRole.VENDOR },
     create: {
       email: vendorEmail,
       passwordHash: vendorPasswordHash,
-      name: "Demo Vendor Admin",
-      role: UserRole.VENDOR_ADMIN,
+      name: "Demo Vendor",
+      role: UserRole.VENDOR,
       organizationId: demoVendorOrg.id,
     },
   });

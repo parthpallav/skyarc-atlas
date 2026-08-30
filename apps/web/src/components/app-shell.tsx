@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { SidebarNav } from "./sidebar";
-import { SkyArcLogo } from "./skyarc-logo";
+import { SkyarcLogo } from "./skyarc-logo";
+import { MobileBottomNav } from "./mobile-bottom-nav";
+import { PwaInstallButton } from "./pwa-install-button";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_COLLAPSED_KEY = "skyarc-sidebar-collapsed";
@@ -34,12 +36,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "hidden md:flex shrink-0 bg-sidebar border-r border-zinc-900 transition-[width] duration-200 ease-in-out flex-col",
+          "hidden md:flex sticky top-0 h-screen h-[100dvh] shrink-0 bg-sidebar border-r border-zinc-900 transition-[width] duration-200 ease-in-out flex-col z-20 overflow-hidden",
           desktopSidebarWidth
         )}
       >
         <SidebarNav
-          className="w-full h-full min-h-screen"
+          className="w-full h-full min-h-0"
           collapsed={mounted && collapsed}
           onToggleCollapse={toggleCollapse}
           showCollapseToggle
@@ -62,7 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       >
         <div className="flex items-center justify-between p-4 border-b border-zinc-800 shrink-0">
-          <SkyArcLogo height={36} subtitle="Atlas" />
+          <SkyarcLogo height={36} subtitle="Atlas" />
           <button
             type="button"
             aria-label="Close menu"
@@ -81,25 +83,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex flex-1 flex-col min-w-0 min-h-screen">
-        <header className="md:hidden sticky top-0 z-30 flex items-center gap-3 border-b border-violet-100 bg-white/95 backdrop-blur px-4 py-3 safe-top shadow-sm shrink-0">
-          <button
-            type="button"
-            aria-label="Open menu"
-            className="p-2 -ml-2 rounded-lg text-slate-700 hover:bg-violet-50"
-            onClick={() => setMobileOpen(true)}
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-          <div className="bg-black rounded-lg px-3 py-1.5">
-            <SkyArcLogo height={26} collapsed />
+        <header className="md:hidden sticky top-0 z-30 flex items-center justify-between border-b border-violet-100 bg-white/95 backdrop-blur px-3 py-2.5 safe-top shadow-xs shrink-0">
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              aria-label="Open menu"
+              className="p-1.5 -ml-1 rounded-lg text-slate-700 hover:bg-violet-50 transition-colors"
+              onClick={() => setMobileOpen(true)}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="bg-black rounded-lg px-2.5 py-1">
+              <SkyarcLogo height={22} collapsed />
+            </div>
           </div>
-          <span className="text-xs font-semibold text-muted uppercase tracking-wider ml-auto">
-            Atlas
-          </span>
+
+          <div className="flex items-center gap-2">
+            <PwaInstallButton />
+            <span className="text-[11px] font-bold text-muted uppercase tracking-wider bg-slate-100 px-2 py-1 rounded-md">
+              Atlas
+            </span>
+          </div>
         </header>
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-x-hidden w-full max-w-[1600px] mx-auto">
+
+        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 overflow-x-hidden w-full max-w-[1600px] mx-auto pb-24 md:pb-8">
           {children}
         </main>
+
+        <MobileBottomNav />
       </div>
     </div>
   );

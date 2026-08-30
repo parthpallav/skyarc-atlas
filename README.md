@@ -1,4 +1,4 @@
-# SkyArc Atlas
+# Skyarc Atlas
 
 Internal DOOH Location Intelligence and AI Media Planning platform.
 
@@ -88,10 +88,15 @@ prisma/          database schema
 docs/            OpenAPI specification
 ```
 
-## Phases
+## Product plan
+
+See **[`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md)** — single source of truth for vision, architecture, RBAC, inventory, commercial terms, PDF export, and unified roadmap.
+
+## Phases (foundation — complete)
 
 1. Backend + OpenAPI (complete)
 2. Mobile field workflow + offline sync (complete)
 3. Web dashboard + map (complete)
 4. AI intelligence + media planning optimizer (complete)
 5. Docker/VPS deployment scaffolding (complete)
+6. Organizations + vendor RBAC (in progress on `feature/organizations-rbac`)

@@ -1,6 +1,6 @@
 import { SKYARC_BRAND } from "@skyarc/shared";
 
-/** SkyArc brand theme — shared with web Tailwind tokens. */
+/** Skyarc brand theme — shared with web Tailwind tokens. */
 export const colors = {
   background: SKYARC_BRAND.surface,
   card: SKYARC_BRAND.card,

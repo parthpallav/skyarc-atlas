@@ -135,6 +135,7 @@ export async function runMediaPlanOptimization(
         include: {
           inventory: {
             include: {
+              rateCards: { take: 1, orderBy: { effectiveFrom: "desc" } },
               screen: {
                 include: {
                   location: {
@@ -142,6 +143,7 @@ export async function runMediaPlanOptimization(
                       id: true,
                       name: true,
                       road: true,
+                      organizationId: true,
                       attributes: true,
                       scores: { orderBy: { computedAt: "desc" }, take: 1 },
                     },

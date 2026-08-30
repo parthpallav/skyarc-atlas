@@ -7,7 +7,7 @@ import {
 } from "@skyarc/validation";
 import { prisma } from "../../lib/prisma.js";
 import { success } from "../../lib/response.js";
-import { canWriteLocation, isReadOnly } from "../../lib/rbac.js";
+import { canWriteLocation, isReadOnly, canAccessLocation } from "../../lib/rbac.js";
 import { forbidden, notFound } from "../../lib/errors.js";
 
 function serializeScreen(screen: {
@@ -40,6 +40,10 @@ export async function screenRoutes(fastify: FastifyInstance) {
     { preHandler: [fastify.authenticate] },
     async (request) => {
       const locationId = uuidSchema.parse((request.params as { id: string }).id);
+      const location = await prisma.location.findUnique({ where: { id: locationId } });
+      if (!location) throw notFound("Location not found");
+      if (!canAccessLocation(request.user, location)) throw forbidden();
+
       const screens = await prisma.screen.findMany({
         where: { locationId },
         include: { specification: true },

@@ -2,7 +2,7 @@ import type { Env } from "@skyarc/config";
 import type { FastifyInstance } from "fastify";
 import { createHash, randomBytes } from "node:crypto";
 import argon2 from "argon2";
-import { OrganizationStatus, UserRole } from "@skyarc/shared";
+import { OrganizationStatus, UserRole, normalizeUserRole } from "@skyarc/shared";
 import { loginBodySchema, refreshBodySchema } from "@skyarc/validation";
 import { prisma } from "../../lib/prisma.js";
 import { success } from "../../lib/response.js";
@@ -30,7 +30,7 @@ function authPayload(user: {
 }): AuthUser {
   return {
     id: user.id,
-    role: user.role,
+    role: normalizeUserRole(user.role) as UserRole,
     email: user.email,
     organizationId: user.organizationId,
   };
@@ -81,7 +81,7 @@ export async function authRoutes(fastify: FastifyInstance, env: Env) {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role,
+        role: normalizeUserRole(user.role),
         organizationId: user.organizationId,
       },
     });

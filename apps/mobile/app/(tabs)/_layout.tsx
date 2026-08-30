@@ -26,7 +26,7 @@ export default function TabsLayout() {
         name="locations/index"
         options={{
           title: "Locations",
-          headerTitle: "SkyArc Atlas",
+          headerTitle: "Skyarc Atlas",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="map-outline" size={size} color={color} />
           ),

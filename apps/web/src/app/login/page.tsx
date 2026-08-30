@@ -1,13 +1,25 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
+import { getDefaultLandingPath, UserRole } from "@skyarc/shared";
 import { SKYARC_BRAND } from "@skyarc/shared";
 import { createWebApiClient, storeTokens, storeUser } from "@/lib/api";
-import { SkyArcLogo } from "@/components/skyarc-logo";
+import { useAuth } from "@/hooks/use-auth";
+import { SkyarcLogo } from "@/components/skyarc-logo";
 
-export default function LoginPage() {
+function parseRole(role: string): (typeof UserRole)[keyof typeof UserRole] {
+  const values = Object.values(UserRole) as string[];
+  if (values.includes(role)) {
+    return role as (typeof UserRole)[keyof typeof UserRole];
+  }
+  return UserRole.VIEWER;
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { setUser } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -23,10 +35,22 @@ export default function LoginPage() {
     setError("");
     try {
       const client = createWebApiClient();
-      const result = await client.login(email, password, "SkyArc Atlas Web");
+      const result = await client.login(email, password, "Skyarc Atlas Web");
       storeTokens(result.data.accessToken, result.data.refreshToken);
-      storeUser(result.data.user);
-      router.push("/dashboard");
+
+      const storedUser = {
+        id: result.data.user.id,
+        email: result.data.user.email,
+        name: result.data.user.name,
+        role: parseRole(result.data.user.role),
+        organizationId: result.data.user.organizationId ?? null,
+      };
+      storeUser(storedUser);
+      setUser(storedUser);
+
+      const next = searchParams.get("next");
+      const landing = getDefaultLandingPath(storedUser.role);
+      router.push(next && next.startsWith("/") ? next : landing);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -36,7 +60,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen min-h-[100dvh] flex">
-      {/* Brand panel — black + official logo */}
       <div className="hidden lg:flex lg:w-1/2 bg-black relative overflow-hidden">
         <div
           className="absolute inset-0 opacity-30"
@@ -45,24 +68,21 @@ export default function LoginPage() {
           }}
         />
         <div className="relative z-10 flex flex-col justify-between p-12 w-full">
-          <SkyArcLogo height={52} subtitle="Find your spotlight." priority />
+          <SkyarcLogo height={52} subtitle="Find your spotlight." priority />
           <div className="max-w-md">
-            <h2 className="text-3xl font-bold leading-tight mb-4 text-white">
-              SkyArc Atlas
-            </h2>
+            <h2 className="text-3xl font-bold leading-tight mb-4 text-white">Skyarc Atlas</h2>
             <p className="text-skyarc-on-dark-muted text-lg leading-relaxed">
-              DOOH location intelligence for Rajkot — survey hoardings, score
-              inventory, and plan media from one platform.
+              DOOH location intelligence — survey hoardings, score inventory, and plan media
+              from one platform.
             </p>
             <p className="mt-6 text-sm font-semibold tracking-widest uppercase text-primary">
               {SKYARC_BRAND.tagline}
             </p>
           </div>
-          <p className="text-xs text-skyarc-on-dark-muted">© SkyArc Ads</p>
+          <p className="text-xs text-skyarc-on-dark-muted">© Skyarc Ads</p>
         </div>
       </div>
 
-      {/* Form */}
       <div className="flex flex-1 items-center justify-center p-6 sm:p-10 bg-skyarc-surface">
         <form
           onSubmit={handleSubmit}
@@ -70,7 +90,7 @@ export default function LoginPage() {
         >
           <div className="lg:hidden mb-2 flex justify-center">
             <div className="bg-black rounded-xl px-4 py-3 inline-flex">
-              <SkyArcLogo height={40} subtitle="Atlas" />
+              <SkyarcLogo height={40} subtitle="Atlas" />
             </div>
           </div>
           <div className="hidden lg:block">
@@ -111,8 +131,71 @@ export default function LoginPage() {
           >
             {loading ? "Signing in..." : "Sign in"}
           </button>
+
+          <div className="pt-3 border-t border-slate-100">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+              Quick demo logins:
+            </p>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail("admin@skyarc.in");
+                  setPassword("ChangeMe123!");
+                }}
+                className="p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-left transition-colors"
+              >
+                <span className="font-semibold text-slate-800 block">Superadmin</span>
+                <span className="text-slate-500 text-[11px]">admin@skyarc.in</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail("planner@skyarc.in");
+                  setPassword("ChangeMe123!");
+                }}
+                className="p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-left transition-colors"
+              >
+                <span className="font-semibold text-slate-800 block">Media Planner</span>
+                <span className="text-slate-500 text-[11px]">planner@skyarc.in</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail("brandalyst@skyarc.in");
+                  setPassword("ChangeMe123!");
+                }}
+                className="p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-left transition-colors"
+              >
+                <span className="font-semibold text-slate-800 block">Vendor (Brandalyst)</span>
+                <span className="text-slate-500 text-[11px]">brandalyst@skyarc.in</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail("operator@skyarc.in");
+                  setPassword("ChangeMe123!");
+                }}
+                className="p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-left transition-colors"
+              >
+                <span className="font-semibold text-slate-800 block">Field Operator</span>
+                <span className="text-slate-500 text-[11px]">operator@skyarc.in</span>
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2 text-center">
+              Password for all demo accounts: <code className="text-slate-600 font-mono">ChangeMe123!</code>
+            </p>
+          </div>
         </form>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-skyarc-surface" />}>
+      <LoginForm />
+    </Suspense>
   );
 }

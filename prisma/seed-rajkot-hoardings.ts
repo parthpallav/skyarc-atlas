@@ -11,13 +11,26 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { PrismaClient, ScoreStatus } from "@prisma/client";
-import {
-  AssetKind,
-  PhotoView,
-  buildAssetKey,
-  slugifyLocationFolder,
-} from "@skyarc/shared";
+import { PrismaClient, ScoreStatus, AssetKind, PhotoView } from "@prisma/client";
+
+function slugifyLocationFolder(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+}
+
+function buildAssetKey(
+  locationId: string,
+  locationName: string,
+  kind: string,
+  ext = "jpg"
+): string {
+  const folder = slugifyLocationFolder(locationName);
+  const ts = Date.now();
+  return `locations/${folder}-${locationId.slice(0, 8)}/${kind.toLowerCase()}-${ts}.${ext}`;
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -108,7 +121,7 @@ async function fetchEsriSatellite(lat: number, lng: number): Promise<Buffer | nu
     `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export` +
     `?bbox=${bbox}&bboxSR=4326&imageSR=4326&size=800,600&format=png&f=image`;
   const res = await fetch(url, {
-    headers: { "User-Agent": "SkyArcAtlas/1.0 (rajkot-seed)" },
+    headers: { "User-Agent": "SkyarcAtlas/1.0 (rajkot-seed)" },
   });
   if (!res.ok) return null;
   const buf = Buffer.from(await res.arrayBuffer());
@@ -122,7 +135,7 @@ async function fetchOsmStaticMap(lat: number, lng: number): Promise<Buffer | nul
       `?center=${lat},${lng}&zoom=17&size=800x600` +
       `&markers=${lat},${lng},red`;
     const res = await fetch(url, {
-      headers: { "User-Agent": "SkyArcAtlas/1.0 (rajkot-seed)" },
+      headers: { "User-Agent": "SkyarcAtlas/1.0 (rajkot-seed)" },
     });
     if (!res.ok) return null;
     const buf = Buffer.from(await res.arrayBuffer());

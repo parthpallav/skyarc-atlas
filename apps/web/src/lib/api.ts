@@ -1,4 +1,5 @@
 import { createApiClient } from "@skyarc/api-client";
+import { UserRole, type UserRole as UserRoleType } from "@skyarc/shared";
 
 // Empty string = same-origin (Vercel rewrites proxy to VPS API over HTTPS).
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -7,12 +8,18 @@ export interface StoredUser {
   id: string;
   email: string;
   name: string;
-  role: string;
+  role: UserRoleType;
+  organizationId: string | null;
 }
 
 export function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("accessToken");
+}
+
+export function getStoredRefreshToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("refreshToken");
 }
 
 export function storeTokens(access: string, refresh: string) {
@@ -24,12 +31,36 @@ export function storeUser(user: StoredUser) {
   localStorage.setItem("user", JSON.stringify(user));
 }
 
+function parseRole(role: string | undefined): UserRoleType {
+  const values = Object.values(UserRole) as string[];
+  if (role && values.includes(role)) {
+    return role as UserRoleType;
+  }
+  return UserRole.VIEWER;
+}
+
+export function isTokenExpired(token: string | null): boolean {
+  if (!token) return true;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1] ?? "")) as { exp?: number };
+    if (!payload.exp) return false;
+    return Date.now() >= payload.exp * 1000 - 10000; // 10s buffer
+  } catch {
+    return true;
+  }
+}
+
 export function getStoredUser(): StoredUser | null {
   if (typeof window === "undefined") return null;
   const raw = localStorage.getItem("user");
   if (raw) {
     try {
-      return JSON.parse(raw) as StoredUser;
+      const parsed = JSON.parse(raw) as StoredUser;
+      return {
+        ...parsed,
+        role: parseRole(parsed.role),
+        organizationId: parsed.organizationId ?? null,
+      };
     } catch {
       /* fall through */
     }
@@ -42,13 +73,15 @@ export function getStoredUser(): StoredUser | null {
       email?: string;
       name?: string;
       role?: string;
+      organizationId?: string | null;
     };
     if (!payload.email) return null;
     return {
       id: payload.id ?? "",
       email: payload.email,
       name: payload.name ?? payload.email.split("@")[0] ?? "User",
-      role: payload.role ?? "USER",
+      role: parseRole(payload.role),
+      organizationId: payload.organizationId ?? null,
     };
   } catch {
     return null;
@@ -65,6 +98,16 @@ export function createWebApiClient() {
   return createApiClient({
     baseUrl: API_URL,
     getAccessToken: () => getStoredToken(),
+    getRefreshToken: () => getStoredRefreshToken(),
+    onTokenRefreshed: (tokens) => {
+      storeTokens(tokens.accessToken, tokens.refreshToken);
+    },
+    onUnauthorized: () => {
+      clearTokens();
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+      }
+    },
   });
 }
 

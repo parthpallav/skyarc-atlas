@@ -1,6 +1,6 @@
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
-const APP_NAME = "SkyArc Atlas";
+const APP_NAME = "Skyarc Atlas";
 const SLUG = "skyarc-atlas";
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
@@ -23,9 +23,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     bundleIdentifier: "in.skyarc.atlas",
     infoPlist: {
       NSCameraUsageDescription:
-        "SkyArc Atlas captures location survey photos and videos.",
+        "Skyarc Atlas captures location survey photos and videos.",
       NSLocationWhenInUseUsageDescription:
-        "SkyArc Atlas records GPS coordinates for billboard locations.",
+        "Skyarc Atlas records GPS coordinates for billboard locations.",
     },
   },
   android: {
@@ -43,14 +43,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "expo-camera",
       {
         cameraPermission:
-          "Allow SkyArc Atlas to capture location survey photos and videos.",
+          "Allow Skyarc Atlas to capture location survey photos and videos.",
       },
     ],
     [
       "expo-location",
       {
         locationAlwaysAndWhenInUsePermission:
-          "Allow SkyArc Atlas to capture GPS for billboard locations.",
+          "Allow Skyarc Atlas to capture GPS for billboard locations.",
       },
     ],
     "expo-sqlite",

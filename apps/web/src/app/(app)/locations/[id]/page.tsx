@@ -5,8 +5,16 @@ import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, MapPin, Pencil, Trash2 } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
+import { usePermissions } from "@/hooks/use-permissions";
 import { PageHeader } from "@/components/page-header";
 import { ImageGallery } from "@/components/image-gallery";
+import { LocationInventoryPanel } from "@/components/location-inventory-panel";
+import { LocationCommercialPanel } from "@/components/location-commercial-panel";
+import { LocationSkyarcPricingPanel } from "@/components/location-skyarc-pricing-panel";
+import { canViewClientPricing } from "@skyarc/shared";
+import { trackEntityView } from "@/lib/clarity-telemetry";
+import { useEffect } from "react";
+import { LocationDetailSkeleton } from "@/components/ui/skeleton";
 
 interface AssetRow {
   id: string;
@@ -24,6 +32,7 @@ export default function LocationDetailPage() {
   const id = params.id;
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { canEditLocation, isVendor, isReadOnly, authUser } = usePermissions();
 
   const { data: location, isLoading } = useQuery({
     queryKey: ["location", id],
@@ -33,6 +42,17 @@ export default function LocationDetailPage() {
       return result.data as Record<string, unknown> & { coverImageUrl?: string };
     },
   });
+
+  useEffect(() => {
+    if (location) {
+      trackEntityView("location", {
+        id: String(location.id ?? id),
+        name: String(location.name ?? ""),
+        road: location.road ? String(location.road) : undefined,
+        surveyStatus: location.surveyStatus ? String(location.surveyStatus) : undefined,
+      });
+    }
+  }, [location, id]);
 
   const { data: assets } = useQuery({
     queryKey: ["location-assets", id],
@@ -53,6 +73,7 @@ export default function LocationDetailPage() {
     },
   });
 
+
   const deleteMutation = useMutation({
     mutationFn: async () => {
       const client = createWebApiClient();
@@ -66,13 +87,7 @@ export default function LocationDetailPage() {
   });
 
   if (isLoading) {
-    return (
-      <div className="space-y-4 max-w-4xl">
-        <div className="h-8 w-48 bg-slate-200 rounded animate-pulse" />
-        <div className="h-56 card-surface animate-pulse bg-slate-50" />
-        <div className="h-32 card-surface animate-pulse bg-slate-50" />
-      </div>
-    );
+    return <LocationDetailSkeleton />;
   }
 
   if (!location) {
@@ -117,6 +132,43 @@ export default function LocationDetailPage() {
           ? "text-skyarc-warning"
           : "text-skyarc-danger";
 
+  const locationRecord = {
+    id: String(location.id ?? id),
+    createdByUserId: String(location.createdByUserId ?? ""),
+    organizationId:
+      location.organizationId != null ? String(location.organizationId) : null,
+    archivedAt: location.archivedAt as Date | null | undefined,
+  };
+  const isOwned = (location.isOwned as boolean | undefined) !== false;
+  const canEdit = canEditLocation(locationRecord) && isOwned;
+  const showCommercial = isOwned || !isVendor;
+  const canManageSkyarcPricing = authUser ? canViewClientPricing(authUser) : false;
+
+  const commercialView = isOwned
+    ? (location.commercialView as
+        | {
+            marginPercent: number | null;
+            defaultRateAmount: number | null;
+            ratePeriod: string | null;
+            currency: string;
+            paymentTermsDays: number | null;
+            notes: string | null;
+            usesOrgDefaultMargin: boolean;
+          }
+        | undefined)
+    : undefined;
+
+  const skyarcCommercialView = canManageSkyarcPricing
+    ? (location.skyarcCommercialView as
+        | {
+            clientRateAmount: number | null;
+            ratePeriod: string | null;
+            currency: string;
+            notes: string | null;
+          }
+        | undefined)
+    : undefined;
+
   return (
     <div className="max-w-4xl mx-auto w-full">
       <Link
@@ -132,31 +184,35 @@ export default function LocationDetailPage() {
         description={`${Number(location.latitude).toFixed(5)}, ${Number(location.longitude).toFixed(5)}`}
         action={
           <div className="flex flex-wrap gap-2">
-            <Link href={`/locations/${id}/edit`} className="btn-primary gap-2">
-              <Pencil className="w-4 h-4" />
-              Edit
-            </Link>
+            {canEdit && (
+              <Link href={`/locations/${id}/edit`} className="btn-primary gap-2">
+                <Pencil className="w-4 h-4" />
+                Edit
+              </Link>
+            )}
             <Link href="/map" className="btn-secondary gap-2">
               <MapPin className="w-4 h-4" />
               View on map
             </Link>
-            <button
-              type="button"
-              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 rounded-lg transition-colors"
-              disabled={deleteMutation.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Delete "${String(location.name)}"? This removes it from the map and lists.`
-                  )
-                ) {
-                  deleteMutation.mutate();
-                }
-              }}
-            >
-              <Trash2 className="w-4 h-4" />
-              {deleteMutation.isPending ? "Deleting…" : "Delete"}
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 rounded-lg transition-colors"
+                disabled={deleteMutation.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Delete "${String(location.name)}"? This removes it from the map and lists.`
+                    )
+                  ) {
+                    deleteMutation.mutate();
+                  }
+                }}
+              >
+                <Trash2 className="w-4 h-4" />
+                {deleteMutation.isPending ? "Deleting…" : "Delete"}
+              </button>
+            )}
           </div>
         }
       />
@@ -173,6 +229,24 @@ export default function LocationDetailPage() {
         <h2 className="font-semibold text-slate-900 mb-4">Site photos</h2>
         <ImageGallery images={galleryImages} altPrefix={String(location.name)} />
       </section>
+
+      {showCommercial && (
+        <LocationCommercialPanel
+          locationId={id}
+          canWrite={canEdit}
+          commercialView={commercialView}
+        />
+      )}
+
+      {canManageSkyarcPricing && (
+        <LocationSkyarcPricingPanel
+          locationId={id}
+          canWrite={canManageSkyarcPricing && !isReadOnly}
+          skyarcCommercialView={skyarcCommercialView}
+        />
+      )}
+
+      {isOwned && <LocationInventoryPanel locationId={id} canWrite={canEdit} />}
 
       <section className="card-surface p-5 sm:p-6 mb-4">
         <h2 className="font-semibold text-slate-900 mb-4">Location intelligence</h2>

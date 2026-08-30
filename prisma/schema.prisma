@@ -8,10 +8,12 @@ datasource db {
 }
 
 enum UserRole {
+  SUPERADMIN
   ADMIN
   MEDIA_PLANNER
-  SALES
   FIELD_OPERATOR
+  VENDOR
+  SALES
   VIEWER
   VENDOR_ADMIN
   VENDOR_OPS
@@ -133,17 +135,25 @@ model User {
 }
 
 model Organization {
-  id        String             @id @default(uuid()) @db.Uuid
-  name      String
-  type      OrganizationType
-  status    OrganizationStatus @default(ACTIVE)
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
+  id             String             @id @default(uuid()) @db.Uuid
+  name           String
+  type           OrganizationType
+  status         OrganizationStatus @default(ACTIVE)
+  commercialJson Json               @default("{}")
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   members   User[]
   locations Location[]
 
   @@index([type, status])
+}
+
+model PlatformConfig {
+  id        String   @id @default("default")
+  data      Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model RefreshToken {
@@ -178,6 +188,8 @@ model Location {
   surveyStatus    SurveyStatus @default(DRAFT)
   archivedAt      DateTime?
   organizationId  String?      @db.Uuid
+  commercialJson  Json         @default("{}")
+  skyarcCommercialJson Json    @default("{}")
   createdByUserId String       @db.Uuid
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -405,13 +417,15 @@ model CampaignBrief {
 }
 
 model Inventory {
-  id           String          @id @default(uuid()) @db.Uuid
-  screenId     String          @db.Uuid
-  productCode  String
-  notes        String?
-  status       InventoryStatus @default(UNKNOWN)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id             String          @id @default(uuid()) @db.Uuid
+  screenId       String          @db.Uuid
+  inventoryType  String          @default("DIGITAL")
+  productCode    String
+  notes          String?
+  status         InventoryStatus @default(UNKNOWN)
+  staticSpecsJson Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
   screen        Screen          @relation(fields: [screenId], references: [id], onDelete: Cascade)
   rateCards     RateCard[]

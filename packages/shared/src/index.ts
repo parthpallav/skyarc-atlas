@@ -1,14 +1,4 @@
-export const UserRole = {
-  ADMIN: "ADMIN",
-  MEDIA_PLANNER: "MEDIA_PLANNER",
-  SALES: "SALES",
-  FIELD_OPERATOR: "FIELD_OPERATOR",
-  VIEWER: "VIEWER",
-  VENDOR_ADMIN: "VENDOR_ADMIN",
-  VENDOR_OPS: "VENDOR_OPS",
-  CLIENT_VIEWER: "CLIENT_VIEWER",
-} as const;
-export type UserRole = (typeof UserRole)[keyof typeof UserRole];
+export { UserRole } from "./user-role.js";
 
 export const OrganizationType = {
   INTERNAL: "INTERNAL",
@@ -68,6 +58,62 @@ export const InventoryStatus = {
   UNKNOWN: "UNKNOWN",
 } as const;
 export type InventoryStatus = (typeof InventoryStatus)[keyof typeof InventoryStatus];
+
+export const InventoryType = {
+  DIGITAL: "DIGITAL",
+  STATIC: "STATIC",
+  DIGITAL_BILLBOARD: "DIGITAL_BILLBOARD",
+  STATIC_BILLBOARD: "STATIC_BILLBOARD",
+  UNIPOLE: "UNIPOLE",
+  GANTRY: "GANTRY",
+  BUS_SHELTER: "BUS_SHELTER",
+  KIOSK: "KIOSK",
+  STANDEE: "STANDEE",
+  DIGITAL_TV: "DIGITAL_TV",
+  TRANSIT_BUS: "TRANSIT_BUS",
+  TRANSIT_AUTO: "TRANSIT_AUTO",
+  TRANSIT_METRO: "TRANSIT_METRO",
+  MALL_MEDIA: "MALL_MEDIA",
+  AIRPORT_MEDIA: "AIRPORT_MEDIA",
+  OTHER: "OTHER",
+} as const;
+export type InventoryType = (typeof InventoryType)[keyof typeof InventoryType] | string;
+
+export const INVENTORY_TYPE_LABELS: Record<string, string> = {
+  DIGITAL: "Digital Screen",
+  STATIC: "Static Hoarding",
+  DIGITAL_BILLBOARD: "Digital Billboard / LED",
+  STATIC_BILLBOARD: "Static Billboard / Hoarding",
+  UNIPOLE: "Unipole",
+  GANTRY: "Gantry / Overbridge",
+  BUS_SHELTER: "Bus Queue Shelter (BQS)",
+  KIOSK: "Kiosk / Interactive Totem",
+  STANDEE: "Standee",
+  DIGITAL_TV: "Indoor TV / Lift Screen",
+  TRANSIT_BUS: "Bus Wrap",
+  TRANSIT_AUTO: "Auto / Cab Wrap",
+  TRANSIT_METRO: "Metro / Train Media",
+  MALL_MEDIA: "Mall Media / Atrium",
+  AIRPORT_MEDIA: "Airport Media",
+  OTHER: "Other / Custom",
+};
+
+export function formatInventoryType(type?: string | null): string {
+  if (!type) return "Digital";
+  if (INVENTORY_TYPE_LABELS[type]) return INVENTORY_TYPE_LABELS[type];
+  return type
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export const FieldState = {
+  SET: "SET",
+  NOT_AVAILABLE: "NOT_AVAILABLE",
+  NOT_APPLICABLE: "NOT_APPLICABLE",
+  UNKNOWN: "UNKNOWN",
+} as const;
+export type FieldState = (typeof FieldState)[keyof typeof FieldState];
 
 export const ScoreStatus = {
   INCOMPLETE: "INCOMPLETE",
@@ -273,7 +319,7 @@ export function buildAssetKey(input: BuildAssetKeyInput): string {
   return `locations/${locationFolder}/views/${viewFile}.${ext}`;
 }
 
-/** SkyArc brand palette — from official logo assets (purple + black). */
+/** Skyarc brand palette — from official logo assets (purple + black). */
 export const SKYARC_BRAND = {
   purple: "#A855F7",
   purpleDark: "#9333EA",
@@ -304,3 +350,57 @@ export {
   scoreBand,
   type ClientFactorMeta,
 } from "./scoring-display.js";
+export {
+  type AuthUser,
+  type LocationRecord,
+  normalizeUserRole,
+  normalizedRole,
+  isInternalUser,
+  isVendorUser,
+  isVendorRole,
+  isClientUser,
+  isReadOnly,
+  canAccessCampaigns,
+  canAccessAdmin,
+  canAccessLocations,
+  canAccessOrganizationPage,
+  canAccessLocation,
+  canWriteLocation,
+  organizationIdForNewLocation,
+  getDefaultLandingPath,
+} from "./rbac.js";
+export {
+  isSuperAdmin,
+  isAdminRole,
+  canViewClientPricing,
+  canViewSkyarcCommercial,
+  canViewVendorPricing,
+  canRequestPricing,
+  ownsInventory,
+  sanitizeOrganizationCommercialForUser,
+  sanitizeOrgCommercialViewForUser,
+  sanitizeLocationCommercialViewForUser,
+  maybeVendorRate,
+  type InventoryOwnership,
+} from "./pricing-visibility.js";
+export {
+  DEFAULT_SKYARC_MARGIN_PERCENT,
+  DEFAULT_CURRENCY,
+  DEFAULT_PLATFORM_CONFIG,
+  type OrganizationCommercial,
+  type LocationCommercial,
+  type SkyarcLocationCommercial,
+  type EffectiveSkyarcLocationCommercial,
+  type EffectiveLocationCommercial,
+  type PlatformConfigData,
+  parseOrganizationCommercial,
+  parseLocationCommercial,
+  parseSkyarcLocationCommercial,
+  parsePlatformConfig,
+  resolveMarginPercent,
+  resolveEffectiveLocationCommercial,
+  resolveEffectiveSkyarcLocationCommercial,
+  clientRateFromVendorRate,
+  skyarcRevenueFromRates,
+  deriveSkyarcMarginPercent,
+} from "./commercial.js";

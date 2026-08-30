@@ -2,7 +2,22 @@
  * Seeds a demo campaign with a detailed FMCG brief for Rajkot DOOH planning.
  */
 import { PrismaClient } from "@prisma/client";
-import { SAMPLE_CAMPAIGN, SAMPLE_CAMPAIGN_BRIEF } from "../packages/shared/src/campaign-brief.js";
+
+const SAMPLE_CAMPAIGN = {
+  name: "Summer Beverage Launch 2026",
+  advertiserName: "Brandalyst Foods",
+};
+
+const SAMPLE_CAMPAIGN_BRIEF = `# Campaign Brief: Summer Beverage Launch 2026
+**Advertiser**: Brandalyst Foods
+**Industry**: FMCG / Beverages
+**Objective**: Drive high brand awareness, footfall, and retail product recall for the new iced beverage line across prime Rajkot corridors.
+**Target Audience**: Youth, college students (18-24), working professionals, families, and high-footfall commuter corridors.
+**Target Budget**: ₹5,00,000 (INR 5 Lakh)
+**Flight Duration**: 30 Days
+**Target Corridors**: Kalawad Road, 150 Feet Ring Road, Yagnik Road, University Road, Crystal Mall Area, Kotecha Chowk.
+**Preferred Formats**: Digital Billboards (DOOH), Unipoles, Backlit Hoardings.
+**Key Requirements**: High traffic visibility, night illumination, unobstructed approach view.`;
 
 const prisma = new PrismaClient();
 

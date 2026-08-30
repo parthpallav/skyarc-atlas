@@ -1,6 +1,6 @@
 import type { StyleSpecification } from "maplibre-gl";
 
-/** Rajkot, Gujarat — default map focus for SkyArc field operations. */
+/** Rajkot, Gujarat — default map focus for Skyarc field operations. */
 export const RAJKOT_CENTER: [number, number] = [70.8022, 22.3039];
 export const RAJKOT_DEFAULT_ZOOM = 13;
 

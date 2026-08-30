@@ -1,5 +1,7 @@
 # Feature 1: Organizations & RBAC
 
+> **Master plan:** [`docs/PRODUCT_PLAN.md`](../PRODUCT_PLAN.md)
+
 Branch: `feature/organizations-rbac`
 
 ## What this adds
@@ -9,7 +11,7 @@ Branch: `feature/organizations-rbac`
 - Users linked to an organization; locations scoped to vendor org
 - JWT includes `organizationId`
 - Vendor users only see/edit their org's locations
-- SkyArc internal roles (Admin, Planner, Sales, Viewer) see all locations
+- Skyarc internal roles (Admin, Planner, Sales, Viewer) see all locations
 - Admin APIs: list/create vendors, suspend/blacklist org
 - Block login for suspended/blacklisted vendor orgs
 
@@ -20,7 +22,7 @@ git checkout feature/organizations-rbac
 pnpm install
 pnpm db:generate
 pnpm db:push          # applies schema to local Postgres
-pnpm db:seed          # creates SkyArc org + demo vendor user
+pnpm db:seed          # creates Skyarc org + demo vendor user
 pnpm --filter @skyarc/api dev
 ```
 

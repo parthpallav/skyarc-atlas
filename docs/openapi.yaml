@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: SkyArc Atlas API
+  title: Skyarc Atlas API
   version: 1.0.0
   description: Internal DOOH Location Intelligence and Media Planning API
 servers:

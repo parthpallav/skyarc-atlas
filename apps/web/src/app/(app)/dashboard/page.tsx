@@ -6,6 +6,7 @@ import { MapPin, ClipboardCheck, Sparkles, ChevronRight } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
 import { LocationImage } from "@/components/location-image";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface LocationRow {
   id: string;
@@ -89,7 +90,11 @@ export default function DashboardPage() {
                 <p className="text-muted text-sm font-medium">{stat.label}</p>
                 <Icon className={`w-5 h-5 ${stat.accent} opacity-80`} />
               </div>
-              <p className="text-3xl sm:text-4xl font-bold text-slate-900">{stat.value}</p>
+              {isLoading ? (
+                <Skeleton className="h-9 w-16 rounded-md my-1" />
+              ) : (
+                <p className="text-3xl sm:text-4xl font-bold text-slate-900">{stat.value}</p>
+              )}
             </Link>
           );
         })}
@@ -104,8 +109,15 @@ export default function DashboardPage() {
         </div>
         <div className="card-surface divide-y divide-slate-100 overflow-hidden">
           {isLoading &&
-            [1, 2, 3].map((i) => (
-              <div key={i} className="h-20 animate-pulse bg-slate-50" />
+            [1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex items-center gap-4 p-4 animate-pulse">
+                <Skeleton className="w-16 h-16 rounded-lg shrink-0" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-4 w-48 rounded" />
+                  <Skeleton className="h-3.5 w-32 rounded" />
+                </div>
+                <Skeleton className="h-6 w-20 rounded-full shrink-0" />
+              </div>
             ))}
           {!isLoading &&
             recent.map((location) => (

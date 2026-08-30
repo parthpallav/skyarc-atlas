@@ -1,31 +1,17 @@
-import { UserRole } from "@skyarc/shared";
-import type { AuthUser } from "./rbac.js";
+import {
+  UserRole,
+  canAccessLocation,
+  isInternalUser,
+  isVendorUser,
+  isClientUser,
+  organizationIdForNewLocation,
+  normalizeUserRole,
+  type AuthUser,
+  type LocationRecord,
+} from "@skyarc/shared";
 import { forbidden } from "./errors.js";
 
-export interface LocationRecord {
-  id: string;
-  createdByUserId: string;
-  organizationId: string | null;
-  archivedAt?: Date | null;
-}
-
-/** SkyArc internal roles — full platform access for planning and admin. */
-export function isInternalUser(user: AuthUser): boolean {
-  return (
-    user.role === UserRole.ADMIN ||
-    user.role === UserRole.MEDIA_PLANNER ||
-    user.role === UserRole.SALES ||
-    user.role === UserRole.VIEWER
-  );
-}
-
-export function isVendorUser(user: AuthUser): boolean {
-  return user.role === UserRole.VENDOR_ADMIN;
-}
-
-export function isClientUser(user: AuthUser): boolean {
-  return user.role === UserRole.CLIENT_VIEWER;
-}
+export type { AuthUser, LocationRecord };
 
 export function requireOrganization(user: AuthUser): string {
   if (!user.organizationId) {
@@ -34,11 +20,17 @@ export function requireOrganization(user: AuthUser): string {
   return user.organizationId;
 }
 
+export type LocationListScope = "mine" | "discovery" | "all";
+
 /** Prisma-compatible filter for listing locations scoped to the caller. */
-export function buildLocationListWhere(user: AuthUser): {
+export function buildLocationListWhere(
+  user: AuthUser,
+  scope?: LocationListScope
+): {
   archivedAt: null;
   organizationId?: string;
   createdByUserId?: string;
+  NOT?: { organizationId: string };
 } {
   const base = { archivedAt: null as null };
 
@@ -46,15 +38,24 @@ export function buildLocationListWhere(user: AuthUser): {
     return base;
   }
 
-  if (user.role === UserRole.FIELD_OPERATOR) {
+  const role = normalizeUserRole(user.role);
+
+  if (role === UserRole.FIELD_OPERATOR) {
     if (user.organizationId) {
       return { ...base, organizationId: user.organizationId };
     }
     return { ...base, createdByUserId: user.id };
   }
 
-  if (user.role === UserRole.VENDOR_ADMIN || user.role === UserRole.VENDOR_OPS) {
-    return { ...base, organizationId: requireOrganization(user) };
+  if (role === UserRole.VENDOR) {
+    const orgId = requireOrganization(user);
+    if (scope === "discovery") {
+      return { ...base, NOT: { organizationId: orgId } };
+    }
+    if (scope === "all") {
+      return base;
+    }
+    return { ...base, organizationId: orgId };
   }
 
   if (isClientUser(user)) {
@@ -64,40 +65,14 @@ export function buildLocationListWhere(user: AuthUser): {
   return base;
 }
 
-export function canAccessLocation(user: AuthUser, location: LocationRecord): boolean {
-  if (location.archivedAt) {
-    return isInternalUser(user);
-  }
-
-  if (isInternalUser(user)) {
-    return true;
-  }
-
-  if (user.role === UserRole.FIELD_OPERATOR) {
-    if (user.organizationId) {
-      return location.organizationId === user.organizationId;
-    }
-    return location.createdByUserId === user.id;
-  }
-
-  if (user.role === UserRole.VENDOR_ADMIN || user.role === UserRole.VENDOR_OPS) {
-    return (
-      !!user.organizationId &&
-      !!location.organizationId &&
-      location.organizationId === user.organizationId
-    );
-  }
-
-  return false;
+export function locationOwnedByUser(user: AuthUser, organizationId: string | null): boolean {
+  return !!user.organizationId && organizationId === user.organizationId;
 }
 
-/** Organization id assigned when a user creates a location. */
-export function organizationIdForNewLocation(user: AuthUser): string | undefined {
-  if (user.role === UserRole.VENDOR_ADMIN || user.role === UserRole.FIELD_OPERATOR) {
-    return requireOrganization(user);
-  }
-  if (isInternalUser(user)) {
-    return user.organizationId ?? undefined;
-  }
-  return undefined;
-}
+export {
+  isInternalUser,
+  isVendorUser,
+  isClientUser,
+  canAccessLocation,
+  organizationIdForNewLocation,
+};
