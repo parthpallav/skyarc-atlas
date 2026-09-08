@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { optimizeMediaPlan } from "../services/api/src/lib/media-planning/optimizer.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -37,12 +38,14 @@ interface HoardingRow {
   heightFt: number;
   sqft: number;
   light: "BL" | "FL" | "NL";
+  format?: "digital" | "kiosk" | "shelter" | "static" | "unipole";
+  clientRate?: number;
 }
 
 const LIGHT_LABELS: Record<HoardingRow["light"], string> = {
-  BL: "backlit",
-  FL: "frontlit",
-  NL: "non_lit",
+  BL: "Back-lit",
+  FL: "Front-lit",
+  NL: "Non-lit",
 };
 
 function feetToMm(ft: number): number {
@@ -298,21 +301,59 @@ async function main() {
 
   // 2. Load and seed Rajkot Hoardings & Locations
   const dataPath = join(__dirname, "data", "rajkot-hoardings.json");
-  const rawRows = JSON.parse(readFileSync(dataPath, "utf-8")) as HoardingRow[];
-  console.log(`Loaded ${rawRows.length} locations from dataset`);
+  const coreRows = JSON.parse(readFileSync(dataPath, "utf-8")) as HoardingRow[];
+  const rangeFillers: HoardingRow[] = [
+    { iid: "SKY-K-01", latitude: 22.2782, longitude: 70.8021, area: "Gondal Road", location: "Gondal Road, Nr. Raiya Telephone Exchange, City Facing", widthFt: 6, heightFt: 4, sqft: 24, light: "FL", format: "kiosk", clientRate: 28_000 },
+    { iid: "SKY-K-02", latitude: 22.2841, longitude: 70.7764, area: "Race Course", location: "Race Course Road, Nr. Indoor Stadium Gate 2, Pedestrian Facing", widthFt: 6, heightFt: 4, sqft: 24, light: "BL", format: "kiosk", clientRate: 35_000 },
+    { iid: "SKY-K-03", latitude: 22.3018, longitude: 70.7822, area: "University Road", location: "University Road, Opp. Saurashtra University Gate, Campus Facing", widthFt: 8, heightFt: 4, sqft: 32, light: "FL", format: "kiosk", clientRate: 42_000 },
+    { iid: "SKY-K-04", latitude: 22.2694, longitude: 70.7918, area: "Mavdi", location: "Mavdi Main Road, Nr. Bus Stand, Market Facing", widthFt: 6, heightFt: 4, sqft: 24, light: "NL", format: "kiosk", clientRate: 32_000 },
+    { iid: "SKY-K-05", latitude: 22.3126, longitude: 70.7984, area: "80 Feet Road", location: "80 Feet Road, Nr. Trikon Baug approach, Shopfront Facing", widthFt: 6, heightFt: 4, sqft: 24, light: "FL", format: "kiosk", clientRate: 48_000 },
+    { iid: "SKY-K-06", latitude: 22.2578, longitude: 70.7689, area: "Nana Mauva Road", location: "Nana Mauva Road, Nr. Community Hall, Residential Facing", widthFt: 8, heightFt: 4, sqft: 32, light: "BL", format: "kiosk", clientRate: 55_000 },
+    { iid: "SKY-B-01", latitude: 22.2896, longitude: 70.8092, area: "Gondal Road", location: "Gondal Road BQS, Nr. ST Workshop, City Bound", widthFt: 20, heightFt: 5, sqft: 100, light: "BL", format: "shelter", clientRate: 38_000 },
+    { iid: "SKY-B-02", latitude: 22.2964, longitude: 70.7612, area: "Kalawad Road", location: "Kalawad Road BQS, Nr. Sandipani School, West Bound", widthFt: 20, heightFt: 5, sqft: 100, light: "FL", format: "shelter", clientRate: 52_000 },
+    { iid: "SKY-B-03", latitude: 22.2749, longitude: 70.7844, area: "Yagnik Road", location: "Yagnik Road BQS, Nr. Dr. Yagnik Statue, Malaviya Facing", widthFt: 18, heightFt: 5, sqft: 90, light: "NL", format: "shelter", clientRate: 45_000 },
+    { iid: "SKY-S-01", latitude: 22.2661, longitude: 70.8127, area: "Bedi", location: "Bedi Road, Nr. Port approach, Highway Facing, Right", widthFt: 20, heightFt: 10, sqft: 200, light: "FL", format: "static", clientRate: 42_000 },
+    { iid: "SKY-S-02", latitude: 22.2488, longitude: 70.7741, area: "Shapar", location: "Shapar Veraval Road, Nr. GIDC feeder, Industrial Facing", widthFt: 20, heightFt: 10, sqft: 200, light: "NL", format: "static", clientRate: 48_000 },
+    { iid: "SKY-S-03", latitude: 22.3182, longitude: 70.7748, area: "80 Feet Road", location: "80 Feet Road, Nr. KKV Hall, Residential Facing", widthFt: 30, heightFt: 10, sqft: 300, light: "FL", format: "static", clientRate: 62_000 },
+    { iid: "SKY-S-04", latitude: 22.3051, longitude: 70.7589, area: "Astron Chowk", location: "Astron Chowk feeder, Towards Amin Marg, LHS", widthFt: 20, heightFt: 20, sqft: 400, light: "BL", format: "static", clientRate: 68_000 },
+    { iid: "SKY-D-01", latitude: 22.2924, longitude: 70.7648, area: "Kalawad Road", location: "Kalawad Road LED, Nr. Big Bazaar signal, Race Course Facing", widthFt: 20, heightFt: 10, sqft: 200, light: "BL", format: "digital", clientRate: 95_000 },
+    { iid: "SKY-D-02", latitude: 22.2621, longitude: 70.7861, area: "150 Feet Ring Road", location: "150 Feet Ring Road LED, Mavdi Circle, Mall Facing", widthFt: 30, heightFt: 10, sqft: 300, light: "BL", format: "digital", clientRate: 125_000 },
+    { iid: "SKY-D-03", latitude: 22.2879, longitude: 70.7941, area: "Yagnik Road", location: "Yagnik Road LED, Malaviya Chowk, Statue Facing", widthFt: 20, heightFt: 10, sqft: 200, light: "FL", format: "digital", clientRate: 150_000 },
+    { iid: "SKY-D-04", latitude: 22.3291, longitude: 70.7672, area: "University Road", location: "University Road LED, Nr. Crystal Mall, Ring Road Facing", widthFt: 40, heightFt: 12, sqft: 480, light: "BL", format: "digital", clientRate: 185_000 },
+    { iid: "SKY-D-05", latitude: 22.2731, longitude: 70.7561, area: "Kalawad Road", location: "AG Chowk LED, Flyover approach, Nana Mauva Facing", widthFt: 40, heightFt: 10, sqft: 400, light: "BL", format: "digital", clientRate: 220_000 },
+    { iid: "SKY-U-01", latitude: 22.3211, longitude: 70.8412, area: "Ahmedabad Highway", location: "Ahmedabad Highway unipole, Nr. Greenland Circle, City Bound", widthFt: 40, heightFt: 20, sqft: 800, light: "FL", format: "unipole", clientRate: 110_000 },
+    { iid: "SKY-U-02", latitude: 22.2398, longitude: 70.7612, area: "New 250ft Ring Road", location: "250ft Ring Road unipole, Patidar Chowk, Shapar Facing", widthFt: 50, heightFt: 20, sqft: 1000, light: "NL", format: "unipole", clientRate: 88_000 },
+  ];
+  const rawRows = [...coreRows, ...rangeFillers];
+  console.log(`Loaded ${coreRows.length} mapped sites + ${rangeFillers.length} range-priced fillers`);
 
   let seededSites = 0;
   for (let i = 0; i < rawRows.length; i++) {
     const row = rawRows[i]!;
     const assignedOrg = i % 2 === 0 ? brandalystOrg.id : apexOrg.id;
-    const isDigital = i % 3 === 0;
-    const invType = isDigital
-      ? "DIGITAL_BILLBOARD"
-      : row.sqft >= 600
-      ? "UNIPOLE"
-      : "STATIC_BILLBOARD";
+    const invType =
+      row.format === "digital"
+        ? "DIGITAL_BILLBOARD"
+        : row.format === "kiosk"
+        ? "KIOSK"
+        : row.format === "shelter"
+        ? "BUS_SHELTER"
+        : row.format === "unipole"
+        ? "UNIPOLE"
+        : row.format === "static"
+        ? "STATIC_BILLBOARD"
+        : i % 5 === 0
+        ? "DIGITAL_BILLBOARD"
+        : i % 5 === 1
+        ? "KIOSK"
+        : i % 5 === 3
+        ? "BUS_SHELTER"
+        : row.sqft >= 800
+        ? "UNIPOLE"
+        : "STATIC_BILLBOARD";
 
-    // Determine realistic corridor-calibrated pricing
+    // Determine realistic corridor-calibrated pricing, then force a usable test range
+    // so a ₹5L plan can mix premium faces with cheaper fillers.
     const areaLower = row.area.toLowerCase();
     let corridorBaseRate = 85_000;
     if (areaLower.includes("kalawad") || areaLower.includes("150 feet") || areaLower.includes("150ft")) {
@@ -325,15 +366,30 @@ async function main() {
       corridorBaseRate = 95_000;
     } else if (areaLower.includes("80 feet") || areaLower.includes("80ft")) {
       corridorBaseRate = 75_000;
-    } else if (areaLower.includes("bedi")) {
-      corridorBaseRate = 55_000;
+    } else if (areaLower.includes("bedi") || areaLower.includes("shapar")) {
+      corridorBaseRate = 48_000;
     }
 
     const sizeMultiplier = Math.max(0.7, row.sqft / 400);
-    const vendorRate = Math.round(
-      corridorBaseRate * sizeMultiplier * (isDigital ? 1.75 : 1.0)
-    );
-    const clientFacingRate = Math.round(vendorRate * 1.3); // independent Skyarc customer pricing
+    const isDigital = invType === "DIGITAL_BILLBOARD";
+    const isKiosk = invType === "KIOSK";
+    const isShelter = invType === "BUS_SHELTER";
+    let vendorRate = Math.round(corridorBaseRate * sizeMultiplier * (isDigital ? 1.45 : 1.0));
+    let clientFacingRate = Math.round(vendorRate * 1.3);
+
+    if (row.clientRate && row.clientRate > 0) {
+      clientFacingRate = row.clientRate;
+      vendorRate = Math.round(clientFacingRate / 1.3);
+    } else if (isKiosk || isShelter) {
+      clientFacingRate = 28_000 + (i % 5) * 8_000;
+      vendorRate = Math.round(clientFacingRate / 1.3);
+    } else if (isDigital) {
+      clientFacingRate = 95_000 + (i % 4) * 35_000;
+      vendorRate = Math.round(clientFacingRate / 1.3);
+    } else if (i % 2 === 1) {
+      clientFacingRate = 42_000 + (i % 4) * 7_000;
+      vendorRate = Math.round(clientFacingRate / 1.3);
+    }
 
     // Location name
     const locationName = `${row.iid} — ${row.area}`;
@@ -348,9 +404,13 @@ async function main() {
 
     if (!locationId) {
       locationId = randomUUID();
+      const skyarcSiteCode = `SKY-RAJ-${String(i + 1).padStart(3, "0")}`;
+
       await prisma.location.create({
         data: {
           id: locationId,
+          skyarcSiteCode,
+          vendorMediaCode: row.iid,
           name: locationName,
           latitude: row.latitude,
           longitude: row.longitude,
@@ -378,6 +438,12 @@ async function main() {
             create: [
               {
                 key: "inventory_iid",
+                valueJson: row.iid,
+                provenance: "USER_PROVIDED",
+                source: "rajkot_inventory_dataset",
+              },
+              {
+                key: "vendor_media_code",
                 valueJson: row.iid,
                 provenance: "USER_PROVIDED",
                 source: "rajkot_inventory_dataset",
@@ -444,6 +510,17 @@ async function main() {
           },
         },
       });
+      await prisma.locationAttribute.upsert({
+        where: { locationId_key: { locationId, key: "lighting_type" } },
+        create: {
+          locationId,
+          key: "lighting_type",
+          valueJson: LIGHT_LABELS[row.light],
+          provenance: "USER_PROVIDED",
+          source: "rajkot_inventory_dataset",
+        },
+        update: { valueJson: LIGHT_LABELS[row.light] },
+      });
     }
 
     // Screen and Inventory
@@ -500,6 +577,11 @@ async function main() {
             effectiveFrom: new Date(),
             provenance: "ESTIMATED",
           },
+        });
+      } else {
+        await prisma.rateCard.update({
+          where: { id: existingRate.id },
+          data: { amount: vendorRate },
         });
       }
     }
@@ -565,11 +647,15 @@ async function main() {
     update: {
       name: "Summer Beverage Launch 2026",
       advertiserId: advertiser.id,
+      startDate: new Date("2026-06-01T00:00:00.000Z"),
+      endDate: new Date("2026-06-30T00:00:00.000Z"),
     },
     create: {
       id: "00000000-0000-4000-8000-000000000030",
       name: "Summer Beverage Launch 2026",
       advertiserId: advertiser.id,
+      startDate: new Date("2026-06-01T00:00:00.000Z"),
+      endDate: new Date("2026-06-30T00:00:00.000Z"),
     },
   });
 
@@ -594,6 +680,7 @@ async function main() {
     kpis: ["Maximum Reach & Impressions", "Corridor Dominance & Impact"],
     constraints: ["High Visibility Score (> 75) Only", "Night Illumination Required"],
     additionalNotes: "Prioritize top junction hoardings with unobstructed vehicular approach.",
+    maxLocations: 8,
   };
 
   await prisma.campaignBrief.upsert({
@@ -636,11 +723,15 @@ async function main() {
     update: {
       name: "Luxury Towers Phase 1 Launch",
       advertiserId: realtor.id,
+      startDate: new Date("2026-07-01T00:00:00.000Z"),
+      endDate: new Date("2026-08-14T00:00:00.000Z"),
     },
     create: {
       id: "00000000-0000-4000-8000-000000000031",
       name: "Luxury Towers Phase 1 Launch",
       advertiserId: realtor.id,
+      startDate: new Date("2026-07-01T00:00:00.000Z"),
+      endDate: new Date("2026-08-14T00:00:00.000Z"),
       brief: {
         create: {
           sourceText: "High-net-worth real estate campaign targeting Ring Road and Kalawad corridors.",
@@ -655,8 +746,44 @@ async function main() {
             durationDays: 45,
             kpis: ["Corridor Dominance & Impact"],
             constraints: ["Prime Facing / Unobstructed View Only"],
+            maxLocations: 8,
           },
         },
+      },
+    },
+  });
+
+  await prisma.campaignBrief.upsert({
+    where: { campaignId: "00000000-0000-4000-8000-000000000031" },
+    update: {
+      structuredRequirementsJson: {
+        objective: "New Product / Store Launch",
+        brandCategory: "Real Estate & Infrastructure",
+        targetAudience: ["High Net-Worth Individuals (HNIs)", "Families & Residential Buyers"],
+        geographicFocus: ["150 Feet Ring Road", "Kalawad Road", "Ring Road 2"],
+        preferredFormats: ["Unipole", "Digital Billboard (DOOH)"],
+        budget: 1000000,
+        durationDays: 45,
+        kpis: ["Corridor Dominance & Impact"],
+        constraints: ["Prime Facing / Unobstructed View Only"],
+        maxLocations: 8,
+      },
+    },
+    create: {
+      campaignId: "00000000-0000-4000-8000-000000000031",
+      sourceText: "High-net-worth real estate campaign targeting Ring Road and Kalawad corridors.",
+      parseStatus: "PARSED",
+      structuredRequirementsJson: {
+        objective: "New Product / Store Launch",
+        brandCategory: "Real Estate & Infrastructure",
+        targetAudience: ["High Net-Worth Individuals (HNIs)", "Families & Residential Buyers"],
+        geographicFocus: ["150 Feet Ring Road", "Kalawad Road", "Ring Road 2"],
+        preferredFormats: ["Unipole", "Digital Billboard (DOOH)"],
+        budget: 1000000,
+        durationDays: 45,
+        kpis: ["Corridor Dominance & Impact"],
+        constraints: ["Prime Facing / Unobstructed View Only"],
+        maxLocations: 8,
       },
     },
   });
@@ -665,6 +792,7 @@ async function main() {
   const availableInventories = await prisma.inventory.findMany({
     where: { status: "AVAILABLE" },
     include: {
+      rateCards: { orderBy: { effectiveFrom: "desc" }, take: 1 },
       screen: {
         include: {
           location: {
@@ -677,126 +805,122 @@ async function main() {
     },
   });
 
-  const candidates = availableInventories
-    .filter((inv) => inv.screen.location.scores[0])
+  function seedCustomerRate(inv: (typeof availableInventories)[number]): number {
+    const commercial = inv.screen.location.skyarcCommercialJson as { clientRateAmount?: number } | null;
+    if (commercial?.clientRateAmount && commercial.clientRateAmount > 0) {
+      return commercial.clientRateAmount;
+    }
+    return Number(inv.rateCards[0]?.amount ?? 0);
+  }
+
+  const packedCandidates = availableInventories
+    .filter((inv) => inv.screen.location.scores[0] && seedCustomerRate(inv) > 0)
     .map((inv) => ({
       inventoryId: inv.id,
       locationId: inv.screen.locationId,
       score: inv.screen.location.scores[0]!.overallScore,
-      rateAmount: 0,
-    }))
-    .sort((a, b) => b.score - a.score);
+      rateAmount: seedCustomerRate(inv),
+      road: inv.screen.location.road,
+      inventoryType: inv.inventoryType,
+    }));
 
-  // Plan 1: FMCG Prime Corridor Dominance Plan (₹5,00,000 Budget, 6 Sites)
-  const plan1Sites = candidates.slice(0, 6);
-  const plan1Budget = 500000;
-  const scoreSum1 = plan1Sites.reduce((sum, s) => sum + s.score, 0);
-
-  const plan1 = await prisma.mediaPlan.upsert({
-    where: { id: "00000000-0000-4000-8000-000000000040" },
-    update: {
-      name: "High-Impact Corridor Dominance Plan (Rajkot)",
-      status: "PROPOSED",
-      totalBudget: plan1Budget,
-    },
-    create: {
-      id: "00000000-0000-4000-8000-000000000040",
-      campaignId: demoCampaign.id,
-      name: "High-Impact Corridor Dominance Plan (Rajkot)",
-      status: "PROPOSED",
-      totalBudget: plan1Budget,
-    },
-  });
-
-  await prisma.mediaPlanItem.deleteMany({ where: { mediaPlanId: plan1.id } });
-  for (let idx = 0; idx < plan1Sites.length; idx++) {
-    const s = plan1Sites[idx]!;
-    const proportion = scoreSum1 > 0 ? s.score / scoreSum1 : 1 / plan1Sites.length;
-    const allocated = Math.floor(plan1Budget * proportion);
-    await prisma.mediaPlanItem.create({
-      data: {
-        mediaPlanId: plan1.id,
-        inventoryId: s.inventoryId,
-        budgetAllocated: allocated,
-        rank: idx + 1,
-        explanationText: `Rank ${idx + 1} site with composite visibility score ${Math.round(s.score)}/100`,
+  async function seedPackedPlan(input: {
+    id: string;
+    campaignId: string;
+    name: string;
+    totalBudget: number;
+    maxLocations: number;
+    explanation: (rank: number, score: number) => string;
+  }) {
+    const packed = optimizeMediaPlan(packedCandidates, {
+      totalBudget: input.totalBudget,
+      maxLocations: input.maxLocations,
+      minLocations: Math.min(3, input.maxLocations),
+    });
+    const plan = await prisma.mediaPlan.upsert({
+      where: { id: input.id },
+      update: {
+        name: input.name,
+        status: "PROPOSED",
+        totalBudget: input.totalBudget,
+      },
+      create: {
+        id: input.id,
+        campaignId: input.campaignId,
+        name: input.name,
+        status: "PROPOSED",
+        totalBudget: input.totalBudget,
       },
     });
+    await prisma.mediaPlanItem.deleteMany({ where: { mediaPlanId: plan.id } });
+    const leftoverPool = packedCandidates
+      .filter((row) => !packed.items.some((item) => item.inventoryId === row.inventoryId))
+      .sort((a, b) => b.score - a.score);
+    for (const item of packed.items) {
+      const score =
+        packedCandidates.find((row) => row.inventoryId === item.inventoryId)?.score ?? 0;
+      const alternativesJson = leftoverPool.slice(0, 5).map((row) => {
+        const inv = availableInventories.find((candidate) => candidate.id === row.inventoryId);
+        const specs =
+          inv?.staticSpecsJson && typeof inv.staticSpecsJson === "object"
+            ? (inv.staticSpecsJson as Record<string, unknown>)
+            : {};
+        return {
+          inventoryId: row.inventoryId,
+          locationId: row.locationId,
+          locationName: inv?.screen.location.name ?? "Site",
+          road: row.road,
+          score: row.score,
+          goalFit: row.score,
+          fitReason: "Available for this flight",
+          rateAmount: row.rateAmount,
+          inventoryType: row.inventoryType,
+          lighting: typeof specs.lighting === "string" ? specs.lighting : null,
+        };
+      });
+      await prisma.mediaPlanItem.create({
+        data: {
+          mediaPlanId: plan.id,
+          inventoryId: item.inventoryId,
+          budgetAllocated: item.budgetAllocated,
+          rank: item.rank,
+          explanationText: input.explanation(item.rank, score),
+          alternativesJson,
+        },
+      });
+    }
+    return packed;
   }
 
-  // Plan 2: Mass Reach Retail Mix Plan (₹3,50,000 Budget, 4 Sites)
-  const plan2Sites = candidates.slice(2, 6);
-  const plan2Budget = 350000;
-  const scoreSum2 = plan2Sites.reduce((sum, s) => sum + s.score, 0);
-
-  const plan2 = await prisma.mediaPlan.upsert({
-    where: { id: "00000000-0000-4000-8000-000000000041" },
-    update: {
-      name: "Mass-Reach Retail & Youth Pack",
-      status: "PROPOSED",
-      totalBudget: plan2Budget,
-    },
-    create: {
-      id: "00000000-0000-4000-8000-000000000041",
-      campaignId: demoCampaign.id,
-      name: "Mass-Reach Retail & Youth Pack",
-      status: "PROPOSED",
-      totalBudget: plan2Budget,
-    },
+  const plan1Packed = await seedPackedPlan({
+    id: "00000000-0000-4000-8000-000000000040",
+    campaignId: demoCampaign.id,
+    name: "High-Impact Corridor Dominance Plan (Rajkot)",
+    totalBudget: 500_000,
+    maxLocations: 8,
+    explanation: (rank, score) =>
+      `Rank ${rank} site packed at customer list price · visibility ${Math.round(score)}/100`,
   });
 
-  await prisma.mediaPlanItem.deleteMany({ where: { mediaPlanId: plan2.id } });
-  for (let idx = 0; idx < plan2Sites.length; idx++) {
-    const s = plan2Sites[idx]!;
-    const proportion = scoreSum2 > 0 ? s.score / scoreSum2 : 1 / plan2Sites.length;
-    const allocated = Math.floor(plan2Budget * proportion);
-    await prisma.mediaPlanItem.create({
-      data: {
-        mediaPlanId: plan2.id,
-        inventoryId: s.inventoryId,
-        budgetAllocated: allocated,
-        rank: idx + 1,
-        explanationText: `Rank ${idx + 1} retail cluster screen with score ${Math.round(s.score)}/100`,
-      },
-    });
-  }
-
-  // Plan 3: Luxury Towers Unipole Plan (₹10,00,000 Budget, 8 Sites)
-  const plan3Sites = candidates.slice(0, 8);
-  const plan3Budget = 1000000;
-  const scoreSum3 = plan3Sites.reduce((sum, s) => sum + s.score, 0);
-
-  const plan3 = await prisma.mediaPlan.upsert({
-    where: { id: "00000000-0000-4000-8000-000000000042" },
-    update: {
-      name: "Prime Ring Road & Arterial Unipole Takeover",
-      status: "PROPOSED",
-      totalBudget: plan3Budget,
-    },
-    create: {
-      id: "00000000-0000-4000-8000-000000000042",
-      campaignId: "00000000-0000-4000-8000-000000000031",
-      name: "Prime Ring Road & Arterial Unipole Takeover",
-      status: "PROPOSED",
-      totalBudget: plan3Budget,
-    },
+  await seedPackedPlan({
+    id: "00000000-0000-4000-8000-000000000041",
+    campaignId: demoCampaign.id,
+    name: "Mass-Reach Retail & Youth Pack",
+    totalBudget: 350_000,
+    maxLocations: 6,
+    explanation: (rank, score) =>
+      `Rank ${rank} retail-mix site at list price · score ${Math.round(score)}/100`,
   });
 
-  await prisma.mediaPlanItem.deleteMany({ where: { mediaPlanId: plan3.id } });
-  for (let idx = 0; idx < plan3Sites.length; idx++) {
-    const s = plan3Sites[idx]!;
-    const proportion = scoreSum3 > 0 ? s.score / scoreSum3 : 1 / plan3Sites.length;
-    const allocated = Math.floor(plan3Budget * proportion);
-    await prisma.mediaPlanItem.create({
-      data: {
-        mediaPlanId: plan3.id,
-        inventoryId: s.inventoryId,
-        budgetAllocated: allocated,
-        rank: idx + 1,
-        explanationText: `Arterial arterial corridor screen with score ${Math.round(s.score)}/100`,
-      },
-    });
-  }
+  await seedPackedPlan({
+    id: "00000000-0000-4000-8000-000000000042",
+    campaignId: "00000000-0000-4000-8000-000000000031",
+    name: "Prime Ring Road & Arterial Unipole Takeover",
+    totalBudget: 1_000_000,
+    maxLocations: 8,
+    explanation: (rank, score) =>
+      `Arterial corridor screen at list price · score ${Math.round(score)}/100`,
+  });
 
   console.log("\nFull database seed completed successfully:");
   console.log(`  - Organizations: Skyarc Media (Internal), Brandalyst Media Network (Vendor), Apex Outdoor (Vendor), Balaji Foods (Client)`);
@@ -808,7 +932,10 @@ async function main() {
   console.log(`      • Field Operator:  operator@skyarcads.com`);
   console.log(`  - Total Billboard Locations seeded: ${seededSites}`);
   console.log(`  - Campaigns seeded: 2 live campaigns with guided briefs`);
-  console.log(`  - Pre-generated Media Plans: 3 fully optimized proposals with allocated sites & PDF export`);
+  console.log(
+    `  - ₹5L demo plan packed ${plan1Packed.items.length} sites · leftover ₹${plan1Packed.remainingBudget.toLocaleString("en-IN")}`
+  );
+  console.log(`  - Pre-generated Media Plans: 3 proposals at customer list prices`);
 }
 
 main()

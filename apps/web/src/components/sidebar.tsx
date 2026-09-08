@@ -73,9 +73,9 @@ export function SidebarNav({
           )}
         >
           <SkyarcLogo
-            height={collapsed ? 28 : 40}
-            subtitle={collapsed ? undefined : "Atlas · DOOH Intelligence"}
+            height={collapsed ? 32 : 36}
             collapsed={collapsed}
+            onDark
             priority
           />
           {showCollapseToggle && onToggleCollapse && (

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createWebApiClient } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
-import { CheckCircle2, Copy, Sparkles, UserCheck } from "lucide-react";
+import { CheckCircle2, Copy, UserCheck } from "lucide-react";
 
 interface OrganizationRow {
   id: string;

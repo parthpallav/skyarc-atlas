@@ -45,7 +45,7 @@ export function canAccessRoute(user: StoredUser | null, pathname: string): boole
     return canAccessAdmin(authUser);
   }
 
-  if (pathname.startsWith("/campaigns")) {
+  if (pathname.startsWith("/campaigns") || pathname.startsWith("/media-plans")) {
     return canAccessCampaigns(authUser);
   }
 

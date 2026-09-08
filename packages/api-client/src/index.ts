@@ -204,6 +204,19 @@ export class ApiClient {
     return this.request<unknown[]>(`/locations?${params.toString()}`);
   }
 
+  listLocationAvailability(from: string, to: string) {
+    const params = new URLSearchParams({ from, to });
+    return this.request<{
+      from: string;
+      to: string;
+      durationDays: number;
+      availableSites: number;
+      availableFaces: number;
+      bookedFaces: number;
+      sites: unknown[];
+    }>(`/locations/availability?${params.toString()}`);
+  }
+
   createLocation(data: Record<string, unknown>) {
     return this.request<unknown>("/locations", {
       method: "POST",
@@ -259,6 +272,19 @@ export class ApiClient {
     });
   }
 
+  updateCampaign(id: string, data: Record<string, unknown>) {
+    return this.request<unknown>(`/campaigns/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  deleteCampaign(id: string) {
+    return this.request<{ deleted: boolean; id: string }>(`/campaigns/${id}`, {
+      method: "DELETE",
+    });
+  }
+
   updateCampaignBrief(
     campaignId: string,
     data: { sourceText?: string; structuredRequirements?: Record<string, unknown> } | string
@@ -284,6 +310,53 @@ export class ApiClient {
     return this.request<unknown>(`/campaigns/${campaignId}/media-plans/optimize`, {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  listMediaPlans(page = 1, limit = 50, q?: string) {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+    });
+    if (q) params.set("q", q);
+    return this.request<unknown[]>(`/media-plans?${params.toString()}`);
+  }
+
+  buildMediaPlanFromSelection(
+    campaignId: string,
+    data: {
+      name?: string;
+      totalBudget: number;
+      inventoryIds?: string[];
+      locationIds?: string[];
+      holdInventory?: boolean;
+    }
+  ) {
+    return this.request<unknown>(`/campaigns/${campaignId}/media-plans/from-selection`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  swapMediaPlanItem(
+    campaignId: string,
+    planId: string,
+    itemId: string,
+    inventoryId: string
+  ) {
+    return this.request<unknown>(
+      `/campaigns/${campaignId}/media-plans/${planId}/items/${itemId}/swap`,
+      {
+        method: "POST",
+        body: JSON.stringify({ inventoryId }),
+      }
+    );
+  }
+
+  addMediaPlanItem(campaignId: string, planId: string, inventoryId: string) {
+    return this.request<unknown>(`/campaigns/${campaignId}/media-plans/${planId}/items`, {
+      method: "POST",
+      body: JSON.stringify({ inventoryId }),
     });
   }
 
@@ -559,6 +632,16 @@ export class ApiClient {
     });
   }
 
+  bulkLocationActions(
+    locationIds: string[],
+    action: "ARCHIVE" | "UNARCHIVE" | "AVAILABLE" | "UNAVAILABLE"
+  ) {
+    return this.request<{ updated: number; action: string }>("/locations/bulk-actions", {
+      method: "POST",
+      body: JSON.stringify({ locationIds, action }),
+    });
+  }
+
   updateOrganizationMeCommercial(data: {
     defaultMarginPercent?: number;
     defaultRateAmount?: number;
@@ -662,6 +745,7 @@ export class ApiClient {
   importInventoryBatch(data: {
     vendorOrgName?: string;
     vendorAdminEmail?: string;
+    createVendorIfMissing?: boolean;
     items: Array<{
       name: string;
       iid?: string;

@@ -8,12 +8,18 @@ import {
   X,
   SlidersHorizontal,
   MapPin,
-  Sparkles,
+  Plus,
   Layers,
   CheckSquare,
   Square,
   ArrowUpDown,
   Building2,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  TrendingUp,
+  ShieldCheck,
+  Compass,
 } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -27,6 +33,8 @@ import { LocationGridSkeleton } from "@/components/ui/skeleton";
 
 interface Location {
   id: string;
+  skyarcSiteCode?: string | null;
+  vendorMediaCode?: string | null;
   name: string;
   latitude: number;
   longitude: number;
@@ -60,21 +68,64 @@ const INVENTORY_TYPE_OPTIONS = [
   { value: "MALL_MEDIA", label: "Mall Media" },
 ];
 
+const RAJKOT_CORRIDOR_OPTIONS = [
+  { value: "ALL", label: "All Roads & Corridors" },
+  { value: "kalawad road", label: "Kalawad Road" },
+  { value: "150 feet ring road", label: "150 Feet Ring Road" },
+  { value: "amin marg", label: "Amin Marg" },
+  { value: "yagnik road", label: "Yagnik Road" },
+  { value: "race course", label: "Race Course Ring Road" },
+  { value: "gondal road", label: "Gondal Road" },
+  { value: "university road", label: "University Road" },
+  { value: "madhapar", label: "Madhapar Chowkadi" },
+  { value: "mavdi", label: "Mavdi Circle" },
+  { value: "80 feet road", label: "80 Feet Road" },
+];
+
+const PRICE_RANGE_OPTIONS = [
+  { value: "ALL", label: "All Budgets" },
+  { value: "UNDER_25K", label: "Under ₹25,000 /mo" },
+  { value: "25K_50K", label: "₹25,000 – ₹50,000 /mo" },
+  { value: "50K_100K", label: "₹50,000 – ₹1,00,000 /mo" },
+  { value: "ABOVE_100K", label: "₹1,00,000+ /mo" },
+];
+
 function statusColor(status: string) {
   if (status === "SUBMITTED") return "bg-emerald-50 text-emerald-700 border-emerald-200";
   if (status === "IN_PROGRESS") return "bg-amber-50 text-amber-700 border-amber-200";
   return "bg-slate-100 text-slate-600 border-slate-200";
 }
 
+// Visual highlights for customer perspective instead of raw numbers
+function getCustomerVisualHighlights(loc: Location): { label: string } {
+  const roadLower = (loc.road || loc.address || "").toLowerCase();
+  if (roadLower.includes("kalawad") || roadLower.includes("yagnik") || roadLower.includes("amin")) {
+    return { label: "Prime high-street corridor" };
+  }
+  if (roadLower.includes("150") || roadLower.includes("ring") || roadLower.includes("gondal")) {
+    return { label: "Heavy commuter arterial" };
+  }
+  if (roadLower.includes("race course") || roadLower.includes("university")) {
+    return { label: "High youth & elite footfall" };
+  }
+  return { label: "High visibility junction" };
+}
+
 export default function LocationsPage() {
-  const { isVendor, isReadOnly, canViewClientPricing, isClient } = usePermissions();
+  const { isVendor, isReadOnly, canViewClientPricing, isClient, isInternal } = usePermissions();
   const queryClient = useQueryClient();
 
   const [scope, setScope] = useState<"mine" | "discovery">("mine");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [typeFilter, setTypeFilter] = useState("ALL");
-  const [sortBy, setSortBy] = useState<"score" | "name" | "newest">("score");
+  const [roadFilter, setRoadFilter] = useState("ALL");
+  const [priceFilter, setPriceFilter] = useState("ALL");
+  const [sortBy, setSortBy] = useState<"score" | "name" | "price_asc" | "price_desc" | "newest">("score");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(25);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkMessage, setBulkMessage] = useState("");
@@ -86,7 +137,7 @@ export default function LocationsPage() {
       const client = createWebApiClient();
       const result = await client.listLocations(
         1,
-        100,
+        250,
         isVendor ? scope : undefined,
         {
           q: searchTerm.trim() || undefined,
@@ -112,6 +163,19 @@ export default function LocationsPage() {
   });
 
   const canBulkApply = isVendor && !isReadOnly && scope === "mine";
+  const canBulkGovern = (!isReadOnly && isInternal) || canBulkApply;
+
+  const governMutation = useMutation({
+    mutationFn: async (action: "ARCHIVE" | "UNARCHIVE" | "AVAILABLE" | "UNAVAILABLE") => {
+      const client = createWebApiClient();
+      return client.bulkLocationActions(Array.from(selected), action);
+    },
+    onSuccess: async (result) => {
+      setBulkMessage(`${result.data.action} applied to ${result.data.updated} site(s).`);
+      setSelected(new Set());
+      await queryClient.invalidateQueries({ queryKey: ["locations"] });
+    },
+  });
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -131,8 +195,31 @@ export default function LocationsPage() {
     }
   };
 
-  // Client-side sorting for instant UX responsiveness
-  const sortedLocations = [...(data ?? [])].sort((a, b) => {
+  // Filter pipeline
+  const filteredLocations = (data ?? []).filter((loc) => {
+    // Road filter
+    if (roadFilter !== "ALL") {
+      const locRoad = `${loc.road || ""} ${loc.address || ""} ${loc.junction || ""}`.toLowerCase();
+      if (!locRoad.includes(roadFilter.toLowerCase())) return false;
+    }
+
+    // Price range filter
+    if (priceFilter !== "ALL") {
+      const effectivePrice = isClient
+        ? loc.skyarcCommercialView?.clientRateAmount ?? 0
+        : loc.skyarcCommercialView?.clientRateAmount ?? loc.commercialView?.defaultRateAmount ?? 0;
+
+      if (priceFilter === "UNDER_25K" && (effectivePrice > 25000 || effectivePrice === 0)) return false;
+      if (priceFilter === "25K_50K" && (effectivePrice < 25000 || effectivePrice > 50000)) return false;
+      if (priceFilter === "50K_100K" && (effectivePrice < 50000 || effectivePrice > 100000)) return false;
+      if (priceFilter === "ABOVE_100K" && effectivePrice < 100000) return false;
+    }
+
+    return true;
+  });
+
+  // Client-side sorting
+  const sortedLocations = [...filteredLocations].sort((a, b) => {
     if (sortBy === "score") {
       const scoreA = a.score ?? -1;
       const scoreB = b.score ?? -1;
@@ -141,14 +228,31 @@ export default function LocationsPage() {
     if (sortBy === "name") {
       return a.name.localeCompare(b.name);
     }
+    if (sortBy === "price_asc") {
+      const priceA = a.skyarcCommercialView?.clientRateAmount ?? a.commercialView?.defaultRateAmount ?? 0;
+      const priceB = b.skyarcCommercialView?.clientRateAmount ?? b.commercialView?.defaultRateAmount ?? 0;
+      return priceA - priceB;
+    }
+    if (sortBy === "price_desc") {
+      const priceA = a.skyarcCommercialView?.clientRateAmount ?? a.commercialView?.defaultRateAmount ?? 0;
+      const priceB = b.skyarcCommercialView?.clientRateAmount ?? b.commercialView?.defaultRateAmount ?? 0;
+      return priceB - priceA;
+    }
     return 0; // Default newest from backend
   });
 
+  // Pagination calculation
+  const totalItems = sortedLocations.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const validCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (validCurrentPage - 1) * pageSize;
+  const paginatedLocations = sortedLocations.slice(startIndex, startIndex + pageSize);
+
   const hasActiveFilters =
-    Boolean(searchTerm) || statusFilter !== "ALL" || typeFilter !== "ALL";
+    Boolean(searchTerm) || statusFilter !== "ALL" || typeFilter !== "ALL" || roadFilter !== "ALL" || priceFilter !== "ALL";
 
   return (
-    <div className="space-y-5 pb-12">
+    <div className="space-y-4 pb-12">
       <PageHeader
         title={isVendor ? (scope === "mine" ? "My Inventory" : "Network Discovery") : "Locations"}
         description={
@@ -159,29 +263,30 @@ export default function LocationsPage() {
             : `${data?.length ?? 0} billboard sites catalogued across Rajkot`
         }
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {!isReadOnly && (
               <>
                 <Link
                   href="/locations/new"
-                  className="btn-secondary gap-1.5 text-xs py-2 shadow-xs"
+                  className="btn-secondary gap-1.5 text-xs py-2 px-2.5 sm:px-3 shadow-xs"
                 >
-                  <Sparkles className="w-4 h-4 text-primary" />
-                  Add Site
+                  <Plus className="w-4 h-4 text-primary" />
+                  <span className="sm:hidden">Add</span>
+                  <span className="hidden sm:inline">Add Site</span>
                 </Link>
                 <button
                   type="button"
                   onClick={() => setIsImportModalOpen(true)}
-                  className="btn-secondary gap-1.5 text-xs py-2 shadow-xs border-emerald-200 hover:border-emerald-300 text-emerald-800 bg-emerald-50/50 hover:bg-emerald-50"
+                  className="btn-secondary gap-1.5 text-xs py-2 px-2.5 sm:px-3 shadow-xs border-emerald-200 hover:border-emerald-300 text-emerald-800 bg-emerald-50/50 hover:bg-emerald-50"
                 >
                   <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                  Import Excel Sheet
+                  <span className="hidden sm:inline">Import Excel</span>
                 </button>
               </>
             )}
-            <Link href="/map" className="btn-primary gap-1.5 shadow-sm">
+            <Link href="/map" className="btn-primary gap-1.5 text-xs py-2 px-2.5 sm:px-3 shadow-sm">
               <MapPin className="w-4 h-4" />
-              Open map
+              <span className="sm:inline">Map</span>
             </Link>
           </div>
         }
@@ -200,6 +305,7 @@ export default function LocationsPage() {
             onClick={() => {
               setScope("mine");
               setSelected(new Set());
+              setCurrentPage(1);
             }}
           >
             My sites (Owned)
@@ -214,6 +320,7 @@ export default function LocationsPage() {
             onClick={() => {
               setScope("discovery");
               setSelected(new Set());
+              setCurrentPage(1);
             }}
           >
             Discover network
@@ -221,36 +328,82 @@ export default function LocationsPage() {
         </div>
       )}
 
-      {/* Search & Filter Toolbar */}
-      <div className="card-surface p-3.5 sm:p-4 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-          {/* Search Input */}
-          <div className="sm:col-span-5 relative">
+      {/* Compact Multi-filter Toolbar */}
+      <div className="card-surface p-2 sm:p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
             <Search className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by site name, road, address, or junction…"
-              className="w-full pl-9 pr-8 py-2 rounded-lg border border-violet-200 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30"
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              placeholder="Search site, road, area…"
+              className="w-full pl-9 pr-8 py-2 sm:py-1.5 rounded-lg border border-violet-200 bg-white text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
             {searchTerm && (
               <button
                 type="button"
-                onClick={() => setSearchTerm("")}
+                onClick={() => {
+                  setSearchTerm("");
+                  setCurrentPage(1);
+                }}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-slate-900"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((open) => !open)}
+            className={`md:hidden shrink-0 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold ${
+              filtersOpen || hasActiveFilters
+                ? "border-primary bg-violet-50 text-primary"
+                : "border-violet-200 bg-white text-slate-700"
+            }`}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Filters
+            {hasActiveFilters ? (
+              <span className="min-w-[1.1rem] rounded-full bg-primary text-white text-[10px] px-1 text-center">
+                {[typeFilter, roadFilter, priceFilter].filter((value) => value !== "ALL").length +
+                  (searchTerm ? 1 : 0)}
+              </span>
+            ) : null}
+          </button>
+        </div>
+
+        <div className={`${filtersOpen ? "grid" : "hidden"} md:grid grid-cols-2 md:grid-cols-12 gap-2 items-center`}>
+          {/* Road / Corridor Filter */}
+          <div className="md:col-span-4">
+            <select
+              value={roadFilter}
+              onChange={(e) => {
+                setRoadFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full py-2 sm:py-1.5 px-2.5 rounded-lg border border-violet-200 bg-white text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              {RAJKOT_CORRIDOR_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {/* Media Format Filter */}
-          <div className="sm:col-span-3">
+          <div className="md:col-span-4">
             <select
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="w-full py-2 px-3 rounded-lg border border-violet-200 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30"
+              onChange={(e) => {
+                setTypeFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full py-2 sm:py-1.5 px-2.5 rounded-lg border border-violet-200 bg-white text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
               {INVENTORY_TYPE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -260,40 +413,32 @@ export default function LocationsPage() {
             </select>
           </div>
 
-          {/* Status Filter */}
-          <div className="sm:col-span-2">
+          {/* Budget Range Filter */}
+          <div className="col-span-2 md:col-span-4">
             <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full py-2 px-3 rounded-lg border border-violet-200 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30"
+              value={priceFilter}
+              onChange={(e) => {
+                setPriceFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full py-2 sm:py-1.5 px-2.5 rounded-lg border border-violet-200 bg-white text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
-              <option value="ALL">All Statuses</option>
-              <option value="SUBMITTED">Submitted</option>
-              <option value="IN_PROGRESS">In Progress</option>
-              <option value="DRAFT">Draft</option>
-            </select>
-          </div>
-
-          {/* Sort By */}
-          <div className="sm:col-span-2">
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as "score" | "name" | "newest")}
-              className="w-full py-2 px-3 rounded-lg border border-violet-200 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              <option value="score">Sort: Highest Score</option>
-              <option value="name">Sort: Name (A–Z)</option>
-              <option value="newest">Sort: Newest First</option>
+              {PRICE_RANGE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>
 
-        {/* Active Filter Indicators & Bulk Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-violet-100 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-700">
-              Showing {sortedLocations.length} site{sortedLocations.length === 1 ? "" : "s"}
-            </span>
+        {/* Secondary Row: Sort & Active Indicators */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 sm:pt-2 border-t border-violet-100 text-xs">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 text-slate-600 font-medium">
+              <span className="font-bold text-slate-900">{totalItems}</span> sites
+            </div>
+
             {hasActiveFilters && (
               <button
                 type="button"
@@ -301,39 +446,125 @@ export default function LocationsPage() {
                   setSearchTerm("");
                   setStatusFilter("ALL");
                   setTypeFilter("ALL");
+                  setRoadFilter("ALL");
+                  setPriceFilter("ALL");
+                  setCurrentPage(1);
                 }}
-                className="text-primary font-semibold hover:underline flex items-center gap-1 ml-2"
+                className="text-primary font-semibold hover:underline flex items-center gap-1"
               >
-                <X className="w-3.5 h-3.5" /> Clear filters
+                <X className="w-3.5 h-3.5" /> Clear
               </button>
             )}
           </div>
 
-          {canBulkApply && (
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => toggleAll(sortedLocations)}
-                className="text-slate-700 font-medium hover:text-primary flex items-center gap-1.5"
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="flex items-center gap-1.5 text-muted min-w-0">
+              <ArrowUpDown className="w-3.5 h-3.5 shrink-0" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                className="max-w-[9.5rem] sm:max-w-none py-1 px-2 rounded-md border border-violet-200 bg-white text-xs text-slate-900 font-medium focus:outline-none"
               >
-                {selected.size > 0 && selected.size === sortedLocations.length ? (
-                  <CheckSquare className="w-4 h-4 text-primary" />
-                ) : (
-                  <Square className="w-4 h-4 text-slate-400" />
-                )}
-                Select all ({selected.size} selected)
-              </button>
-
-              <button
-                type="button"
-                className="btn-secondary text-xs px-3 py-1.5"
-                disabled={selected.size === 0 || bulkMutation.isPending}
-                onClick={() => bulkMutation.mutate()}
-              >
-                {bulkMutation.isPending ? "Applying…" : "Apply Org Commercials"}
-              </button>
+                {!isClient && <option value="score">Highest score</option>}
+                <option value="name">Name A–Z</option>
+                <option value="price_asc">Price: Low–High</option>
+                <option value="price_desc">Price: High–Low</option>
+                <option value="newest">Newest</option>
+              </select>
             </div>
-          )}
+
+            <div className="hidden sm:flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[11px]">
+              {[10, 25, 50, 100].map((sz) => (
+                <button
+                  key={sz}
+                  type="button"
+                  onClick={() => {
+                    setPageSize(sz);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2 py-0.5 rounded-md font-semibold transition-colors ${
+                    pageSize === sz
+                      ? "bg-white text-primary shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  {sz}
+                </button>
+              ))}
+            </div>
+
+            {(canBulkGovern || isClient) && (
+              <div className="flex items-center gap-2 sm:pl-2 sm:border-l border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => toggleAll(paginatedLocations)}
+                  className="text-slate-700 font-medium hover:text-primary flex items-center gap-1"
+                >
+                  {selected.size > 0 && selected.size === paginatedLocations.length ? (
+                    <CheckSquare className="w-3.5 h-3.5 text-primary" />
+                  ) : (
+                    <Square className="w-3.5 h-3.5 text-slate-400" />
+                  )}
+                  <span className="hidden sm:inline">Select</span> ({selected.size})
+                </button>
+
+                {canBulkApply && (
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs px-2.5 py-1 hidden sm:inline-flex"
+                    disabled={selected.size === 0 || bulkMutation.isPending}
+                    onClick={() => bulkMutation.mutate()}
+                  >
+                    {bulkMutation.isPending ? "Applying…" : "Apply Org Commercials"}
+                  </button>
+                )}
+
+                {canBulkGovern && (
+                  <div className="hidden sm:flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs px-2.5 py-1"
+                      disabled={selected.size === 0 || governMutation.isPending}
+                      onClick={() => governMutation.mutate("ARCHIVE")}
+                    >
+                      Archive
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs px-2.5 py-1"
+                      disabled={selected.size === 0 || governMutation.isPending}
+                      onClick={() => governMutation.mutate("AVAILABLE")}
+                    >
+                      Available
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs px-2.5 py-1"
+                      disabled={selected.size === 0 || governMutation.isPending}
+                      onClick={() => governMutation.mutate("UNAVAILABLE")}
+                    >
+                      Unavailable
+                    </button>
+                  </div>
+                )}
+
+                {isClient && (
+                  <Link
+                    href={
+                      selected.size > 0
+                        ? `/campaigns/new?sites=${Array.from(selected).join(",")}`
+                        : "/campaigns/new"
+                    }
+                    className={`btn-primary text-xs px-2.5 py-1 ${
+                      selected.size === 0 ? "pointer-events-none opacity-50" : ""
+                    }`}
+                  >
+                    Hold
+                  </Link>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -354,13 +585,13 @@ export default function LocationsPage() {
         </p>
       )}
 
-      {!isLoading && !error && sortedLocations.length === 0 && (
+      {!isLoading && !error && paginatedLocations.length === 0 && (
         <div className="card-surface p-12 text-center">
           <MapPin className="w-10 h-10 text-primary mx-auto mb-3 opacity-75" />
           <p className="text-slate-900 font-bold text-base mb-1">No locations found</p>
           <p className="text-muted text-sm max-w-sm mx-auto mb-4">
             {hasActiveFilters
-              ? "No billboard sites match your search criteria. Try clearing some filters."
+              ? "No billboard sites match your filter combination. Try adjusting roads or budget."
               : "No locations available in this view."}
           </p>
           {hasActiveFilters && (
@@ -370,6 +601,9 @@ export default function LocationsPage() {
                 setSearchTerm("");
                 setStatusFilter("ALL");
                 setTypeFilter("ALL");
+                setRoadFilter("ALL");
+                setPriceFilter("ALL");
+                setCurrentPage(1);
               }}
               className="btn-secondary"
             >
@@ -379,13 +613,14 @@ export default function LocationsPage() {
         </div>
       )}
 
-      {!isLoading && !error && sortedLocations.length > 0 && (
+      {!isLoading && !error && paginatedLocations.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {sortedLocations.map((loc) => {
+          {paginatedLocations.map((loc) => {
             const isSelected = selected.has(loc.id);
             const formats = loc.inventoryTypes?.length
               ? loc.inventoryTypes
-              : ["DIGITAL_BILLBOARD"];
+              : ["STATIC_BILLBOARD"];
+            const visualHighlight = getCustomerVisualHighlights(loc);
 
             return (
               <div
@@ -396,16 +631,16 @@ export default function LocationsPage() {
               >
                 <div>
                   {/* Location Cover Image */}
-                  <div className="relative h-44 bg-slate-100 overflow-hidden">
+                  <div className="relative h-36 sm:h-44 bg-slate-100 overflow-hidden">
                     <LocationImage
                       src={loc.coverImageUrl}
                       alt={loc.name}
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/10" />
 
                     {/* Checkbox for Bulk Actions (if vendor) */}
-                    {canBulkApply && (
+                    {(canBulkGovern || isClient) && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -422,29 +657,42 @@ export default function LocationsPage() {
                       </button>
                     )}
 
-                    {/* Status Badge */}
-                    <div className="absolute top-2.5 right-2.5">
-                      <span
-                        className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border backdrop-blur-md ${statusColor(
-                          loc.surveyStatus
-                        )}`}
-                      >
-                        {loc.surveyStatus}
+                    {/* Top Right: SkyArc Site Code (Brand Facing) or Status Badge */}
+                    <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-black/70 text-white backdrop-blur-md border border-white/20 font-mono">
+                        {loc.skyarcSiteCode ?? `SKY-${loc.id.slice(0, 4).toUpperCase()}`}
                       </span>
+
+                      {!isClient && (
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-md border backdrop-blur-md ${statusColor(
+                            loc.surveyStatus
+                          )}`}
+                        >
+                          {loc.surveyStatus}
+                        </span>
+                      )}
                     </div>
 
-                    {/* Score Badge */}
-                    {loc.score != null && (
-                      <div className="absolute bottom-2.5 right-2.5 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/20 flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                        <span className="text-white font-bold text-xs">
-                          Score: {Math.round(loc.score)}
-                        </span>
-                      </div>
-                    )}
+                    {/* Bottom Right: Internal Score (SuperAdmin/Ops Only) OR Visual Highlight Tag (Customer Facing) */}
+                    <div className="absolute bottom-2.5 right-2.5">
+                      {!isClient && loc.score != null ? (
+                        <div className="bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/20 flex items-center gap-1.5">
+                          <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
+                          <span className="text-white font-bold text-xs">
+                            Score: {Math.round(loc.score)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="bg-primary/90 backdrop-blur-md px-2 py-0.5 rounded-lg border border-white/20 flex items-center gap-1 text-white text-[11px] font-semibold">
+                          <MapPin className="w-3 h-3" />
+                          <span>{visualHighlight.label}</span>
+                        </div>
+                      )}
+                    </div>
 
-                    {/* Formats on Image */}
-                    <div className="absolute bottom-2.5 left-2.5 flex flex-wrap gap-1 max-w-[70%]">
+                    {/* Bottom Left: Formats on Image */}
+                    <div className="absolute bottom-2.5 left-2.5 flex flex-wrap gap-1 max-w-[60%]">
                       {formats.slice(0, 2).map((fmt) => (
                         <span
                           key={fmt}
@@ -463,12 +711,25 @@ export default function LocationsPage() {
 
                   {/* Location Content Info */}
                   <div className="p-4 space-y-2">
-                    <Link
-                      href={`/locations/${loc.id}`}
-                      className="font-bold text-slate-900 text-base hover:text-primary transition-colors block line-clamp-1"
-                    >
-                      {loc.name}
-                    </Link>
+                    <div className="flex items-start justify-between gap-2">
+                      <Link
+                        href={`/locations/${loc.id}`}
+                        className={`font-bold text-slate-900 text-sm hover:text-primary transition-colors block line-clamp-1 ${
+                          isClient ? "font-mono" : ""
+                        }`}
+                      >
+                        {isClient
+                          ? loc.skyarcSiteCode ?? `SKY-${loc.id.slice(0, 4).toUpperCase()}`
+                          : loc.name}
+                      </Link>
+
+                      {/* Internal Vendor Media Code (Visible only to internal roles/vendors, NOT clients) */}
+                      {!isClient && loc.vendorMediaCode && (
+                        <span className="text-[10px] font-mono text-muted bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
+                          {loc.vendorMediaCode}
+                        </span>
+                      )}
+                    </div>
 
                     <p className="text-xs text-muted flex items-center gap-1.5">
                       <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
@@ -517,6 +778,43 @@ export default function LocationsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Pagination Footer Controls */}
+      {!isLoading && !error && totalPages > 1 && (
+        <div className="flex items-center justify-between border-t border-slate-200 pt-4 px-1">
+          <p className="text-xs text-muted">
+            Showing <strong className="text-slate-900">{startIndex + 1}</strong> to{" "}
+            <strong className="text-slate-900">
+              {Math.min(startIndex + pageSize, totalItems)}
+            </strong>{" "}
+            of <strong className="text-slate-900">{totalItems}</strong> locations
+          </p>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={validCurrentPage === 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <span className="text-xs font-semibold px-3 py-1 bg-violet-50 text-primary rounded-lg border border-violet-100">
+              Page {validCurrentPage} of {totalPages}
+            </span>
+
+            <button
+              type="button"
+              disabled={validCurrentPage === totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 

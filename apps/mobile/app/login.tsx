@@ -10,10 +10,10 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { SKYARC_BRAND, SKYARC_LOGO_WHITE_URL } from "@skyarc/shared";
+import { SKYARC_BRAND } from "@skyarc/shared";
 import { login } from "../src/lib/auth";
 import { AppText, Button, Input } from "../src/components/ui";
-import { colors, spacing } from "../src/theme";
+import { brandAssets, colors, spacing } from "../src/theme";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -41,13 +41,14 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.brandPanel}>
-        <Image
-          source={{ uri: SKYARC_LOGO_WHITE_URL }}
-          style={styles.logo}
-          resizeMode="contain"
-          accessibilityLabel="Skyarc"
-        />
-        <Text style={styles.atlasLabel}>Atlas</Text>
+        <View style={styles.logoPlate}>
+          <Image
+            source={brandAssets.atlasLogo}
+            style={styles.logo}
+            resizeMode="contain"
+            accessibilityLabel="Atlas by Skyarc"
+          />
+        </View>
         <Text style={styles.tagline}>{SKYARC_BRAND.tagline.toUpperCase()}</Text>
       </View>
       <KeyboardAvoidingView
@@ -112,21 +113,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.black,
   },
-  logo: { width: 220, height: 56 },
-  atlasLabel: {
-    color: colors.onDark,
-    fontSize: 18,
-    fontWeight: "700",
-    marginTop: spacing.sm,
-    letterSpacing: 2,
-    textTransform: "uppercase",
+  logoPlate: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
+  logo: { width: 220, height: 70 },
   tagline: {
     color: colors.primary,
     fontSize: 11,
     fontWeight: "600",
     letterSpacing: 1.5,
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
   },
   flex: { flex: 1, backgroundColor: colors.background },
   scroll: {

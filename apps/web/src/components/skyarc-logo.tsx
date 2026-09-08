@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
-import { SKYARC_LOGO_WHITE_URL } from "@/lib/brand";
+import { ATLAS_LOGO_ASPECT, ATLAS_LOGO_SRC, ATLAS_MARK_SRC } from "@/lib/brand";
 
 interface SkyarcLogoProps {
   /** Display height in pixels — width scales automatically */
@@ -8,8 +8,10 @@ interface SkyarcLogoProps {
   className?: string;
   subtitle?: string;
   priority?: boolean;
-  /** Hide subtitle when sidebar is collapsed */
+  /** Show the triangular mark only (collapsed sidebar / compact header) */
   collapsed?: boolean;
+  /** White plate behind the lockup — use on black / dark surfaces */
+  onDark?: boolean;
 }
 
 export function SkyarcLogo({
@@ -18,23 +20,36 @@ export function SkyarcLogo({
   subtitle,
   priority,
   collapsed,
+  onDark = false,
 }: SkyarcLogoProps) {
-  const width = Math.round(height * 3.8);
+  const aspect = collapsed ? 1 : ATLAS_LOGO_ASPECT;
+  const width = Math.round(height * aspect);
 
   return (
     <div className={cn("flex flex-col min-w-0", className)}>
-      <Image
-        src={SKYARC_LOGO_WHITE_URL}
-        alt="Skyarc"
-        width={width}
-        height={height}
-        priority={priority}
-        unoptimized
-        className="object-contain object-left"
-        style={{ height, width: "auto", maxWidth: collapsed ? height * 1.2 : width }}
-      />
+      <div
+        className={cn(
+          "inline-flex items-center justify-center overflow-hidden",
+          onDark && "bg-white rounded-lg px-2 py-1.5"
+        )}
+      >
+        <Image
+          src={collapsed ? ATLAS_MARK_SRC : ATLAS_LOGO_SRC}
+          alt="Atlas by Skyarc"
+          width={width}
+          height={height}
+          priority={priority}
+          className="object-contain object-left"
+          style={{ height, width: "auto", maxWidth: collapsed ? height : width }}
+        />
+      </div>
       {subtitle && !collapsed && (
-        <p className="text-[11px] mt-1.5 truncate font-medium tracking-wide text-skyarc-on-dark-muted">
+        <p
+          className={cn(
+            "text-[11px] mt-1.5 truncate font-medium tracking-wide",
+            onDark ? "text-skyarc-on-dark-muted" : "text-muted"
+          )}
+        >
           {subtitle}
         </p>
       )}

@@ -6,7 +6,9 @@ import { getDefaultLandingPath, UserRole } from "@skyarc/shared";
 import { SKYARC_BRAND } from "@skyarc/shared";
 import { createWebApiClient, storeTokens, storeUser } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
+import { AtlasLogoLoader, AtlasPageLoader } from "@/components/atlas-logo-loader";
 import { SkyarcLogo } from "@/components/skyarc-logo";
+import { showDemoLogins } from "@/lib/feature-flags";
 
 function parseRole(role: string): (typeof UserRole)[keyof typeof UserRole] {
   const values = Object.values(UserRole) as string[];
@@ -24,6 +26,8 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [demoVisible, setDemoVisible] = useState(true);
+  const demoEnabled = showDemoLogins();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -68,7 +72,7 @@ function LoginForm() {
           }}
         />
         <div className="relative z-10 flex flex-col justify-between p-12 w-full">
-          <SkyarcLogo height={52} subtitle="Find your spotlight." priority />
+          <SkyarcLogo height={56} onDark priority />
           <div className="max-w-md">
             <h2 className="text-3xl font-bold leading-tight mb-4 text-white">Skyarc Atlas</h2>
             <p className="text-skyarc-on-dark-muted text-lg leading-relaxed">
@@ -86,12 +90,15 @@ function LoginForm() {
       <div className="flex flex-1 items-center justify-center p-6 sm:p-10 bg-skyarc-surface">
         <form
           onSubmit={handleSubmit}
-          className="w-full max-w-md bg-white rounded-2xl p-8 space-y-5 border border-violet-100 shadow-card"
+          className="relative w-full max-w-md bg-white rounded-2xl p-8 space-y-5 border border-violet-100 shadow-card overflow-hidden"
         >
-          <div className="lg:hidden mb-2 flex justify-center">
-            <div className="bg-black rounded-xl px-4 py-3 inline-flex">
-              <SkyarcLogo height={40} subtitle="Atlas" />
+          {loading ? (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/95">
+              <AtlasLogoLoader size="md" label="Signing in" />
             </div>
+          ) : null}
+          <div className="lg:hidden mb-2 flex justify-center">
+            <SkyarcLogo height={48} />
           </div>
           <div className="hidden lg:block">
             <h1 className="text-2xl font-bold text-slate-900">Welcome back</h1>
@@ -129,11 +136,26 @@ function LoginForm() {
             disabled={loading}
             className="w-full btn-primary py-3.5 disabled:opacity-50"
           >
-            {loading ? "Signing in..." : "Sign in"}
+            {loading ? "Signing in" : "Sign in"}
           </button>
 
+          {demoEnabled && (
           <div className="pt-3 border-t border-slate-100">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Demo accounts
+              </p>
+              <button
+                type="button"
+                onClick={() => setDemoVisible((v) => !v)}
+                className="text-[11px] font-semibold text-primary hover:underline"
+              >
+                {demoVisible ? "Hide" : "Show"}
+              </button>
+            </div>
+            {demoVisible && (
+            <>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 sr-only">
               Quick demo logins:
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
@@ -196,7 +218,10 @@ function LoginForm() {
             <p className="text-[11px] text-slate-400 mt-2 text-center">
               Password for all demo accounts: <code className="text-slate-600 font-mono">ChangeMe123!</code>
             </p>
+            </>
+            )}
           </div>
+          )}
         </form>
       </div>
     </div>
@@ -205,7 +230,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-skyarc-surface" />}>
+    <Suspense fallback={<AtlasPageLoader label="Loading sign in" />}>
       <LoginForm />
     </Suspense>
   );

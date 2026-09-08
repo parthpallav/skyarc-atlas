@@ -4,16 +4,21 @@ import { randomUUID } from "node:crypto";
 import {
   createLocationBodySchema,
   nearbyQuerySchema,
+  flightAvailabilityQuerySchema,
   paginationQuerySchema,
   updateLocationBodySchema,
   updateLocationCommercialBodySchema,
   bulkApplyLocationCommercialBodySchema,
   updateSkyarcLocationCommercialBodySchema,
+  bulkLocationActionBodySchema,
   uuidSchema,
 } from "@skyarc/validation";
 import {
   SurveyStatus,
   canViewClientPricing,
+  isClientUser,
+  publicSkyarcSiteCode,
+  siteNameForAudience,
   parseLocationCommercial,
   parseOrganizationCommercial,
   parseSkyarcLocationCommercial,
@@ -31,6 +36,7 @@ import {
   isReadOnly,
   canAccessLocation,
   isVendorUser,
+  isInternalUser,
 } from "../../lib/rbac.js";
 import {
   buildLocationListWhere,
@@ -41,6 +47,11 @@ import {
 import { loadPlatformConfig } from "../../lib/commercial-config.js";
 import { forbidden, notFound } from "../../lib/errors.js";
 import { coverUrlsForLocations } from "../../lib/asset-url.js";
+import {
+  customerRateForInventory,
+  loadEligibleInventory,
+  parseInventorySpecs,
+} from "../../lib/media-planning/run-optimization.js";
 import {
   getCachedLocationResponse,
   invalidateLocationCaches,
@@ -53,6 +64,8 @@ function serializeLocation(
   user: AuthUser,
   location: {
     id: string;
+    skyarcSiteCode?: string | null;
+    vendorMediaCode?: string | null;
     name: string;
     latitude: number;
     longitude: number;
@@ -93,7 +106,15 @@ function serializeLocation(
     commercialView as Record<string, unknown> | undefined
   ) as ReturnType<typeof resolveEffectiveLocationCommercial> | undefined;
 
-  const score = location.scores?.[0]?.overallScore ?? null;
+  const isClient = isClientUser(user);
+  const score = isClient ? null : (location.scores?.[0]?.overallScore ?? null);
+  const vendorMediaCode = isClient ? null : (location.vendorMediaCode ?? null);
+  const skyarcSiteCode = publicSkyarcSiteCode(location.skyarcSiteCode, location.id);
+  const name = siteNameForAudience(
+    { name: location.name, road: location.road, skyarcSiteCode, id: location.id },
+    isClient
+  );
+
   const inventoryTypes = [
     ...new Set(
       location.screens?.flatMap((s) => s.inventories?.map((i) => i.inventoryType) ?? []) ?? []
@@ -102,7 +123,9 @@ function serializeLocation(
 
   return {
     id: location.id,
-    name: location.name,
+    skyarcSiteCode,
+    vendorMediaCode,
+    name,
     latitude: location.latitude,
     longitude: location.longitude,
     accuracyM: location.accuracyM,
@@ -268,10 +291,23 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
     const body = createLocationBodySchema.parse(request.body);
     const id = body.id ?? randomUUID();
 
+    const effectiveOrgId =
+      request.user.role === "SUPERADMIN" || request.user.role === "ADMIN"
+        ? body.organizationId || organizationIdForNewLocation(request.user)
+        : organizationIdForNewLocation(request.user);
+
+    let generatedSkyarcCode = body.skyarcSiteCode;
+    if (!generatedSkyarcCode) {
+      const count = await prisma.location.count();
+      generatedSkyarcCode = `SKY-RAJ-${String(count + 1).padStart(3, "0")}`;
+    }
+
     const location = await prisma.location.upsert({
       where: { id },
       create: {
         id,
+        skyarcSiteCode: generatedSkyarcCode,
+        vendorMediaCode: body.vendorMediaCode,
         name: body.name,
         latitude: body.latitude,
         longitude: body.longitude,
@@ -286,9 +322,11 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
         mountingNotes: body.mountingNotes,
         surveyStatus: SurveyStatus.DRAFT,
         createdByUserId: request.user.id,
-        organizationId: organizationIdForNewLocation(request.user),
+        organizationId: effectiveOrgId,
       },
       update: {
+        skyarcSiteCode: body.skyarcSiteCode,
+        vendorMediaCode: body.vendorMediaCode,
         name: body.name,
         latitude: body.latitude,
         longitude: body.longitude,
@@ -301,11 +339,86 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
         orientationDeg: body.orientationDeg,
         mountingType: body.mountingType,
         mountingNotes: body.mountingNotes,
+        ...(request.user.role === "SUPERADMIN" && body.organizationId
+          ? { organizationId: body.organizationId }
+          : {}),
       },
     });
 
     invalidateLocationCaches(id);
     return success(serializeLocation(request.user, location));
+  });
+
+  fastify.get("/locations/availability", { preHandler: [fastify.authenticate] }, async (request) => {
+    if (!canReadLocations(request.user)) throw forbidden();
+    const query = flightAvailabilityQuerySchema.parse(request.query);
+    const startDate = new Date(`${query.from}T00:00:00`);
+    const endDate = new Date(`${query.to}T23:59:59`);
+    if (!(startDate.getTime() <= endDate.getTime())) {
+      return success({
+        from: query.from,
+        to: query.to,
+        durationDays: 0,
+        availableSites: 0,
+        availableFaces: 0,
+        bookedFaces: 0,
+        sites: [],
+      });
+    }
+
+    const [eligible, totalFaces] = await Promise.all([
+      loadEligibleInventory(prisma, { startDate, endDate }),
+      prisma.inventory.count({ where: { status: "AVAILABLE" } }),
+    ]);
+
+    const forCustomer = isClientUser(request.user);
+    const uniqueLocationIds = new Set(eligible.map((inv) => inv.screen.locationId));
+    const seenLocations = new Set<string>();
+    const sites = [];
+    for (const inv of eligible) {
+      const location = inv.screen.location;
+      if (seenLocations.has(inv.screen.locationId)) continue;
+      seenLocations.add(inv.screen.locationId);
+      const specs = parseInventorySpecs(inv.staticSpecsJson);
+      const skyarcSiteCode = publicSkyarcSiteCode(
+        (location as { skyarcSiteCode?: string | null }).skyarcSiteCode,
+        inv.screen.locationId
+      );
+      sites.push({
+        inventoryId: inv.id,
+        locationId: inv.screen.locationId,
+        skyarcSiteCode,
+        displayName: siteNameForAudience(
+          {
+            name: location.name,
+            road: location.road,
+            skyarcSiteCode,
+            id: inv.screen.locationId,
+          },
+          forCustomer
+        ),
+        road: location.road,
+        inventoryType: inv.inventoryType ?? null,
+        lighting: specs.lighting,
+        widthFt: specs.widthFt,
+        heightFt: specs.heightFt,
+        clientRate: canViewClientPricing(request.user) ? customerRateForInventory(inv) : null,
+      });
+      if (sites.length >= 24) break;
+    }
+
+    const durationDays =
+      Math.round((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1;
+
+    return success({
+      from: query.from,
+      to: query.to,
+      durationDays,
+      availableSites: uniqueLocationIds.size,
+      availableFaces: eligible.length,
+      bookedFaces: Math.max(0, totalFaces - eligible.length),
+      sites,
+    });
   });
 
   fastify.get("/locations/nearby", { preHandler: [fastify.authenticate] }, async (request) => {
@@ -368,7 +481,7 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
   fastify.get("/locations/:id", { preHandler: [fastify.authenticate] }, async (request) => {
     if (!canReadLocations(request.user)) throw forbidden();
     const id = uuidSchema.parse((request.params as { id: string }).id);
-    const cacheKey = locationDetailCacheKey(id);
+    const cacheKey = locationDetailCacheKey(id, request.user.role);
     const cached = getCachedLocationResponse<{ data: unknown; meta: unknown }>(cacheKey);
     if (cached) return cached;
 
@@ -555,6 +668,55 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
       }
 
       return success({ updated: locations.length });
+    }
+  );
+
+  fastify.post(
+    "/locations/bulk-actions",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      if (isReadOnly(request.user)) throw forbidden();
+      if (!isInternalUser(request.user) && !isVendorUser(request.user)) {
+        throw forbidden();
+      }
+
+      const body = bulkLocationActionBodySchema.parse(request.body);
+      const where = isVendorUser(request.user)
+        ? {
+            id: { in: body.locationIds },
+            organizationId: requireOrganization(request.user),
+          }
+        : { id: { in: body.locationIds } };
+
+      const locations = await prisma.location.findMany({ where, select: { id: true } });
+      if (locations.length === 0) {
+        throw notFound("No matching locations");
+      }
+      const ids = locations.map((location) => location.id);
+
+      if (body.action === "ARCHIVE") {
+        await prisma.location.updateMany({
+          where: { id: { in: ids } },
+          data: { archivedAt: new Date() },
+        });
+      } else if (body.action === "UNARCHIVE") {
+        await prisma.location.updateMany({
+          where: { id: { in: ids } },
+          data: { archivedAt: null },
+        });
+      } else {
+        const status = body.action === "AVAILABLE" ? "AVAILABLE" : "UNAVAILABLE";
+        await prisma.inventory.updateMany({
+          where: { screen: { locationId: { in: ids } } },
+          data: { status },
+        });
+      }
+
+      for (const id of ids) {
+        invalidateLocationCaches(id);
+      }
+
+      return success({ updated: ids.length, action: body.action });
     }
   );
 }

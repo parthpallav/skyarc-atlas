@@ -64,7 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       >
         <div className="flex items-center justify-between p-4 border-b border-zinc-800 shrink-0">
-          <SkyarcLogo height={36} subtitle="Atlas" />
+          <SkyarcLogo height={32} onDark priority />
           <button
             type="button"
             aria-label="Close menu"
@@ -93,16 +93,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Menu className="w-5 h-5" />
             </button>
-            <div className="bg-black rounded-lg px-2.5 py-1">
-              <SkyarcLogo height={22} collapsed />
-            </div>
+            <SkyarcLogo height={28} collapsed />
           </div>
 
           <div className="flex items-center gap-2">
             <PwaInstallButton />
-            <span className="text-[11px] font-bold text-muted uppercase tracking-wider bg-slate-100 px-2 py-1 rounded-md">
-              Atlas
-            </span>
           </div>
         </header>
 

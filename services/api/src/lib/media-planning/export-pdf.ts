@@ -8,6 +8,8 @@ export interface MediaPlanPdfLineItem {
   inventoryType: string;
   locationName: string;
   road: string | null;
+  size?: string | null;
+  creativeBrief?: string | null;
   screenLabel?: string | null;
   clientRate: number | null;
   budgetAllocated: number;
@@ -87,8 +89,8 @@ export function buildMediaPlanPdf(input: MediaPlanPdfInput): Promise<Buffer> {
     doc.moveDown(0.5);
 
     const tableTop = doc.y;
-    const colX = [48, 68, 150, 250, 310, 400, 480];
-    const headers = ["#", "Product", "Location", "Road", "Type", "Client rate", "Budget"];
+    const colX = [48, 68, 150, 250, 330, 400, 470];
+    const headers = ["#", "Skyarc code", "Location", "Size", "Type", "Rate", "Budget"];
 
     doc.font("Helvetica-Bold").fontSize(9).fillColor("#374151");
     headers.forEach((header, i) => doc.text(header, colX[i], tableTop, { width: colX[i + 1] ? colX[i + 1] - colX[i] - 4 : 70 }));
@@ -109,7 +111,7 @@ export function buildMediaPlanPdf(input: MediaPlanPdfInput): Promise<Buffer> {
         item.rank != null ? String(item.rank) : "—",
         item.productCode,
         item.locationName,
-        item.road ?? "—",
+        item.size ?? "—",
         formatInventoryType(item.inventoryType),
         item.clientRate != null ? formatInr(item.clientRate) : "—",
         formatInr(item.budgetAllocated),
@@ -139,7 +141,19 @@ export function buildMediaPlanPdf(input: MediaPlanPdfInput): Promise<Buffer> {
     }
 
     doc.moveDown(1);
-    doc.font("Helvetica-Bold").fontSize(11).text("Assumptions");
+    doc.font("Helvetica-Bold").fontSize(11).text("Creative briefs");
+    doc.moveDown(0.3);
+    doc.font("Helvetica").fontSize(9).fillColor("#374151");
+    for (const item of input.items) {
+      if (doc.y > 740) doc.addPage();
+      const size = item.size ? ` · ${item.size}` : "";
+      doc.fillColor("#1A1A1A").font("Helvetica-Bold").text(`${item.productCode}${size}`);
+      doc.font("Helvetica").fillColor("#374151").text(item.creativeBrief ?? "Artwork spec to be confirmed with Skyarc ops.");
+      doc.moveDown(0.35);
+    }
+
+    doc.moveDown(0.5);
+    doc.font("Helvetica-Bold").fontSize(11).fillColor("#1A1A1A").text("Assumptions");
     doc.moveDown(0.3);
     doc.font("Helvetica").fontSize(9).fillColor("#374151");
     for (const assumption of input.assumptions) {

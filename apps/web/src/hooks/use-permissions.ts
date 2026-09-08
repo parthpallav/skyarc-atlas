@@ -1,4 +1,11 @@
-import { isReadOnly, canViewClientPricing, isClientUser } from "@skyarc/shared";
+import {
+  isReadOnly,
+  canViewClientPricing,
+  isClientUser,
+  isInternalUser,
+  canWriteCampaigns,
+  canMutateCampaign,
+} from "@skyarc/shared";
 import { useAuth } from "@/hooks/use-auth";
 import {
   canAccessRoute,
@@ -20,6 +27,10 @@ export function usePermissions() {
     isReadOnly: authUser ? isReadOnly(authUser) : true,
     isVendor: user ? isVendorPortalUser(user) : false,
     isClient: authUser ? isClientUser(authUser) : false,
+    isInternal: authUser ? isInternalUser(authUser) : false,
+    canWriteCampaigns: authUser ? canWriteCampaigns(authUser) : false,
+    canMutateCampaign: (campaign: { createdByUserId?: string | null }) =>
+      authUser ? canMutateCampaign(authUser, campaign) : false,
     canViewClientPricing: authUser ? canViewClientPricing(authUser) : false,
     roleLabel: user ? roleLabel(user.role) : "",
     canAccessRoute: (pathname: string) => canAccessRoute(user, pathname),

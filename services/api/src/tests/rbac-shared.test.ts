@@ -2,6 +2,7 @@ import {
   UserRole,
   canAccessCampaigns,
   canAccessLocation,
+  canMutateCampaign,
   canWriteLocation,
   getDefaultLandingPath,
   isInternalUser,
@@ -70,5 +71,20 @@ describe("shared rbac", () => {
         organizationId: "org-b",
       })
     ).toBe(false);
+  });
+
+  it("only the creator or superadmin can mutate a campaign", () => {
+    const creator: AuthUser = {
+      id: "user-1",
+      email: "planner@example.com",
+      role: UserRole.MEDIA_PLANNER,
+      organizationId: "org-a",
+    };
+    const other: AuthUser = { ...creator, id: "user-2" };
+    const superadmin: AuthUser = { ...creator, id: "admin", role: UserRole.SUPERADMIN };
+    const campaign = { createdByUserId: "user-1" };
+    expect(canMutateCampaign(creator, campaign)).toBe(true);
+    expect(canMutateCampaign(other, campaign)).toBe(false);
+    expect(canMutateCampaign(superadmin, campaign)).toBe(true);
   });
 });

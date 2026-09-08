@@ -73,6 +73,19 @@ export function canAccessCampaigns(user: Pick<AuthUser, "role">): boolean {
   return isInternalUser(user) || isClientUser(user);
 }
 
+/** Internal planners and brand clients can create/optimize campaigns. Location writes stay blocked for clients. */
+export function canWriteCampaigns(user: Pick<AuthUser, "role">): boolean {
+  return isInternalUser(user) || isClientUser(user);
+}
+
+export function canMutateCampaign(
+  user: Pick<AuthUser, "id" | "role">,
+  campaign: { createdByUserId?: string | null }
+): boolean {
+  if (normalizedRole(user) === UserRole.SUPERADMIN) return true;
+  return Boolean(campaign.createdByUserId) && campaign.createdByUserId === user.id;
+}
+
 export function canAccessAdmin(user: Pick<AuthUser, "role">): boolean {
   const role = normalizedRole(user);
   return role === UserRole.SUPERADMIN || role === UserRole.ADMIN;

@@ -14,7 +14,6 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
   UserCheck,
 } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";

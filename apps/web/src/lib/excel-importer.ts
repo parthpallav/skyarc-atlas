@@ -2,6 +2,9 @@ import ExcelJS from "exceljs";
 
 export interface ParsedInventoryItem {
   name: string;
+  skyarcSiteCode?: string;
+  vendorMediaCode?: string;
+  /** @deprecated backward compat */
   iid?: string;
   latitude: number;
   longitude: number;
@@ -171,7 +174,17 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
         const norm = extractCellValue(colName).toLowerCase();
         if (norm === "sr" || norm === "sr." || norm === "s.no" || norm === "sr no") colIndexMap.sr = cIdx;
         else if (norm === "media type" || norm === "type" || norm === "media") colIndexMap.mediaType = cIdx;
-        else if (norm === "iid" || norm === "inventory id" || norm === "id" || norm === "site id") colIndexMap.iid = cIdx;
+        else if (
+          norm === "iid" ||
+          norm === "inventory id" ||
+          norm === "id" ||
+          norm === "site id" ||
+          norm === "media code" ||
+          norm === "vendor code" ||
+          norm === "vendor media code" ||
+          norm === "hoarding no"
+        )
+          colIndexMap.vendorMediaCode = cIdx;
         else if (norm === "district") colIndexMap.district = cIdx;
         else if (norm === "city") colIndexMap.city = cIdx;
         else if (norm === "area") colIndexMap.area = cIdx;
@@ -207,7 +220,13 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
     const row = rawData[r] || [];
     if (!row.some((cell) => cell != null && extractCellValue(cell) !== "")) continue;
 
-    const iid = colIndexMap.iid != null ? extractCellValue(row[colIndexMap.iid]) : undefined;
+    const rawCode =
+      colIndexMap.vendorMediaCode != null
+        ? extractCellValue(row[colIndexMap.vendorMediaCode])
+        : colIndexMap.iid != null
+        ? extractCellValue(row[colIndexMap.iid])
+        : undefined;
+    const vendorMediaCode = rawCode || undefined;
     const mediaTypeRaw = colIndexMap.mediaType != null ? extractCellValue(row[colIndexMap.mediaType]) : undefined;
     const area = colIndexMap.area != null ? extractCellValue(row[colIndexMap.area]) : "";
     const locDesc = colIndexMap.location != null ? extractCellValue(row[colIndexMap.location]) : "";
@@ -248,13 +267,14 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
     const cardRate = colIndexMap.cardRate != null ? parseNumber(row[colIndexMap.cardRate]) : undefined;
     const discountedRate = colIndexMap.discountedRate != null ? parseNumber(row[colIndexMap.discountedRate]) : undefined;
 
-    const siteName = iid
-      ? `${iid} - ${area || locDesc || "Billboard Site"}`
+    const siteName = vendorMediaCode
+      ? `${vendorMediaCode} - ${area || locDesc || "Billboard Site"}`
       : `${area || locDesc || "Rajkot Site"} #${r}`;
 
     items.push({
       name: siteName,
-      iid: iid || undefined,
+      vendorMediaCode,
+      iid: vendorMediaCode, // backward compat
       latitude: Number(lat.toFixed(6)),
       longitude: Number(lng.toFixed(6)),
       city,

@@ -19,8 +19,8 @@ export function locationListCacheKey(
   return `locations:list:${role}:${userId}:${page}:${limit}`;
 }
 
-export function locationDetailCacheKey(id: string): string {
-  return `locations:detail:${id}`;
+export function locationDetailCacheKey(id: string, role: string): string {
+  return `locations:detail:${role}:${id}`;
 }
 
 export function getCachedLocationResponse<T>(key: string): T | undefined {
@@ -36,7 +36,9 @@ export function setCachedLocationResponse<T>(key: string, value: T): void {
 /** Call after any location or cover-photo change. */
 export function invalidateLocationCaches(locationId?: string): void {
   if (locationId) {
-    cache.delete(locationDetailCacheKey(locationId));
+    cache.deleteWhere(
+      (key) => key.startsWith("locations:detail:") && key.endsWith(`:${locationId}`)
+    );
   }
   cache.deleteWhere((key) => key.startsWith("locations:list:"));
 }

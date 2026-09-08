@@ -5,6 +5,7 @@ import {
   Map,
   MapPin,
   Megaphone,
+  Layers,
   Settings,
   User,
   Users,
@@ -42,6 +43,7 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
 
   if (canAccessCampaigns(authUser)) {
     links.push({ href: "/campaigns", label: "Campaigns", icon: Megaphone });
+    links.push({ href: "/media-plans", label: "Media Plans", icon: Layers });
   }
 
   links.push({ href: "/map", label: "Map", icon: Map });

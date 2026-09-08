@@ -2,7 +2,16 @@
 export const SAMPLE_CAMPAIGN = {
   name: "Monsoon Fresh 2026 — Rajkot Launch",
   advertiserName: "NutriFresh Foods",
+  objective: "New Product / Store Launch",
+  geographicFocus: "Kalawad Road, University Road, 150 Feet Ring Road",
 } as const;
+
+export const CAMPAIGN_OBJECTIVES = [
+  { value: "Brand Awareness & Recall", hint: "Visibility and brand recall" },
+  { value: "New Product / Store Launch", hint: "Launch visibility on approach routes" },
+  { value: "Footfall & Retail Drive", hint: "Reach near shops and destinations" },
+  { value: "Corridor Takeover", hint: "Dominance on named roads" },
+] as const;
 
 export const SAMPLE_CAMPAIGN_BRIEF = `Campaign: Monsoon Fresh 2026 — Rajkot Launch
 Advertiser: NutriFresh Foods (FMCG — packaged snacks & beverages)

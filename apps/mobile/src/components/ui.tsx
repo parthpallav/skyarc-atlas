@@ -1,5 +1,7 @@
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   Image,
   Pressable,
   StyleSheet,
@@ -9,8 +11,9 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from "react-native";
+import { useEffect, useRef } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, radii, spacing } from "../theme";
+import { brandAssets, colors, radii, spacing } from "../theme";
 
 export function Screen({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
   return <View style={[styles.screen, style]}>{children}</View>;
@@ -104,9 +107,74 @@ export function Badge({ label, tone = "warning" }: { label: string; tone?: "warn
 }
 
 export function LoadingScreen({ message = "Loading..." }: { message?: string }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+  const bar = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1.04,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    const barLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bar, {
+          toValue: 1,
+          duration: 1100,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(bar, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulseLoop.start();
+    barLoop.start();
+    return () => {
+      pulseLoop.stop();
+      barLoop.stop();
+    };
+  }, [bar, pulse]);
+
   return (
-    <View style={styles.loading}>
-      <ActivityIndicator size="large" color={colors.primary} />
+    <View style={styles.loading} accessibilityRole="progressbar" accessibilityLabel={message}>
+      <Animated.Image
+        source={brandAssets.atlasLogo}
+        style={[styles.loaderLogo, { transform: [{ scale: pulse }] }]}
+        resizeMode="contain"
+        accessibilityIgnoresInvertColors
+      />
+      <View style={styles.loaderBarTrack}>
+        <Animated.View
+          style={[
+            styles.loaderBarFill,
+            {
+              transform: [
+                {
+                  translateX: bar.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-72, 96],
+                  }),
+                },
+              ],
+            },
+          ]}
+        />
+      </View>
       <Text style={styles.caption}>{message}</Text>
     </View>
   );
@@ -195,6 +263,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.background,
     gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  loaderLogo: {
+    width: 220,
+    height: 72,
+  },
+  loaderBarTrack: {
+    width: 112,
+    height: 2,
+    borderRadius: 999,
+    backgroundColor: colors.secondary,
+    overflow: "hidden",
+    marginTop: spacing.sm,
+  },
+  loaderBarFill: {
+    width: 56,
+    height: 2,
+    borderRadius: 999,
+    backgroundColor: colors.primary,
   },
   thumb: {
     borderRadius: radii.sm,

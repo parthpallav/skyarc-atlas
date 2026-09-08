@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { getStoredToken } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
+import { WorkspaceSkeleton } from "@/components/ui/skeleton";
 
 export function RouteGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -36,11 +37,7 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
   }, [pathname, router, user, isLoading, canAccessRoute, landingPath]);
 
   if (isLoading || !allowed) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <p className="text-sm text-muted">Loading workspace…</p>
-      </div>
-    );
+    return <WorkspaceSkeleton />;
   }
 
   return <>{children}</>;

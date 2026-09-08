@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
-  Sparkles,
-  Layers,
   FileText,
+  Layers,
   Target,
   MapPin,
   Clock,
@@ -24,6 +23,7 @@ export interface StructuredBriefState {
   preferredFormats?: string[];
   budget?: number;
   durationDays?: number;
+  maxLocations?: number;
   kpis?: string[];
   constraints?: string[];
   additionalNotes?: string;
@@ -40,7 +40,7 @@ interface CampaignBriefBuilderProps {
   }) => void;
 }
 
-const OBJECTIVE_OPTIONS = [
+export const OBJECTIVE_OPTIONS = [
   "Brand Awareness & Recall",
   "New Product / Store Launch",
   "Footfall & Retail Drive",
@@ -50,7 +50,7 @@ const OBJECTIVE_OPTIONS = [
   "Hyperlocal Lead Generation",
 ];
 
-const CATEGORY_OPTIONS = [
+export const CATEGORY_OPTIONS = [
   "Real Estate & Infrastructure",
   "Automobile & Two-Wheelers",
   "Jewelry, Watches & Luxury Retail",
@@ -66,7 +66,7 @@ const CATEGORY_OPTIONS = [
   "Other",
 ];
 
-const AUDIENCE_PRESETS = [
+export const AUDIENCE_PRESETS = [
   "Youth & College Students (18–24)",
   "Working Professionals & Corporate (25–45)",
   "High Net-Worth Individuals (HNIs)",
@@ -76,7 +76,7 @@ const AUDIENCE_PRESETS = [
   "Business Owners & Traders",
 ];
 
-const CORRIDOR_PRESETS = [
+export const CORRIDOR_PRESETS = [
   "Kalawad Road",
   "150 Feet Ring Road",
   "Yagnik Road",
@@ -91,7 +91,7 @@ const CORRIDOR_PRESETS = [
   "Ring Road 2",
 ];
 
-const FORMAT_PRESETS = [
+export const FORMAT_PRESETS = [
   "Digital Billboard (DOOH)",
   "Static Billboard / Hoarding",
   "Unipole",
@@ -102,7 +102,7 @@ const FORMAT_PRESETS = [
   "Transit / Bus Wrap",
 ];
 
-const BUDGET_PRESETS = [
+export const BUDGET_PRESETS = [
   { label: "₹2 Lakh", value: 200000 },
   { label: "₹5 Lakh", value: 500000 },
   { label: "₹10 Lakh", value: 1000000 },
@@ -111,7 +111,7 @@ const BUDGET_PRESETS = [
   { label: "₹1 Crore", value: 10000000 },
 ];
 
-const DURATION_PRESETS = [
+export const DURATION_PRESETS = [
   { label: "7 Days", value: 7 },
   { label: "15 Days", value: 15 },
   { label: "30 Days (1 Month)", value: 30 },
@@ -120,7 +120,7 @@ const DURATION_PRESETS = [
   { label: "90 Days (Quarter)", value: 90 },
 ];
 
-const KPI_PRESETS = [
+export const KPI_PRESETS = [
   "Maximum Reach & Impressions",
   "High Frequency & Ad Recall",
   "Corridor Dominance & Impact",
@@ -129,7 +129,7 @@ const KPI_PRESETS = [
   "Commercial Junction Presence",
 ];
 
-const CONSTRAINT_PRESETS = [
+export const CONSTRAINT_PRESETS = [
   "High Visibility Score (> 75) Only",
   "Prime Facing / Unobstructed View Only",
   "Night Illumination Required",
@@ -173,6 +173,9 @@ export function CampaignBriefBuilder({
   );
   const [durationDays, setDurationDays] = useState<number>(
     initialValues?.structuredRequirements?.durationDays ?? 30
+  );
+  const [maxLocations, setMaxLocations] = useState<number>(
+    initialValues?.structuredRequirements?.maxLocations ?? 10
   );
   const [kpis, setKpis] = useState<string[]>(
     initialValues?.structuredRequirements?.kpis ?? [
@@ -233,6 +236,7 @@ export function CampaignBriefBuilder({
         preferredFormats: formats,
         budget,
         durationDays,
+        maxLocations,
         kpis,
         constraints,
         additionalNotes: notes,
@@ -257,6 +261,7 @@ export function CampaignBriefBuilder({
     formats,
     budget,
     durationDays,
+    maxLocations,
     kpis,
     constraints,
     notes,
@@ -505,7 +510,7 @@ export function CampaignBriefBuilder({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase mb-2">
-                <Sparkles className="w-3.5 h-3.5 text-primary" />
+                <Target className="w-3.5 h-3.5 text-primary" />
                 Primary KPIs
               </label>
               <div className="flex flex-wrap gap-1.5">
@@ -604,7 +609,7 @@ export function CampaignBriefBuilder({
               className="text-xs text-primary font-medium hover:underline flex items-center gap-1"
               onClick={() => setRawText(SAMPLE_CAMPAIGN_BRIEF)}
             >
-              <Sparkles className="w-3.5 h-3.5" />
+              <FileText className="w-3.5 h-3.5" />
               Load sample Rajkot FMCG brief
             </button>
             <span className="text-xs text-muted">

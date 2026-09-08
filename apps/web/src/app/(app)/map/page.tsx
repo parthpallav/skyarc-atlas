@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Search, X, MapPin, Sparkles, Navigation } from "lucide-react";
+import { Search, X, MapPin, Navigation } from "lucide-react";
 import { listAllLocations } from "@/lib/api";
 import {
   RAJKOT_CENTER,
@@ -12,6 +12,7 @@ import {
   rajkotStreetMapStyle,
 } from "@/lib/map-style";
 import { buildMapLocationCardHtml, type MapLocationPin } from "@/lib/map-popup";
+import { AtlasLogoLoader } from "@/components/atlas-logo-loader";
 import { PageHeader } from "@/components/page-header";
 
 export default function MapPage() {
@@ -37,6 +38,7 @@ export default function MapPage() {
     return data.filter(
       (loc) =>
         loc.name.toLowerCase().includes(term) ||
+        loc.skyarcSiteCode?.toLowerCase().includes(term) ||
         loc.road?.toLowerCase().includes(term) ||
         loc.address?.toLowerCase().includes(term) ||
         loc.junction?.toLowerCase().includes(term)
@@ -52,13 +54,10 @@ export default function MapPage() {
       center: RAJKOT_CENTER,
       zoom: RAJKOT_DEFAULT_ZOOM,
       maxZoom: 19,
+      attributionControl: false,
     });
 
-    map.addControl(new maplibregl.NavigationControl(), "top-right");
-    map.addControl(
-      new maplibregl.AttributionControl({ compact: true }),
-      "bottom-right"
-    );
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
     hoverPopupRef.current = new maplibregl.Popup({
       closeButton: false,
@@ -210,7 +209,9 @@ export default function MapPage() {
                   >
                     <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" />
                     <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-900 truncate">{loc.name}</p>
+                      <p className="text-xs font-bold text-slate-900 truncate">
+                        {loc.skyarcSiteCode ?? loc.name}
+                      </p>
                       <p className="text-[11px] text-muted truncate">
                         {loc.road ?? loc.junction ?? loc.address ?? "Rajkot"}
                       </p>
@@ -241,11 +242,8 @@ export default function MapPage() {
         </button>
 
         {isLoading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-violet-50/80 backdrop-blur-sm">
-            <div className="text-center space-y-2">
-              <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-sm font-semibold text-slate-700">Loading billboard map…</p>
-            </div>
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-violet-50/85 backdrop-blur-sm">
+            <AtlasLogoLoader size="md" label="Loading billboard map" />
           </div>
         )}
 
@@ -262,6 +260,9 @@ export default function MapPage() {
           ref={mapContainer}
           className="h-[calc(100vh-14rem)] min-h-[480px] w-full bg-slate-100"
         />
+        <p className="absolute bottom-2 right-3 z-10 text-[10px] text-slate-500 bg-white/80 rounded px-1.5 py-0.5">
+          Map data © OpenStreetMap
+        </p>
       </div>
     </div>
   );

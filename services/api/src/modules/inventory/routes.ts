@@ -19,7 +19,7 @@ import argon2 from "argon2";
 import { prisma } from "../../lib/prisma.js";
 import { success } from "../../lib/response.js";
 import { canAccessLocation, canWriteLocation, isReadOnly, isVendorUser, isInternalUser } from "../../lib/rbac.js";
-import { forbidden, notFound } from "../../lib/errors.js";
+import { forbidden, notFound, validationError } from "../../lib/errors.js";
 import { invalidateLocationCaches } from "../../lib/cache/location-cache.js";
 
 function estimateScore(sqft: number, lightingType?: string | null): number {
@@ -320,6 +320,23 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
       if (isVendorUser(request.user)) {
         if (!request.user.organizationId) throw forbidden("No vendor organization assigned");
         targetOrgId = request.user.organizationId;
+        
+        // Strict vendor upload isolation: verify vendor isn't uploading under another agency's name
+        if (body.vendorOrgName?.trim()) {
+          const userOrg = await prisma.organization.findUnique({
+            where: { id: request.user.organizationId },
+            select: { name: true },
+          });
+          if (
+            userOrg &&
+            !userOrg.name.toLowerCase().includes(body.vendorOrgName.trim().toLowerCase()) &&
+            !body.vendorOrgName.trim().toLowerCase().includes(userOrg.name.toLowerCase())
+          ) {
+            throw forbidden(
+              `Upload rejected: You can only import inventory for your assigned agency "${userOrg.name}". The uploaded file contains agency "${body.vendorOrgName}".`
+            );
+          }
+        }
       } else if (isInternalUser(request.user)) {
         if (body.vendorOrgName?.trim()) {
           const orgName = body.vendorOrgName.trim();
@@ -329,8 +346,11 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
 
           if (org) {
             targetOrgId = org.id;
+          } else if (!body.createVendorIfMissing) {
+            throw validationError(
+              `No vendor organization named "${orgName}". Match an existing agency, or enable create vendor.`
+            );
           } else {
-            // Automatically create new Vendor Organization
             const createdOrg = await prisma.organization.create({
               data: {
                 name: orgName,
@@ -391,23 +411,31 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
       let importedCount = 0;
       let updatedCount = 0;
 
-      for (const item of body.items) {
-        let existingLoc: { id: string; organizationId: string | null } | null = null;
+      // Determine vendor media code / site code
+      let siteSeq = (await prisma.location.count()) + 1;
 
-        if (item.iid) {
-          const attr = await prisma.locationAttribute.findFirst({
+      for (const item of body.items) {
+        const itemMediaCode = item.vendorMediaCode || item.iid;
+        let existingLoc: { id: string; organizationId: string | null; skyarcSiteCode: string | null } | null = null;
+
+        if (itemMediaCode) {
+          existingLoc = await prisma.location.findFirst({
             where: {
-              key: "inventory_iid",
-              valueJson: { equals: item.iid },
+              OR: [
+                { vendorMediaCode: itemMediaCode, ...(targetOrgId ? { organizationId: targetOrgId } : {}) },
+                {
+                  attributes: {
+                    some: {
+                      key: "inventory_iid",
+                      valueJson: { equals: itemMediaCode },
+                    },
+                  },
+                  ...(targetOrgId ? { organizationId: targetOrgId } : {}),
+                },
+              ],
             },
-            select: { locationId: true },
+            select: { id: true, organizationId: true, skyarcSiteCode: true },
           });
-          if (attr?.locationId) {
-            existingLoc = await prisma.location.findUnique({
-              where: { id: attr.locationId },
-              select: { id: true, organizationId: true },
-            });
-          }
         }
 
         if (!existingLoc) {
@@ -416,7 +444,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
               name: item.name,
               ...(targetOrgId ? { organizationId: targetOrgId } : {}),
             },
-            select: { id: true, organizationId: true },
+            select: { id: true, organizationId: true, skyarcSiteCode: true },
           });
         }
 
@@ -431,9 +459,11 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
               longitude: item.longitude,
               road: item.area ?? undefined,
               address: item.locationDescription ?? undefined,
+              vendorMediaCode: itemMediaCode ?? undefined,
               commercialJson: {
                 defaultRateAmount: rateAmount,
                 ratePeriod: item.ratePeriod ?? "monthly",
+                currency: "INR",
               },
             },
           });
@@ -476,7 +506,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
               const newScreen = await prisma.screen.create({
                 data: {
                   locationId: existingLoc.id,
-                  label: item.iid ?? item.name,
+                  label: itemMediaCode ?? item.name,
                   inventoryStatus: "AVAILABLE",
                   ...(item.widthFt && item.heightFt
                     ? {
@@ -497,7 +527,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
             await prisma.inventory.create({
               data: {
                 screenId: targetScreenId,
-                productCode: item.iid ?? `INV-${Math.floor(1000 + Math.random() * 9000)}`,
+                productCode: itemMediaCode ?? `INV-${Math.floor(1000 + Math.random() * 9000)}`,
                 inventoryType: item.mediaType,
                 status: "AVAILABLE",
                 notes: item.locationDescription,
@@ -524,9 +554,13 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
           invalidateLocationCaches(existingLoc.id);
           updatedCount++;
         } else {
+          const generatedSkyarcCode = `SKY-RAJ-${String(siteSeq++).padStart(3, "0")}`;
+
           const newLoc = await prisma.location.create({
             data: {
               name: item.name,
+              skyarcSiteCode: item.skyarcSiteCode || generatedSkyarcCode,
+              vendorMediaCode: itemMediaCode,
               latitude: item.latitude,
               longitude: item.longitude,
               road: item.area,
@@ -546,11 +580,17 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
               },
               attributes: {
                 create: [
-                  ...(item.iid
+                  ...(itemMediaCode
                     ? [
                         {
                           key: "inventory_iid",
-                          valueJson: item.iid,
+                          valueJson: itemMediaCode,
+                          provenance: "USER_PROVIDED" as const,
+                          source: "excel_import",
+                        },
+                        {
+                          key: "vendor_media_code",
+                          valueJson: itemMediaCode,
                           provenance: "USER_PROVIDED" as const,
                           source: "excel_import",
                         },
@@ -576,7 +616,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
               },
               screens: {
                 create: {
-                  label: item.iid ?? item.name,
+                  label: itemMediaCode ?? item.name,
                   inventoryStatus: "AVAILABLE",
                   ...(item.widthFt && item.heightFt
                     ? {
@@ -591,7 +631,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
                     : {}),
                   inventories: {
                     create: {
-                      productCode: item.iid ?? `INV-${Math.floor(1000 + Math.random() * 9000)}`,
+                      productCode: itemMediaCode ?? `INV-${Math.floor(1000 + Math.random() * 9000)}`,
                       inventoryType: item.mediaType,
                       status: "AVAILABLE",
                       notes: item.locationDescription,

@@ -1,50 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Sparkles } from "lucide-react";
-import { SAMPLE_CAMPAIGN } from "@skyarc/shared";
+import { ArrowLeft } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
-import { CampaignBriefBuilder } from "@/components/campaign-brief-form";
+import { CampaignWizard, type CampaignWizardPayload } from "@/components/campaign-wizard";
 
-const inputClass =
-  "w-full rounded-lg border border-violet-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30";
-
-export default function NewCampaignPage() {
+function NewCampaignForm() {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [advertiserName, setAdvertiserName] = useState("");
-  const [briefPayload, setBriefPayload] = useState<{
-    sourceText: string;
-    structuredRequirements: Record<string, unknown>;
-  }>({
-    sourceText: "",
-    structuredRequirements: {},
-  });
+  const searchParams = useSearchParams();
+  const preselectedSites = useMemo(
+    () => searchParams.get("sites")?.split(",").filter(Boolean) ?? [],
+    [searchParams]
+  );
   const [error, setError] = useState("");
 
   const createMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (payload: CampaignWizardPayload) => {
       const client = createWebApiClient();
-      if (!name.trim()) throw new Error("Campaign name is required");
-      if (!advertiserName.trim()) throw new Error("Advertiser name is required");
-
+      const budget = payload.structuredRequirements.budget ?? 0;
       const result = await client.createCampaign({
-        name: name.trim(),
-        advertiserName: advertiserName.trim(),
-        briefText: briefPayload.sourceText.trim() || undefined,
-        structuredRequirements:
-          Object.keys(briefPayload.structuredRequirements).length > 0
-            ? briefPayload.structuredRequirements
-            : undefined,
+        name: payload.name,
+        advertiserName: payload.advertiserName,
+        startDate: payload.startDate,
+        endDate: payload.endDate,
+        briefText: payload.briefText,
+        structuredRequirements: payload.structuredRequirements,
       });
-      return result.data as { id: string };
+      const campaign = result.data as { id: string };
+
+      if (preselectedSites.length > 0) {
+        const built = await client.buildMediaPlanFromSelection(campaign.id, {
+          name: `${payload.name} — Selected Sites`,
+          totalBudget: budget,
+          locationIds: preselectedSites,
+          holdInventory: true,
+        });
+        const plan = (built.data as { plan?: { id?: string } }).plan;
+        if (plan?.id) {
+          return { id: campaign.id, planId: plan.id };
+        }
+      }
+      return { id: campaign.id };
     },
     onSuccess: (data) => {
-      router.push(`/campaigns/${data.id}`);
+      router.push(data.planId ? `/campaigns/${data.id}/plans/${data.planId}` : `/campaigns/${data.id}`);
     },
     onError: (err) => {
       setError(err instanceof Error ? err.message : "Failed to create campaign");
@@ -61,90 +64,30 @@ export default function NewCampaignPage() {
         Campaigns
       </Link>
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <PageHeader
-          title="New campaign"
-          description="Build guided campaign requirements, target corridors & allocate DOOH budget"
-        />
-        <button
-          type="button"
-          onClick={() => {
-            setName(SAMPLE_CAMPAIGN.name);
-            setAdvertiserName(SAMPLE_CAMPAIGN.advertiserName);
+      <PageHeader
+        title="New campaign"
+        description="Tell us the goal, roads, audience, dates, and budget — one step at a time."
+      />
+
+      <div className="mt-6">
+        <CampaignWizard
+          pending={createMutation.isPending}
+          error={error}
+          preselectedSiteCount={preselectedSites.length}
+          onSubmit={(payload) => {
+            setError("");
+            createMutation.mutate(payload);
           }}
-          className="btn-secondary text-xs shrink-0 self-start sm:self-auto gap-1.5"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-primary" />
-          Fill sample brand info
-        </button>
+        />
       </div>
-
-      <form
-        className="card-surface p-5 sm:p-7 space-y-6"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setError("");
-          createMutation.mutate();
-        }}
-      >
-        {error && (
-          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-            {error}
-          </p>
-        )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-              Campaign Name *
-            </label>
-            <input
-              className={inputClass}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Summer Brand Launch — Rajkot"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-              Advertiser / Client Name *
-            </label>
-            <input
-              className={inputClass}
-              value={advertiserName}
-              onChange={(e) => setAdvertiserName(e.target.value)}
-              placeholder="e.g., Brandalyst Foods / Shivalik Group"
-              required
-            />
-            <p className="text-[11px] text-muted mt-1">
-              Creates a new advertiser if name is not already registered.
-            </p>
-          </div>
-        </div>
-
-        {/* Guided Campaign Brief Builder */}
-        <div className="border-t border-violet-100 pt-5">
-          <h3 className="text-sm font-bold text-slate-900 mb-3">
-            Campaign Requirements & Brief
-          </h3>
-          <CampaignBriefBuilder onChange={setBriefPayload} />
-        </div>
-
-        <div className="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-violet-100">
-          <Link href="/campaigns" className="btn-secondary">
-            Cancel
-          </Link>
-          <button
-            type="submit"
-            className="btn-primary min-w-[160px]"
-            disabled={createMutation.isPending}
-          >
-            {createMutation.isPending ? "Creating Campaign…" : "Create Campaign"}
-          </button>
-        </div>
-      </form>
     </div>
+  );
+}
+
+export default function NewCampaignPage() {
+  return (
+    <Suspense fallback={<div className="max-w-3xl mx-auto w-full pb-12" />}>
+      <NewCampaignForm />
+    </Suspense>
   );
 }

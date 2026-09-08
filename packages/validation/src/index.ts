@@ -177,6 +177,8 @@ export const platformConfigBodySchema = z.object({
 
 export const locationSchema = z.object({
   id: uuidSchema,
+  skyarcSiteCode: z.string().nullable().optional(),
+  vendorMediaCode: z.string().nullable().optional(),
   name: z.string(),
   latitude: z.number(),
   longitude: z.number(),
@@ -198,6 +200,8 @@ export const locationSchema = z.object({
 
 export const createLocationBodySchema = z.object({
   id: uuidSchema.optional(),
+  skyarcSiteCode: z.string().optional(),
+  vendorMediaCode: z.string().optional(),
   name: z.string().min(1),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
@@ -210,6 +214,7 @@ export const createLocationBodySchema = z.object({
   orientationDeg: z.number().optional(),
   mountingType: z.string().optional(),
   mountingNotes: z.string().optional(),
+  organizationId: uuidSchema.optional(),
 });
 
 export const updateLocationBodySchema = createLocationBodySchema
@@ -230,7 +235,11 @@ export const createCampaignBodySchema = z.object({
   advertiserName: z.string().min(1).optional(),
   briefText: z.string().optional(),
   structuredRequirements: z.record(z.unknown()).optional(),
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
 });
+
+export const updateCampaignBodySchema = createCampaignBodySchema.partial();
 
 export const updateCampaignBriefBodySchema = z.object({
   sourceText: z.string().optional(),
@@ -241,6 +250,38 @@ export const optimizeMediaPlanBodySchema = z.object({
   name: z.string().default("Optimized Plan"),
   totalBudget: z.number().positive(),
   maxLocations: z.number().int().positive().optional(),
+});
+
+export const buildMediaPlanFromSelectionBodySchema = z
+  .object({
+    name: z.string().default("Selected Sites"),
+    totalBudget: z.number().positive(),
+    inventoryIds: z.array(uuidSchema).max(50).optional(),
+    locationIds: z.array(uuidSchema).max(50).optional(),
+    holdInventory: z.boolean().optional().default(true),
+  })
+  .refine(
+    (body) =>
+      Boolean(body.inventoryIds?.length) || Boolean(body.locationIds?.length),
+    { message: "Select at least one site", path: ["locationIds"] }
+  );
+
+export const swapMediaPlanItemBodySchema = z.object({
+  inventoryId: uuidSchema,
+});
+
+export const addMediaPlanItemBodySchema = z.object({
+  inventoryId: uuidSchema,
+});
+
+export const bulkLocationActionBodySchema = z.object({
+  locationIds: z.array(uuidSchema).min(1).max(100),
+  action: z.enum(["ARCHIVE", "UNARCHIVE", "AVAILABLE", "UNAVAILABLE"]),
+});
+
+export const flightAvailabilityQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
 export const nearbyQuerySchema = z.object({
@@ -449,6 +490,9 @@ export const createAnalysisBodySchema = z.object({
 
 export const importInventoryItemSchema = z.object({
   name: z.string().min(1),
+  skyarcSiteCode: z.string().nullish().transform((v) => v ?? undefined),
+  vendorMediaCode: z.string().nullish().transform((v) => v ?? undefined),
+  /** @deprecated use vendorMediaCode */
   iid: z.string().nullish().transform((v) => v ?? undefined),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
@@ -470,6 +514,7 @@ export const importInventoryItemSchema = z.object({
 export const importInventoryBatchBodySchema = z.object({
   vendorOrgName: z.string().nullish().transform((v) => v ?? undefined),
   vendorAdminEmail: z.string().email().nullish().or(z.literal("")).transform((v) => (v ? v : undefined)),
+  createVendorIfMissing: z.boolean().optional().default(false),
   items: z.array(importInventoryItemSchema).min(1).max(500),
 });
 

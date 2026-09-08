@@ -107,6 +107,44 @@ export function formatInventoryType(type?: string | null): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/** Hoarding illumination — Front-lit, Back-lit, Non-lit. */
+export function formatLighting(value?: string | null): string | null {
+  if (!value) return null;
+  const normalized = value.toLowerCase().replace(/[_-]/g, " ").trim();
+  if (normalized.includes("back")) return "Back-lit";
+  if (normalized.includes("front")) return "Front-lit";
+  if (normalized.includes("non") || normalized === "nl") return "Non-lit";
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export type InventoryTypeBucket = "hoarding" | "digital" | "kiosk" | "other";
+
+export function inventoryTypeBucket(type?: string | null): InventoryTypeBucket {
+  const value = (type ?? "").toUpperCase();
+  if (value.includes("KIOSK") || value === "STANDEE") return "kiosk";
+  if (value.includes("DIGITAL")) return "digital";
+  if (
+    value.includes("STATIC") ||
+    value === "UNIPOLE" ||
+    value === "GANTRY" ||
+    value.includes("HOARDING") ||
+    value === "STATIC_BILLBOARD" ||
+    value.includes("BUS_SHELTER")
+  ) {
+    return "hoarding";
+  }
+  return "other";
+}
+
+export const INVENTORY_BUCKET_LABELS: Record<InventoryTypeBucket, string> = {
+  hoarding: "Hoardings",
+  digital: "Digital",
+  kiosk: "Kiosks",
+  other: "Other",
+};
+
 export const FieldState = {
   SET: "SET",
   NOT_AVAILABLE: "NOT_AVAILABLE",
@@ -343,7 +381,18 @@ export const SKYARC_BRAND = {
 export const SKYARC_LOGO_WHITE_URL =
   "https://pub-854b1a1d4dc34a41b4777642ea2bb6c6.r2.dev/logos/skyarc_logo_white.png";
 
-export { SAMPLE_CAMPAIGN, SAMPLE_CAMPAIGN_BRIEF } from "./campaign-brief.js";
+export { SAMPLE_CAMPAIGN, SAMPLE_CAMPAIGN_BRIEF, CAMPAIGN_OBJECTIVES } from "./campaign-brief.js";
+export {
+  looksLikeVendorCode,
+  stripVendorCodeFromTitle,
+  publicSkyarcSiteCode,
+  customerSitePlaceName,
+  customerSiteTitle,
+  siteNameForAudience,
+  siteLabelForAudience,
+  buildSiteCreativeSpec,
+  stripVendorTokensFromText,
+} from "./site-display.js";
 export {
   SCORING_FACTOR_CLIENT,
   PLAN_HIGHLIGHT_FACTORS,
@@ -361,6 +410,8 @@ export {
   isClientUser,
   isReadOnly,
   canAccessCampaigns,
+  canWriteCampaigns,
+  canMutateCampaign,
   canAccessAdmin,
   canAccessLocations,
   canAccessOrganizationPage,

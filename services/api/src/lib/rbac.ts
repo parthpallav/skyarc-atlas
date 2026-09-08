@@ -5,6 +5,8 @@ import {
   isInternalUser,
   isReadOnly,
   isVendorUser,
+  canWriteCampaigns,
+  canMutateCampaign,
   type AuthUser,
   type LocationRecord,
 } from "@skyarc/shared";
@@ -46,4 +48,4 @@ export function canManageOrganizations(user: AuthUser): boolean {
   return canManageUsers(user);
 }
 
-export { canAccessLocation, canWriteLocation, isInternalUser, isReadOnly, isVendorUser };
+export { canAccessLocation, canWriteLocation, isInternalUser, isReadOnly, isVendorUser, canWriteCampaigns, canMutateCampaign };

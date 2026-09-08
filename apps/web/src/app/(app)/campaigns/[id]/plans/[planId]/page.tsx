@@ -7,25 +7,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
-  Copy,
   Download,
-  Eye,
+  FileText,
+  LayoutGrid,
   Layers,
   MapPin,
   Share2,
-  Sparkles,
-  Target,
   Trash2,
-  Users,
-  Zap,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { createWebApiClient } from "@/lib/api";
 import { formatInr } from "@/lib/format";
 import { PageHeader } from "@/components/page-header";
 import { usePermissions } from "@/hooks/use-permissions";
-import { canViewClientPricing } from "@skyarc/shared";
+import { formatInventoryType, formatLighting, INVENTORY_BUCKET_LABELS, inventoryTypeBucket, siteLabelForAudience } from "@skyarc/shared";
 import { trackEntityView, trackBusinessEvent } from "@/lib/clarity-telemetry";
 import {
   PlanSummaryCards,
@@ -33,13 +30,20 @@ import {
   type PlanSummaryView,
   type SiteInsightsView,
 } from "@/components/media-plan-insights";
+import { PlanMixViz } from "@/components/plan-mix-viz";
 import { MediaPlanDetailSkeleton } from "@/components/ui/skeleton";
 
 interface PlanItemRow {
   id: string;
   rank: number | null;
   budgetAllocated: number;
+  inventoryType?: string | null;
+  inventoryBucket?: "hoarding" | "digital" | "kiosk" | "other";
+  lighting?: string | null;
+  widthFt?: number | null;
+  heightFt?: number | null;
   explanationText?: string | null;
+  creativeBrief?: string | null;
   pricing?: {
     vendorRate?: number;
     clientRate?: number;
@@ -49,11 +53,42 @@ interface PlanItemRow {
   location?: {
     id: string;
     name: string;
+    skyarcSiteCode?: string | null;
     road?: string | null;
     junction?: string | null;
     coverImageUrl?: string | null;
   };
   insights?: SiteInsightsView;
+  alternatives?: Array<{
+    inventoryId: string;
+    locationId?: string;
+    locationName?: string;
+    skyarcSiteCode?: string | null;
+    road?: string | null;
+    score?: number;
+    goalFit?: number;
+    fitReason?: string;
+    rateAmount?: number;
+    inventoryType?: string | null;
+    lighting?: string | null;
+  }>;
+}
+
+interface AvailableSite {
+  inventoryId: string;
+  locationId: string;
+  locationName: string;
+  skyarcSiteCode?: string | null;
+  road?: string | null;
+  rateAmount: number;
+  inventoryType?: string | null;
+  inventoryBucket?: "hoarding" | "digital" | "kiosk" | "other";
+  lighting?: string | null;
+  widthFt?: number | null;
+  heightFt?: number | null;
+  fitReason?: string;
+  goalFit?: number;
+  fitsRemaining?: boolean;
 }
 
 interface MediaPlanDetail {
@@ -64,34 +99,304 @@ interface MediaPlanDetail {
   createdAt: string;
   _count?: { items: number };
   summary?: PlanSummaryView;
+  mix?: {
+    sites: number;
+    hoardings: number;
+    digital: number;
+    kiosks: number;
+    other: number;
+    allocated: number;
+  };
+  remainingBudget?: number;
+  overBudget?: number;
+  suggestedAdds?: AvailableSite[];
+  availableSites?: AvailableSite[];
+  goal?: {
+    objective?: string | null;
+    geographicFocus?: string[];
+  };
   items: PlanItemRow[];
 }
 
-// Generate creative marketing highlights for client pitch view (no numeric scores)
-function getCreativeHighlights(item: PlanItemRow, index: number): string[] {
-  const highlights: string[] = [];
+function siteGoalChip(item: PlanItemRow, goal?: MediaPlanDetail["goal"]): string | null {
   const road = (item.location?.road ?? "").toLowerCase();
-  const name = (item.location?.name ?? "").toLowerCase();
-
-  if (road.includes("150") || road.includes("ring")) {
-    highlights.push("Prime Arterial Ring Road — Heavy Commuter Flow");
-  } else if (road.includes("kalawad")) {
-    highlights.push("Premium Commercial & Education Corridor");
-  } else if (road.includes("amin") || road.includes("yagnik") || road.includes("astron")) {
-    highlights.push("High-Income Retail & Lifestyle District");
-  } else {
-    highlights.push("High Dwell Time Major Junction");
+  const focus = goal?.geographicFocus ?? [];
+  if (focus.some((item) => item.length > 2 && road.includes(item.toLowerCase()))) {
+    return "On your corridor";
   }
+  const blob = (goal?.objective ?? "").toLowerCase();
+  if (blob.includes("footfall") || blob.includes("retail")) return "Reach";
+  if (blob.includes("launch")) return "Launch visibility";
+  if (blob.includes("corridor") || blob.includes("takeover")) return "Corridor impact";
+  return null;
+}
 
-  if (index % 2 === 0) {
-    highlights.push("Unobstructed 200m+ Long-Distance Visibility");
-    highlights.push("Dominant Night-Time Backlit Brand Recall");
-  } else {
-    highlights.push("Prime Eye-Level Vehicular Line of Sight");
-    highlights.push("High Repeat Audience Exposure");
-  }
+function siteSpecLine(site: {
+  inventoryType?: string | null;
+  lighting?: string | null;
+  widthFt?: number | null;
+  heightFt?: number | null;
+}) {
+  const parts = [
+    formatInventoryType(site.inventoryType),
+    formatLighting(site.lighting),
+    site.widthFt && site.heightFt ? `${site.widthFt}×${site.heightFt} ft` : null,
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
 
-  return highlights;
+function shortSiteName(
+  site: { locationName?: string; skyarcSiteCode?: string | null; locationId?: string },
+  forCustomer: boolean
+) {
+  return siteLabelForAudience(
+    {
+      name: site.locationName,
+      skyarcSiteCode: site.skyarcSiteCode,
+      id: site.locationId,
+    },
+    forCustomer
+  );
+}
+
+function SwapChips({
+  item,
+  pending,
+  onSwap,
+  showScore,
+  planTotal,
+  totalAllocated,
+  forCustomer,
+}: {
+  item: PlanItemRow;
+  pending: boolean;
+  onSwap: (inventoryId: string) => void;
+  showScore?: boolean;
+  planTotal: number;
+  totalAllocated: number;
+  forCustomer?: boolean;
+}) {
+  if (!item.alternatives?.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {item.alternatives.map((alt) => {
+        const reason =
+          alt.fitReason && alt.fitReason !== "Similar goal fit" ? alt.fitReason : null;
+        const type = formatInventoryType(alt.inventoryType);
+        const light = formatLighting(alt.lighting);
+        const nextTotal = totalAllocated - item.budgetAllocated + (alt.rateAmount ?? 0);
+        const overBy = planTotal > 0 ? nextTotal - planTotal : 0;
+        const overBudget = overBy > 1;
+        const label = [
+          shortSiteName(
+            {
+              locationName: alt.locationName,
+              skyarcSiteCode: alt.skyarcSiteCode,
+              locationId: alt.locationId,
+            },
+            Boolean(forCustomer)
+          ),
+          reason,
+          alt.rateAmount ? formatInr(alt.rateAmount) : null,
+          light,
+          overBudget ? `Over ${formatInr(overBy)}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        return (
+          <button
+            key={alt.inventoryId}
+            type="button"
+            disabled={pending}
+            onClick={() => onSwap(alt.inventoryId)}
+            title={`${alt.locationName}${type ? ` · ${type}` : ""}${overBudget ? " · goes over budget" : ""}`}
+            className={`text-[11px] font-semibold rounded-full border px-2.5 py-1 disabled:opacity-60 ${
+              overBudget
+                ? "border-red-300 bg-red-50 text-red-800 hover:border-red-400"
+                : "border-violet-200 bg-white hover:border-primary"
+            }`}
+          >
+            {label}
+            {showScore && alt.goalFit != null ? ` · ${Math.round(alt.goalFit)}` : ""}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function BudgetMeter({
+  allocated,
+  budget,
+  leftover,
+  overBy,
+}: {
+  allocated: number;
+  budget: number;
+  leftover: number;
+  overBy: number;
+}) {
+  if (budget <= 0) return null;
+  const pct = Math.round((allocated / budget) * 100);
+  const fillPct = Math.min(100, pct);
+  const over = overBy > 1;
+
+  return (
+    <section
+      className={`rounded-xl border px-3 py-2.5 ${
+        over
+          ? "border-red-200 bg-red-50"
+          : leftover > 0
+            ? "border-amber-200 bg-amber-50"
+            : "border-emerald-200 bg-emerald-50"
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <p
+          className={`text-[11px] font-semibold uppercase tracking-wide shrink-0 ${
+            over ? "text-red-800" : leftover > 0 ? "text-amber-800" : "text-emerald-800"
+          }`}
+        >
+          {over ? "Over budget" : leftover > 0 ? "Under budget" : "On budget"}
+        </p>
+        <div
+          className={`h-2 flex-1 rounded-full overflow-hidden ${over ? "bg-red-200" : "bg-white/80"}`}
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={fillPct}
+          aria-label="Campaign budget used"
+        >
+          <div
+            className={`h-full rounded-full ${over ? "bg-red-600" : leftover > 0 ? "bg-amber-500" : "bg-emerald-500"}`}
+            style={{ width: `${fillPct}%` }}
+          />
+        </div>
+        <p
+          className={`text-sm font-bold tabular-nums shrink-0 ${
+            over ? "text-red-700" : leftover > 0 ? "text-amber-900" : "text-emerald-800"
+          }`}
+        >
+          {over ? `+${formatInr(overBy)}` : leftover > 0 ? formatInr(leftover) : `${pct}%`}
+        </p>
+      </div>
+      <p className="text-[11px] text-slate-600 mt-1.5">
+        Calculated {formatInr(allocated)} of {formatInr(budget)} · {pct}%
+        {over ? " · swaps and adds still allowed" : leftover > 0 ? " leftover" : ""}
+      </p>
+    </section>
+  );
+}
+
+function AvailableOptions({
+  leftover,
+  suggestedAdds,
+  availableSites,
+  pending,
+  open,
+  onToggle,
+  onAdd,
+}: {
+  leftover: number;
+  suggestedAdds: AvailableSite[];
+  availableSites: AvailableSite[];
+  pending: boolean;
+  open: boolean;
+  onToggle: () => void;
+  onAdd: (inventoryId: string) => void;
+}) {
+  const fitCount = availableSites.filter((site) => site.fitsRemaining).length;
+  if (availableSites.length === 0 && suggestedAdds.length === 0) return null;
+
+  return (
+    <section className="card-surface overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-violet-50/60"
+        aria-expanded={open}
+      >
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-900">Add or swap sites</p>
+          <p className="text-[11px] text-muted mt-0.5">
+            {availableSites.length} available
+            {fitCount > 0 ? ` · ${fitCount} fit leftover` : ""}
+            {leftover > 0 ? ` · ${formatInr(leftover)} remaining` : ""}
+          </p>
+        </div>
+        <ChevronDown
+          className={`w-4 h-4 text-slate-500 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open ? (
+        <div className="border-t border-violet-100 px-4 pb-4 space-y-3">
+          {suggestedAdds.length > 0 ? (
+            <div className="pt-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-800 mb-2">
+                Fit leftover
+              </p>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {suggestedAdds.slice(0, 8).map((site) => (
+                  <button
+                    key={site.inventoryId}
+                    type="button"
+                    disabled={pending}
+                    onClick={() => onAdd(site.inventoryId)}
+                    className="text-left shrink-0 max-w-[11rem] rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 hover:border-primary disabled:opacity-60"
+                  >
+                    <p className="text-[11px] font-mono font-semibold text-primary truncate">
+                      {site.skyarcSiteCode ?? site.locationName}
+                    </p>
+                    <p className="text-xs text-slate-800 truncate">{site.locationName}</p>
+                    <p className="text-[11px] text-muted truncate">
+                      {formatInr(site.rateAmount)}
+                      {site.lighting ? ` · ${formatLighting(site.lighting)}` : ""}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <ul className="divide-y divide-violet-50 max-h-72 overflow-y-auto">
+            {availableSites.map((site) => (
+              <li key={site.inventoryId} className="py-2.5 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-mono font-semibold text-primary truncate">
+                    {site.skyarcSiteCode ?? site.locationName}
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900 truncate">{site.locationName}</p>
+                  <p className="text-[11px] text-muted truncate">
+                    {site.road ?? "Rajkot"}
+                    {site.fitReason ? ` · ${site.fitReason}` : ""}
+                  </p>
+                  <p className="text-[11px] text-slate-600">{siteSpecLine(site)}</p>
+                </div>
+                <div className="shrink-0 text-right space-y-1">
+                  <p className="text-sm font-semibold tabular-nums text-slate-900">
+                    {formatInr(site.rateAmount)}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => onAdd(site.inventoryId)}
+                    className={`text-[11px] font-semibold rounded-lg px-2.5 py-1 disabled:opacity-60 ${
+                      site.fitsRemaining
+                        ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                        : "border border-red-300 bg-red-50 text-red-800 hover:border-red-400"
+                    }`}
+                  >
+                    {site.fitsRemaining ? "Add" : "Add over budget"}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 export default function MediaPlanDetailPage() {
@@ -101,10 +406,11 @@ export default function MediaPlanDetailPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { authUser, isClient } = usePermissions();
-  const canExportPdf = authUser ? canViewClientPricing(authUser) : false;
+  const canExportPdf = Boolean(authUser);
 
   const [viewMode, setViewMode] = useState<"customer" | "internal">("customer");
   const [copiedLink, setCopiedLink] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
 
   const {
     data: plan,
@@ -131,6 +437,26 @@ export default function MediaPlanDetailPage() {
       });
     }
   }, [plan]);
+
+  const swapMutation = useMutation({
+    mutationFn: async ({ itemId, inventoryId }: { itemId: string; inventoryId: string }) => {
+      const client = createWebApiClient();
+      return client.swapMediaPlanItem(campaignId, planId, itemId, inventoryId);
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(["media-plan", campaignId, planId], result.data as MediaPlanDetail);
+    },
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async (inventoryId: string) => {
+      const client = createWebApiClient();
+      return client.addMediaPlanItem(campaignId, planId, inventoryId);
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(["media-plan", campaignId, planId], result.data as MediaPlanDetail);
+    },
+  });
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
@@ -185,6 +511,11 @@ export default function MediaPlanDetailPage() {
   }
 
   const totalAllocated = plan.items.reduce((sum, item) => sum + item.budgetAllocated, 0);
+  const planTotal = plan.totalBudget ?? totalAllocated;
+  const leftover = Math.max(0, planTotal - totalAllocated);
+  const overBy = Math.max(0, plan.overBudget ?? totalAllocated - planTotal);
+  const pendingMix = swapMutation.isPending || addMutation.isPending;
+  const goalLabel = plan.goal?.objective ?? null;
 
   return (
     <div className="max-w-5xl mx-auto w-full pb-16 space-y-6">
@@ -198,7 +529,7 @@ export default function MediaPlanDetailPage() {
 
       <PageHeader
         title={plan.name}
-        description={`OOH Campaign Media Plan · ${plan.status}`}
+        description={goalLabel ?? plan.status}
         action={
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -209,12 +540,12 @@ export default function MediaPlanDetailPage() {
               {copiedLink ? (
                 <>
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  Link Copied!
+                  Copied
                 </>
               ) : (
                 <>
                   <Share2 className="w-4 h-4 text-primary" />
-                  Share Proposal Link
+                  Share
                 </>
               )}
             </button>
@@ -227,10 +558,11 @@ export default function MediaPlanDetailPage() {
                 onClick={() => exportMutation.mutate()}
               >
                 <Download className="w-4 h-4" />
-                {exportMutation.isPending ? "Exporting…" : "Export Pitch Deck (PDF)"}
+                {exportMutation.isPending ? "Exporting…" : "Download PDF"}
               </button>
             )}
 
+            {!isClient && (
             <button
               type="button"
               className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -244,200 +576,149 @@ export default function MediaPlanDetailPage() {
             >
               <Trash2 className="w-4 h-4" />
             </button>
+            )}
           </div>
         }
       />
 
-      {/* View Mode Toggle: Customer Visual Presentation vs Internal Analytics (Internal roles only) */}
       {!isClient && (
-        <div className="flex items-center justify-between p-1.5 bg-slate-100 rounded-2xl border border-slate-200">
+        <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200">
           <button
             type="button"
             onClick={() => setViewMode("customer")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
-              viewMode === "customer"
-                ? "bg-white text-primary shadow-xs"
-                : "text-slate-600 hover:text-slate-900"
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold ${
+              viewMode === "customer" ? "bg-white text-primary shadow-xs" : "text-slate-600"
             }`}
           >
-            <Sparkles className="w-4 h-4 text-amber-500" />
-            Customer Presentation Mode (Visual Brand Pitch)
+            <LayoutGrid className="w-3.5 h-3.5 text-primary" />
+            Presentation
           </button>
-
           <button
             type="button"
             onClick={() => setViewMode("internal")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
-              viewMode === "internal"
-                ? "bg-white text-slate-900 shadow-xs"
-                : "text-slate-600 hover:text-slate-900"
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold ${
+              viewMode === "internal" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600"
             }`}
           >
-            <Layers className="w-4 h-4 text-slate-500" />
-            Internal Planner & Scoring Analytics
+            <Layers className="w-3.5 h-3.5 text-slate-500" />
+            Scoring
           </button>
         </div>
       )}
 
-      {exportMutation.isError && (
+      {(exportMutation.isError || swapMutation.isError || addMutation.isError) && (
         <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">
-          {exportMutation.error instanceof Error ? exportMutation.error.message : "Failed to export PDF"}
+          {(exportMutation.error ?? swapMutation.error ?? addMutation.error) instanceof Error
+            ? ((exportMutation.error ?? swapMutation.error ?? addMutation.error) as Error).message
+            : "Something went wrong"}
         </p>
       )}
 
-      {/* CUSTOMER FACING VISUAL PRESENTATION MODE */}
+      <BudgetMeter
+        allocated={totalAllocated}
+        budget={planTotal}
+        leftover={leftover}
+        overBy={overBy}
+      />
+
       {viewMode === "customer" ? (
-        <div className="space-y-6">
-          {/* Executive Campaign Visual Banner */}
-          <div className="rounded-2xl bg-gradient-to-br from-zinc-950 via-zinc-900 to-primary/90 text-white p-6 sm:p-8 shadow-xl relative overflow-hidden">
-            <div className="relative z-10 space-y-4 max-w-2xl">
-              <span className="inline-flex items-center gap-1.5 text-xs font-bold tracking-wider uppercase px-3 py-1 rounded-full bg-white/10 text-violet-200 backdrop-blur-sm border border-white/10">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                Curated Brand Media Plan
-              </span>
-              <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-                {plan.name}
-              </h2>
-              <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed">
-                A strategically allocated out-of-home media proposal engineered for high dwell times, prime commuter corridors, and maximum brand awareness across Rajkot.
-              </p>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-3">
-                <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/10">
-                  <span className="text-[10px] text-zinc-400 uppercase font-semibold block">Total Sites</span>
-                  <span className="text-xl font-bold text-white">{plan.items.length} Prime Locations</span>
-                </div>
-                <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/10">
-                  <span className="text-[10px] text-zinc-400 uppercase font-semibold block">Total Investment</span>
-                  <span className="text-xl font-bold text-emerald-400">{formatInr(totalAllocated)}</span>
-                </div>
-                <div className="col-span-2 sm:col-span-1 bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/10">
-                  <span className="text-[10px] text-zinc-400 uppercase font-semibold block">Audience Reach</span>
-                  <span className="text-xl font-bold text-violet-300">~450k+ Daily Footfall</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Creative Strategic Placement Cards (No technical scores) */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
+        <div className="space-y-5">
+          <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-5 sm:p-6 space-y-4">
+            <div className="flex items-end justify-between gap-4">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Curated Media Sites</h3>
-                <p className="text-xs text-muted">
-                  High-impact billboard locations aligned with your target campaign corridors
+                <p className="text-[11px] uppercase tracking-wider text-primary font-semibold">
+                  This plan · {plan.items.length} sites
+                </p>
+                <p className="text-2xl font-extrabold text-slate-900">{formatInr(totalAllocated)}</p>
+                <p className="text-xs text-muted mt-1">
+                  {overBy > 1
+                    ? `Over budget by ${formatInr(overBy)} of ${formatInr(planTotal)}`
+                    : leftover > 0
+                      ? `${formatInr(leftover)} remaining of ${formatInr(planTotal)}`
+                      : `Matches campaign budget of ${formatInr(planTotal)}`}
                 </p>
               </div>
             </div>
+            <PlanMixViz
+              items={plan.items.map((item) => ({
+                id: item.id,
+                label: item.location?.skyarcSiteCode ?? item.location?.name ?? "Site",
+                value: item.budgetAllocated,
+                inventoryType: item.inventoryType,
+              }))}
+            />
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {plan.items.map((item, idx) => {
-                const highlights = getCreativeHighlights(item, idx);
-                const clientPrice = item.pricing?.clientRate ?? item.budgetAllocated;
-
-                return (
-                  <div
-                    key={item.id}
-                    className="card-surface overflow-hidden flex flex-col justify-between border-violet-100 hover:border-primary/50 transition-all hover:shadow-lg group"
-                  >
-                    <div>
-                      {/* High Resolution Site Photo */}
-                      <div className="relative h-56 bg-slate-900 overflow-hidden">
-                        {item.location?.coverImageUrl ? (
-                          <Image
-                            src={item.location.coverImageUrl}
-                            alt={item.location.name}
-                            fill
-                            className="object-cover group-hover:scale-105 transition-transform duration-300"
-                            sizes="(max-width: 768px) 100vw, 50vw"
-                            unoptimized
-                          />
-                        ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-2 bg-gradient-to-br from-slate-900 to-zinc-800">
-                            <MapPin className="w-8 h-8 opacity-50" />
-                            <span className="text-xs font-semibold">Rajkot Prime Hoarding Site</span>
-                          </div>
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/30" />
-
-                        {/* Location Rank Badge */}
-                        <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md text-white text-xs font-extrabold px-3 py-1 rounded-full border border-white/20">
-                          Site #{idx + 1}
-                        </div>
-
-                        {/* Corridor Pill */}
-                        <div className="absolute top-3 right-3 bg-primary/90 text-white text-[11px] font-bold px-3 py-1 rounded-full shadow-sm backdrop-blur-md">
-                          {item.location?.road ?? "Prime Corridor"}
-                        </div>
-
-                        {/* Site Name on Image */}
-                        <div className="absolute bottom-3 left-3 right-3 text-white">
-                          <h4 className="font-bold text-base line-clamp-1 drop-shadow-sm">
-                            {item.location?.name}
-                          </h4>
-                          <p className="text-xs text-zinc-300 flex items-center gap-1 mt-0.5">
-                            <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                            <span className="truncate">{item.location?.junction ?? item.location?.road}</span>
-                          </p>
-                        </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {plan.items.map((item) => {
+              const plannedSpend = item.budgetAllocated;
+              const bucket = item.inventoryBucket ?? inventoryTypeBucket(item.inventoryType);
+              return (
+                <div key={item.id} className="card-surface overflow-hidden">
+                  <div className="relative h-40 sm:h-48 bg-slate-900">
+                    {item.location?.coverImageUrl ? (
+                      <Image
+                        src={item.location.coverImageUrl}
+                        alt={item.location.name}
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 768px) 100vw, 50vw"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-slate-400">
+                        <MapPin className="w-7 h-7 opacity-50" />
                       </div>
-
-                      {/* Creative Marketing Rationale (Selling Points) */}
-                      <div className="p-5 space-y-3">
-                        <div className="space-y-1.5">
-                          <span className="text-[10px] uppercase font-bold tracking-wider text-muted block">
-                            Strategic Placement Value
-                          </span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {highlights.map((h, hIdx) => (
-                              <span
-                                key={hIdx}
-                                className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg bg-violet-50 text-slate-800 border border-violet-100"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                {h}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-
-                        {item.explanationText && (
-                          <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100 italic leading-relaxed">
-                            &ldquo;{item.explanationText}&rdquo;
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Footer with Monthly Client Rate & Details */}
-                    <div className="p-4 bg-slate-50/70 border-t border-violet-100 flex items-center justify-between">
-                      <div>
-                        <span className="text-[10px] text-muted uppercase font-semibold block">
-                          Client Rate (Monthly)
-                        </span>
-                        <span className="text-base font-extrabold text-slate-900">
-                          {formatInr(clientPrice)}
-                          <span className="text-xs font-normal text-muted"> /month</span>
-                        </span>
-                      </div>
-
-                      {item.location && (
-                        <Link
-                          href={`/locations/${item.location.id}`}
-                          className="btn-secondary text-xs gap-1 py-1.5 px-3"
-                        >
-                          View Site Details →
-                        </Link>
-                      )}
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/10" />
+                    {siteGoalChip(item, plan.goal) && (
+                      <span className="absolute top-3 left-3 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white/90 text-slate-900">
+                        {siteGoalChip(item, plan.goal)}
+                      </span>
+                    )}
+                    <span className="absolute top-3 right-3 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-black/55 text-white backdrop-blur-sm">
+                      {INVENTORY_BUCKET_LABELS[bucket].replace(/s$/, "")}
+                    </span>
+                    <div className="absolute bottom-3 left-3 right-3 text-white">
+                      <p className="text-[11px] font-mono font-semibold tracking-wide">
+                        {item.location?.skyarcSiteCode ?? "SKY"}
+                      </p>
+                      <h4 className="font-bold text-base line-clamp-1">{item.location?.name}</h4>
+                      <p className="text-[11px] text-white/80 truncate">{siteSpecLine(item)}</p>
+                      <p className="text-sm font-semibold text-emerald-200">{formatInr(plannedSpend)}</p>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+
+                  <div className="p-3 space-y-2">
+                    {item.creativeBrief ? (
+                      <p className="text-[11px] text-slate-600 leading-relaxed flex items-start gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+                        <span>{item.creativeBrief}</span>
+                      </p>
+                    ) : null}
+                    <SwapChips
+                      item={item}
+                      pending={pendingMix}
+                      planTotal={planTotal}
+                      totalAllocated={totalAllocated}
+                      forCustomer={isClient}
+                      onSwap={(inventoryId) => swapMutation.mutate({ itemId: item.id, inventoryId })}
+                    />
+                    {item.location && (
+                      <Link
+                        href={`/locations/${item.location.id}`}
+                        className="text-[11px] font-semibold text-primary inline-flex items-center gap-0.5"
+                      >
+                        Site details <ChevronRight className="w-3.5 h-3.5" />
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (
-        /* INTERNAL ANALYTICS & SCORING VIEW */
         <div className="space-y-6">
           <section className="card-surface p-5 sm:p-6">
             <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
@@ -457,6 +738,15 @@ export default function MediaPlanDetailPage() {
                   {plan._count?.items ?? plan.items.length}
                 </dd>
               </div>
+              {plan.mix ? (
+                <div className="sm:col-span-3">
+                  <dt className="text-muted font-medium">Inventory mix</dt>
+                  <dd className="text-slate-900 mt-0.5 font-semibold">
+                    {plan.mix.hoardings} hoardings · {plan.mix.digital} digital · {plan.mix.kiosks} kiosks
+                    {plan.mix.other > 0 ? ` · ${plan.mix.other} other` : ""}
+                  </dd>
+                </div>
+              ) : null}
             </dl>
           </section>
 
@@ -466,10 +756,7 @@ export default function MediaPlanDetailPage() {
 
           <section className="card-surface overflow-hidden">
             <div className="px-5 py-4 border-b border-violet-100">
-              <h2 className="font-semibold text-slate-900">Internal Placements & Rate Breakdown</h2>
-              <p className="text-xs text-muted mt-1">
-                Vendor net B2B costs, client customer rates, and algorithm factor scores.
-              </p>
+              <h2 className="font-semibold text-slate-900">Placements</h2>
             </div>
 
             <ul className="divide-y divide-violet-50">
@@ -500,11 +787,14 @@ export default function MediaPlanDetailPage() {
                             href={item.location ? `/locations/${item.location.id}` : "#"}
                             className="font-semibold text-slate-900 hover:text-primary truncate block"
                           >
-                            #{item.rank ?? "—"} {item.location?.name ?? "Unknown site"}
+                            #{item.rank ?? "—"} {item.location?.skyarcSiteCode ?? item.location?.name ?? "Unknown site"}
                           </Link>
                           {item.location?.road && (
                             <p className="text-xs text-muted truncate">{item.location.road}</p>
                           )}
+                          {item.inventoryType ? (
+                            <p className="text-xs text-muted">{siteSpecLine(item)}</p>
+                          ) : null}
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-sm font-semibold text-slate-900">
@@ -539,6 +829,18 @@ export default function MediaPlanDetailPage() {
                           <SiteMetricsBars metrics={item.insights.metrics} />
                         </div>
                       )}
+
+                      <div className="mt-3">
+                        <SwapChips
+                          item={item}
+                          pending={pendingMix}
+                          showScore
+                          planTotal={planTotal}
+                          totalAllocated={totalAllocated}
+                          forCustomer={isClient}
+                          onSwap={(inventoryId) => swapMutation.mutate({ itemId: item.id, inventoryId })}
+                        />
+                      </div>
                     </div>
                   </div>
                 </li>
@@ -547,6 +849,16 @@ export default function MediaPlanDetailPage() {
           </section>
         </div>
       )}
+
+      <AvailableOptions
+        leftover={leftover}
+        suggestedAdds={plan.suggestedAdds ?? []}
+        availableSites={plan.availableSites ?? []}
+        pending={pendingMix}
+        open={catalogOpen}
+        onToggle={() => setCatalogOpen((value) => !value)}
+        onAdd={(inventoryId) => addMutation.mutate(inventoryId)}
+      />
     </div>
   );
 }

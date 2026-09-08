@@ -1,6 +1,7 @@
 export interface MapLocationPin {
   id: string;
   name: string;
+  skyarcSiteCode?: string | null;
   latitude: number;
   longitude: number;
   road?: string | null;
@@ -30,7 +31,9 @@ export function buildMapLocationCardHtml(
   location: MapLocationPin,
   mode: "hover" | "detail"
 ): string {
+  const code = location.skyarcSiteCode ? escapeHtml(location.skyarcSiteCode) : "";
   const name = escapeHtml(location.name);
+  const title = code || name;
   const road = location.road ? escapeHtml(location.road) : "";
   const image = imageBlock(location, mode === "hover" ? 140 : 180);
 
@@ -38,8 +41,8 @@ export function buildMapLocationCardHtml(
     return `<div class="map-popup-card">
       ${image}
       <div class="map-popup-body">
-        <strong class="map-popup-title">${name}</strong>
-        ${road ? `<span class="map-popup-road">${road}</span>` : ""}
+        <strong class="map-popup-title">${title}</strong>
+        ${road && road !== name ? `<span class="map-popup-road">${road}</span>` : !code ? (road ? `<span class="map-popup-road">${road}</span>` : "") : `<span class="map-popup-road">${name}</span>`}
       </div>
     </div>`;
   }
@@ -48,7 +51,7 @@ export function buildMapLocationCardHtml(
   return `<div class="map-popup-card">
     ${image}
     <div class="map-popup-body">
-      <strong class="map-popup-title">${name}</strong>
+      <strong class="map-popup-title">${title}</strong>
       ${road ? `<span class="map-popup-road">${road}</span>` : ""}
       <span class="map-popup-coords">${coords}</span>
       <a href="/locations/${location.id}" class="map-popup-link">View details →</a>

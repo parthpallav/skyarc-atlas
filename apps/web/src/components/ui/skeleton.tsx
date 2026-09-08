@@ -1,3 +1,4 @@
+import { AtlasLogoLoader } from "@/components/atlas-logo-loader";
 import { cn } from "@/lib/utils";
 
 export function Skeleton({
@@ -7,7 +8,7 @@ export function Skeleton({
   return (
     <div
       className={cn(
-        "animate-pulse rounded-md bg-slate-200/80 dark:bg-slate-800",
+        "animate-pulse rounded-md bg-violet-100/80",
         className
       )}
       {...props}
@@ -38,14 +39,14 @@ export function LocationCardSkeleton() {
         <div className="relative h-44 bg-slate-100 overflow-hidden">
           <Skeleton className="w-full h-full rounded-none" />
           <div className="absolute top-2.5 right-2.5">
-            <Skeleton className="h-5 w-16 rounded-full bg-slate-300" />
+            <Skeleton className="h-5 w-16 rounded-full bg-violet-200/90" />
           </div>
           <div className="absolute bottom-2.5 left-2.5 flex gap-1.5">
-            <Skeleton className="h-4 w-20 rounded-md bg-slate-300" />
-            <Skeleton className="h-4 w-14 rounded-md bg-slate-300" />
+            <Skeleton className="h-4 w-20 rounded-md bg-violet-200/90" />
+            <Skeleton className="h-4 w-14 rounded-md bg-violet-200/90" />
           </div>
           <div className="absolute bottom-2.5 right-2.5">
-            <Skeleton className="h-5 w-14 rounded-lg bg-slate-300" />
+            <Skeleton className="h-5 w-14 rounded-lg bg-violet-200/90" />
           </div>
         </div>
 
@@ -173,20 +174,39 @@ export function LocationDetailSkeleton() {
   );
 }
 
+export function WorkspaceSkeleton() {
+  return (
+    <div className="space-y-6" aria-busy="true" aria-live="polite" aria-label="Loading workspace">
+      <div className="flex justify-center py-6 sm:py-8">
+        <AtlasLogoLoader size="md" label="Loading workspace" />
+      </div>
+      <PageHeaderSkeleton />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="card-surface p-4 space-y-2 border-violet-100">
+            <Skeleton className="h-3 w-16 rounded" />
+            <Skeleton className="h-7 w-24 rounded" />
+          </div>
+        ))}
+      </div>
+      <LocationGridSkeleton count={6} />
+    </div>
+  );
+}
+
 export function MediaPlanDetailSkeleton() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <Skeleton className="h-4 w-28 rounded mb-2" />
       <PageHeaderSkeleton />
 
-      {/* Banner skeleton */}
-      <div className="h-44 rounded-2xl bg-slate-900/80 p-6 space-y-4">
-        <Skeleton className="h-5 w-32 rounded-full bg-slate-700" />
-        <Skeleton className="h-8 w-64 rounded-lg bg-slate-700" />
+      <div className="h-44 rounded-2xl border border-violet-100 bg-violet-50/70 p-6 space-y-4">
+        <Skeleton className="h-5 w-32 rounded-full" />
+        <Skeleton className="h-8 w-64 rounded-lg" />
         <div className="grid grid-cols-3 gap-3 pt-2">
-          <Skeleton className="h-12 rounded-xl bg-slate-800" />
-          <Skeleton className="h-12 rounded-xl bg-slate-800" />
-          <Skeleton className="h-12 rounded-xl bg-slate-800" />
+          <Skeleton className="h-12 rounded-xl" />
+          <Skeleton className="h-12 rounded-xl" />
+          <Skeleton className="h-12 rounded-xl" />
         </div>
       </div>
 

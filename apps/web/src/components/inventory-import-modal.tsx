@@ -10,13 +10,14 @@ import {
   X,
   Layers,
   ArrowRight,
-  Sparkles,
+  Building2,
 } from "lucide-react";
 import { parseInventoryExcel, type ParsedInventoryItem, type ExcelParseResult } from "@/lib/excel-importer";
 import { createWebApiClient } from "@/lib/api";
 import { formatInr } from "@/lib/format";
 import { formatInventoryType } from "@skyarc/shared";
 import { trackBusinessEvent } from "@/lib/clarity-telemetry";
+import { usePermissions } from "@/hooks/use-permissions";
 
 interface InventoryImportModalProps {
   isOpen: boolean;
@@ -31,10 +32,12 @@ export function InventoryImportModal({
 }: InventoryImportModalProps) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { isInternal } = usePermissions();
 
   const [file, setFile] = useState<File | null>(null);
   const [vendorName, setVendorName] = useState(defaultVendorName || "");
   const [vendorEmail, setVendorEmail] = useState("");
+  const [createVendorIfMissing, setCreateVendorIfMissing] = useState(false);
   const [parseResult, setParseResult] = useState<ExcelParseResult | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [importSuccessMsg, setImportSuccessMsg] = useState("");
@@ -51,6 +54,7 @@ export function InventoryImportModal({
       return client.importInventoryBatch({
         vendorOrgName: vendorName.trim() || undefined,
         vendorAdminEmail: vendorEmail.trim() || undefined,
+        createVendorIfMissing: isInternal ? createVendorIfMissing : false,
         items,
       });
     },
@@ -151,7 +155,7 @@ export function InventoryImportModal({
               {createdVendorUser && (
                 <div className="my-4 p-4 rounded-xl bg-violet-50/80 border border-violet-200 text-left max-w-lg mx-auto space-y-2">
                   <div className="flex items-center gap-2 text-primary font-bold text-sm">
-                    <Sparkles className="w-4 h-4" />
+                    <Building2 className="w-4 h-4" />
                     <span>New Vendor Agency & Admin User Provisioned</span>
                   </div>
                   <p className="text-xs text-slate-600">
@@ -209,7 +213,7 @@ export function InventoryImportModal({
                     </p>
                   </div>
                   <div className="inline-flex items-center gap-1.5 text-xs text-primary font-semibold bg-white border border-violet-100 px-3 py-1.5 rounded-full shadow-xs">
-                    <Sparkles className="w-3.5 h-3.5" />
+                    <Layers className="w-3.5 h-3.5" />
                     Auto-maps Rajkot locations, IIDs, SQFT & Rate Cards
                   </div>
                 </div>
@@ -263,6 +267,21 @@ export function InventoryImportModal({
                     </button>
                   </div>
 
+                  {isInternal && (
+                    <label className="flex items-start gap-2 text-xs text-slate-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={createVendorIfMissing}
+                        onChange={(e) => setCreateVendorIfMissing(e.target.checked)}
+                      />
+                      <span>
+                        Create a new vendor org if this agency name is not already registered.
+                        Leave off to upsert into an existing unique org name only.
+                      </span>
+                    </label>
+                  )}
+
                   {/* Parse Errors */}
                   {parseResult.errors.length > 0 && (
                     <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
@@ -281,7 +300,7 @@ export function InventoryImportModal({
                       <table className="w-full text-xs text-left">
                         <thead className="bg-slate-100/80 sticky top-0 border-b border-slate-200 text-slate-700 font-semibold">
                           <tr>
-                            <th className="p-2.5">IID</th>
+                            <th className="p-2.5">Vendor Media Code</th>
                             <th className="p-2.5">Area & Location</th>
                             <th className="p-2.5">Format</th>
                             <th className="p-2.5">Size / SQFT</th>
@@ -294,7 +313,7 @@ export function InventoryImportModal({
                           {items.slice(0, 15).map((item, idx) => (
                             <tr key={idx} className="hover:bg-violet-50/30 transition-colors">
                               <td className="p-2.5 font-bold text-primary font-mono">
-                                {item.iid || `—`}
+                                {item.vendorMediaCode || item.iid || `—`}
                               </td>
                               <td className="p-2.5 max-w-[220px]">
                                 <span className="font-semibold text-slate-800 block truncate">

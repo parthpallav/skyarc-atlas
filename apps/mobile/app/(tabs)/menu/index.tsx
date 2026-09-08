@@ -2,10 +2,10 @@ import { router } from "expo-router";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { SKYARC_BRAND, SKYARC_LOGO_WHITE_URL } from "@skyarc/shared";
+import { SKYARC_BRAND } from "@skyarc/shared";
 import { AppText, Button } from "../../../src/components/ui";
 import { logout } from "../../../src/lib/auth";
-import { colors, radii, spacing } from "../../../src/theme";
+import { brandAssets, colors, radii, spacing } from "../../../src/theme";
 
 const MENU_ITEMS = [
   {
@@ -27,9 +27,10 @@ export default function MenuScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.brandCard}>
           <Image
-            source={{ uri: SKYARC_LOGO_WHITE_URL }}
+            source={brandAssets.atlasLogo}
             style={styles.logo}
             resizeMode="contain"
+            accessibilityLabel="Atlas by Skyarc"
           />
           <Text style={styles.tagline}>{SKYARC_BRAND.tagline}</Text>
         </View>
@@ -62,14 +63,16 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.md, paddingBottom: spacing.xl },
   brandCard: {
-    backgroundColor: colors.black,
+    backgroundColor: "#FFFFFF",
     borderRadius: radii.lg,
     padding: spacing.lg,
     alignItems: "center",
     marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
-  logo: { width: 160, height: 48 },
-  tagline: { color: colors.onDarkMuted, fontSize: 14, marginTop: spacing.sm },
+  logo: { width: 220, height: 70 },
+  tagline: { color: colors.muted, fontSize: 14, marginTop: spacing.sm },
   section: { marginBottom: spacing.sm },
   menuRow: {
     flexDirection: "row",

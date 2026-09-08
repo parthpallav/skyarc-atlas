@@ -116,7 +116,9 @@ export default function LocationDetailPage() {
         : [];
 
   const details = [
-    { label: "Survey status", value: String(location.surveyStatus ?? "—") },
+    ...(!isClient
+      ? [{ label: "Survey status", value: String(location.surveyStatus ?? "—") }]
+      : []),
     { label: "Road / area", value: String(location.road ?? "—") },
     { label: "Address", value: String(location.address ?? "—") },
     { label: "Mounting notes", value: String(location.mountingNotes ?? "—") },
@@ -182,8 +184,16 @@ export default function LocationDetailPage() {
       </Link>
 
       <PageHeader
-        title={String(location.name)}
-        description={`${Number(location.latitude).toFixed(5)}, ${Number(location.longitude).toFixed(5)}`}
+        title={
+          isClient
+            ? String(location.skyarcSiteCode ?? `SKY-${id.slice(0, 4).toUpperCase()}`)
+            : String(location.name)
+        }
+        description={
+          isClient
+            ? String(location.road ?? location.name ?? "Rajkot")
+            : `${Number(location.latitude).toFixed(5)}, ${Number(location.longitude).toFixed(5)}`
+        }
         action={
           <div className="flex flex-wrap gap-2">
             {canEdit && (
@@ -250,36 +260,78 @@ export default function LocationDetailPage() {
 
       {isOwned && <LocationInventoryPanel locationId={id} canWrite={canEdit} />}
 
-      <section className="card-surface p-5 sm:p-6 mb-4">
-        <h2 className="font-semibold text-slate-900 mb-4">Location intelligence</h2>
-        {score ? (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <p className="text-muted text-xs uppercase tracking-wide font-medium">Score</p>
-              <p className={`text-3xl font-bold mt-1 ${scoreColor}`}>
-                {String(score.overallScore)}
-                <span className="text-lg text-muted font-normal"> / 100</span>
-              </p>
+      {/* Location Intelligence: Internal (Score/Confidence) vs Customer (Visual Impact & Corridor Highlights) */}
+      {!isClient ? (
+        <section className="card-surface p-5 sm:p-6 mb-4">
+          <h2 className="font-semibold text-slate-900 mb-4">Location intelligence (Internal)</h2>
+          {score ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <p className="text-muted text-xs uppercase tracking-wide font-medium">Internal Score</p>
+                <p className={`text-3xl font-bold mt-1 ${scoreColor}`}>
+                  {String(score.overallScore)}
+                  <span className="text-lg text-muted font-normal"> / 100</span>
+                </p>
+              </div>
+              <div>
+                <p className="text-muted text-xs uppercase tracking-wide font-medium">Status</p>
+                <p className="text-lg font-medium mt-1 text-slate-900">{String(score.status)}</p>
+              </div>
+              <div>
+                <p className="text-muted text-xs uppercase tracking-wide font-medium">Confidence</p>
+                <p className="text-lg font-medium mt-1 text-slate-900">
+                  {String(score.overallConfidence)}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-muted text-xs uppercase tracking-wide font-medium">Status</p>
-              <p className="text-lg font-medium mt-1 text-slate-900">{String(score.status)}</p>
+          ) : (
+            <p className="text-muted">Score not yet computed.</p>
+          )}
+        </section>
+      ) : (
+        <section className="card-surface p-5 sm:p-6 mb-4 border border-violet-100 bg-linear-to-br from-white to-violet-50/30">
+          <h2 className="font-semibold text-slate-900 mb-2 flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-primary" />
+            Corridor & Visual Impact Highlights
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+            <div className="p-3 bg-white rounded-xl border border-violet-100 shadow-xs">
+              <span className="text-xs text-muted block font-medium">Corridor Profile</span>
+              <span className="text-sm font-bold text-slate-900 mt-1 block">
+                {String(location.road || location.address || "Major Rajkot Commercial Arterial")}
+              </span>
             </div>
-            <div>
-              <p className="text-muted text-xs uppercase tracking-wide font-medium">Confidence</p>
-              <p className="text-lg font-medium mt-1 text-slate-900">
-                {String(score.overallConfidence)}
-              </p>
+            <div className="p-3 bg-white rounded-xl border border-violet-100 shadow-xs">
+              <span className="text-xs text-muted block font-medium">Audience Exposure</span>
+              <span className="text-sm font-bold text-slate-900 mt-1 block">
+                High Daily Commuter & High-Street Footfall
+              </span>
+            </div>
+            <div className="p-3 bg-white rounded-xl border border-violet-100 shadow-xs">
+              <span className="text-xs text-muted block font-medium">Site Visibility</span>
+              <span className="text-sm font-bold text-emerald-700 mt-1 block">
+                Unobstructed Line-of-Sight
+              </span>
             </div>
           </div>
-        ) : (
-          <p className="text-muted">Score not yet computed.</p>
-        )}
-      </section>
+        </section>
+      )}
 
       <section className="card-surface p-5 sm:p-6">
         <h2 className="font-semibold text-slate-900 mb-4">Details</h2>
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-sm">
+          <div>
+            <dt className="text-muted mb-0.5 font-medium">SkyArc Site Code</dt>
+            <dd className="font-bold text-primary font-mono">
+              {String(location.skyarcSiteCode ?? `SKY-${id.slice(0, 4).toUpperCase()}`)}
+            </dd>
+          </div>
+          {!isClient && Boolean(location.vendorMediaCode) && (
+            <div>
+              <dt className="text-muted mb-0.5 font-medium">Vendor Media Code</dt>
+              <dd className="font-mono text-slate-800">{String(location.vendorMediaCode)}</dd>
+            </div>
+          )}
           {details.map((row) => (
             <div key={row.label} className="min-w-0">
               <dt className="text-muted mb-0.5 font-medium">{row.label}</dt>

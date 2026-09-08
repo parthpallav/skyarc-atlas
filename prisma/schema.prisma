@@ -116,6 +116,12 @@ enum MediaPlanStatus {
   REJECTED
 }
 
+enum AvailabilityWindowStatus {
+  AVAILABLE
+  BLOCKED
+  BOOKED
+}
+
 model User {
   id             String    @id @default(uuid()) @db.Uuid
   email          String    @unique
@@ -136,7 +142,7 @@ model User {
 
 model Organization {
   id             String             @id @default(uuid()) @db.Uuid
-  name           String
+  name           String             @unique
   type           OrganizationType
   status         OrganizationStatus @default(ACTIVE)
   commercialJson Json               @default("{}")
@@ -173,6 +179,8 @@ model RefreshToken {
 
 model Location {
   id              String       @id @default(uuid()) @db.Uuid
+  skyarcSiteCode  String?      @unique
+  vendorMediaCode String?
   name            String
   latitude        Float
   longitude       Float
@@ -207,6 +215,8 @@ model Location {
   @@index([createdByUserId])
   @@index([organizationId])
   @@index([latitude, longitude])
+  @@index([skyarcSiteCode])
+  @@index([vendorMediaCode])
 }
 
 model LocationSurvey {
@@ -390,11 +400,14 @@ model Advertiser {
 }
 
 model Campaign {
-  id           String   @id @default(uuid()) @db.Uuid
-  name         String
-  advertiserId String   @db.Uuid
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String    @id @default(uuid()) @db.Uuid
+  name            String
+  advertiserId    String    @db.Uuid
+  startDate       DateTime?
+  endDate         DateTime?
+  createdByUserId String?   @db.Uuid
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   advertiser      Advertiser       @relation(fields: [advertiserId], references: [id])
   brief           CampaignBrief?
@@ -427,10 +440,26 @@ model Inventory {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
-  screen        Screen          @relation(fields: [screenId], references: [id], onDelete: Cascade)
-  rateCards     RateCard[]
-  mediaPlanItems MediaPlanItem[]
-  recommendations Recommendation[]
+  screen              Screen               @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  rateCards           RateCard[]
+  mediaPlanItems      MediaPlanItem[]
+  recommendations     Recommendation[]
+  availabilityWindows AvailabilityWindow[]
+}
+
+model AvailabilityWindow {
+  id          String                   @id @default(uuid()) @db.Uuid
+  inventoryId String                   @db.Uuid
+  startDate   DateTime
+  endDate     DateTime
+  status      AvailabilityWindowStatus @default(AVAILABLE)
+  notes       String?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryId, startDate, endDate])
 }
 
 model RateCard {
@@ -468,6 +497,7 @@ model MediaPlanItem {
   budgetAllocated  Decimal  @db.Decimal(14, 2)
   explanationText  String?
   rank             Int?
+  alternativesJson Json     @default("[]")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

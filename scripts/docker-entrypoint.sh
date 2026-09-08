@@ -20,13 +20,16 @@ should_bootstrap() {
   [ "$COUNT" = "0" ]
 }
 
-if should_bootstrap; then
-  echo "Empty database detected — applying Prisma schema..."
+if [ "${DATABASE_BOOTSTRAP:-auto}" != "never" ]; then
+  echo "Syncing Prisma schema (non-destructive, data preserved)..."
   pnpm exec prisma db push --skip-generate
-  echo "Applying PostGIS triggers and indexes..."
+fi
+
+if should_bootstrap; then
+  echo "Empty database detected — applying PostGIS triggers and indexes..."
   pnpm exec tsx prisma/apply-postgis.ts
 else
-  echo "Existing database detected — skipping schema bootstrap (data preserved)."
+  echo "Existing database detected — schema synced, data preserved."
 fi
 
 echo "Starting API..."

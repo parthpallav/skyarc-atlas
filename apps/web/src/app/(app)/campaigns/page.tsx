@@ -1,17 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Megaphone, Plus, Search, X, Sparkles, Filter } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Megaphone, Plus, Search, X, Pencil, Trash2 } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
 import { CampaignCardSkeleton } from "@/components/ui/skeleton";
+import { usePermissions } from "@/hooks/use-permissions";
 
 interface CampaignRow {
   id: string;
   name: string;
   createdAt: string;
+  createdByUserId?: string | null;
+  canEdit?: boolean;
   advertiser?: { name: string };
   brief?: { parseStatus: string } | null;
   _count?: { mediaPlans: number };
@@ -25,6 +29,9 @@ function parseStatusBadge(status?: string) {
 }
 
 export default function CampaignsPage() {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { canMutateCampaign } = usePermissions();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "PARSED" | "PENDING">("ALL");
 
@@ -38,6 +45,16 @@ export default function CampaignsPage() {
     retry: 2,
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (campaignId: string) => {
+      const client = createWebApiClient();
+      return client.deleteCampaign(campaignId);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+    },
+  });
+
   const campaigns = (data ?? []).filter((c) => {
     if (statusFilter === "ALL") return true;
     if (statusFilter === "PARSED") return c.brief?.parseStatus === "PARSED";
@@ -49,7 +66,7 @@ export default function CampaignsPage() {
     <div className="space-y-5">
       <PageHeader
         title="Campaigns"
-        description="Plan DOOH media buys from briefs, target corridors, and AI scores"
+        description="Plan a campaign, pick dates and budget, then book when you are ready"
         action={
           <Link href="/campaigns/new" className="btn-primary gap-2 shadow-sm">
             <Plus className="w-4 h-4" />
@@ -169,39 +186,66 @@ export default function CampaignsPage() {
 
       {!isLoading && !error && campaigns.length > 0 && (
         <div className="space-y-3">
-          {campaigns.map((campaign) => (
-            <Link
-              key={campaign.id}
-              href={`/campaigns/${campaign.id}`}
-              className="card-surface p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:border-primary/40 hover:shadow-md transition-all"
-            >
-              <div className="min-w-0">
-                <h2 className="font-semibold text-slate-900 truncate text-base">
-                  {campaign.name}
-                </h2>
-                <p className="text-xs text-muted mt-0.5">
-                  <span className="font-medium text-slate-700">
-                    {campaign.advertiser?.name ?? "Unknown advertiser"}
+          {campaigns.map((campaign) => {
+            const canEdit = campaign.canEdit ?? canMutateCampaign(campaign);
+            return (
+              <div
+                key={campaign.id}
+                className="card-surface p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:border-primary/40 hover:shadow-md transition-all"
+              >
+                <Link href={`/campaigns/${campaign.id}`} className="min-w-0 flex-1">
+                  <h2 className="font-semibold text-slate-900 truncate text-base">
+                    {campaign.name}
+                  </h2>
+                  <p className="text-xs text-muted mt-0.5">
+                    <span className="font-medium text-slate-700">
+                      {campaign.advertiser?.name ?? "Unknown advertiser"}
+                    </span>
+                    {" · "}
+                    Created {new Date(campaign.createdAt).toLocaleDateString()}
+                  </p>
+                </Link>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <span
+                    className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${parseStatusBadge(
+                      campaign.brief?.parseStatus
+                    )}`}
+                  >
+                    Brief: {campaign.brief?.parseStatus ?? "NONE"}
                   </span>
-                  {" · "}
-                  Created {new Date(campaign.createdAt).toLocaleDateString()}
-                </p>
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full border bg-violet-50 text-violet-700 border-violet-200">
+                    {campaign._count?.mediaPlans ?? 0} plan
+                    {(campaign._count?.mediaPlans ?? 0) === 1 ? "" : "s"}
+                  </span>
+                  {canEdit ? (
+                    <>
+                      <button
+                        type="button"
+                        className="p-2 text-slate-400 hover:text-primary hover:bg-violet-50 rounded-lg"
+                        onClick={() => router.push(`/campaigns/${campaign.id}/edit`)}
+                        title="Edit campaign"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                        disabled={deleteMutation.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Delete "${campaign.name}"? This also removes its media plans.`)) {
+                            deleteMutation.mutate(campaign.id);
+                          }
+                        }}
+                        title="Delete campaign"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </>
+                  ) : null}
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <span
-                  className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${parseStatusBadge(
-                    campaign.brief?.parseStatus
-                  )}`}
-                >
-                  Brief: {campaign.brief?.parseStatus ?? "NONE"}
-                </span>
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-full border bg-violet-50 text-violet-700 border-violet-200">
-                  {campaign._count?.mediaPlans ?? 0} plan
-                  {(campaign._count?.mediaPlans ?? 0) === 1 ? "" : "s"}
-                </span>
-              </div>
-            </Link>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

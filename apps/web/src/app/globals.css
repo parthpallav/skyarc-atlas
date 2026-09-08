@@ -150,3 +150,202 @@ body {
     text-decoration: underline;
   }
 }
+
+@keyframes dashboard-glow {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.08);
+  }
+}
+
+.dashboard-hero-glow {
+  animation: dashboard-glow 7s ease-in-out infinite;
+}
+
+.dashboard-mini-map,
+.dashboard-mini-map .maplibregl-map,
+.dashboard-mini-map .maplibregl-canvas-container,
+.dashboard-mini-map .maplibregl-canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.maplibregl-ctrl-logo,
+.maplibregl-ctrl-attrib {
+  display: none !important;
+}
+
+@keyframes atlas-peak-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes atlas-fold-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scaleY(0.72);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@keyframes atlas-pin-drop {
+  0% {
+    opacity: 0;
+    transform: translateY(-18px);
+  }
+  72% {
+    opacity: 1;
+    transform: translateY(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes atlas-pin-pulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(0) scale(1.06);
+  }
+}
+
+@keyframes atlas-letter-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes atlas-by-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes atlas-bolt-flash {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  45% {
+    opacity: 0.7;
+  }
+  58% {
+    opacity: 1;
+  }
+}
+
+@keyframes atlas-bar-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+.atlas-loader-mark {
+  overflow: visible;
+}
+
+.atlas-loader-peak,
+.atlas-loader-fold,
+.atlas-loader-pin {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.atlas-loader-letter,
+.atlas-loader-by {
+  transform-box: fill-box;
+  transform-origin: left center;
+}
+
+.atlas-loader-peak {
+  opacity: 0;
+  animation: atlas-peak-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) 260ms forwards;
+}
+
+.atlas-loader-fold {
+  opacity: 0;
+  transform-origin: center top;
+  animation: atlas-fold-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.atlas-loader-fold-2 {
+  animation-delay: 40ms;
+}
+.atlas-loader-fold-3 {
+  animation-delay: 90ms;
+}
+.atlas-loader-fold-1 {
+  animation-delay: 150ms;
+}
+.atlas-loader-fold-4 {
+  animation-delay: 200ms;
+}
+
+.atlas-loader-pin {
+  opacity: 0;
+  animation:
+    atlas-pin-drop 520ms cubic-bezier(0.2, 0.9, 0.2, 1) 560ms forwards,
+    atlas-pin-pulse 1.8s ease-in-out 1.12s infinite;
+}
+
+.atlas-loader-letter {
+  opacity: 0;
+  animation: atlas-letter-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.atlas-loader-by {
+  opacity: 0;
+  animation: atlas-by-in 360ms ease-out 980ms forwards;
+}
+
+.atlas-loader-bolt {
+  transform-origin: center;
+  animation: atlas-bolt-flash 2.8s ease-in-out 1.15s infinite;
+}
+
+.atlas-loader-bar-fill {
+  animation: atlas-bar-slide 1.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas-loader-animated {
+    display: none !important;
+  }
+
+  .atlas-loader-static {
+    display: block !important;
+  }
+}

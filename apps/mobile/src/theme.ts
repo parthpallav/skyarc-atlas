@@ -36,4 +36,6 @@ export const radii = {
 export const brandAssets = {
   logoLight: require("../assets/brand/skyarc-logo-light.png"),
   logoDark: require("../assets/brand/skyarc-logo-dark.png"),
+  atlasLogo: require("../assets/brand/atlas-logo.png"),
+  atlasMark: require("../assets/brand/atlas-mark.png"),
 } as const;
