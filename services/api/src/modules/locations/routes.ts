@@ -26,6 +26,7 @@ import {
   resolveEffectiveSkyarcLocationCommercial,
   sanitizeLocationCommercialViewForUser,
   sanitizeOrganizationCommercialForUser,
+  summarizeLocationLiveInventory,
 } from "@skyarc/shared";
 import { prisma } from "../../lib/prisma.js";
 import { success, listMeta, toIso } from "../../lib/response.js";
@@ -188,14 +189,18 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
   fastify.get("/locations", { preHandler: [fastify.authenticate] }, async (request) => {
     if (!canReadLocations(request.user)) throw forbidden();
     const query = paginationQuerySchema.parse(request.query);
-    const hasCustomFilters = Boolean(query.q || query.status || query.type || query.scope);
+    const includeLive = isInternalUser(request.user);
+    const hasCustomFilters = Boolean(
+      query.q || query.status || query.type || query.scope || query.from || query.to
+    );
     const cacheKey = locationListCacheKey(
       request.user.role,
       request.user.id,
       query.page,
       query.limit
     );
-    if (!hasCustomFilters) {
+    // Live occupancy must stay fresh for concurrent sales pitching.
+    if (!hasCustomFilters && !includeLive) {
       const cached = getCachedLocationResponse<{ data: unknown; meta: unknown }>(cacheKey);
       if (cached) return cached;
     }
@@ -241,7 +246,13 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
       take: query.limit,
       include: {
         scores: { orderBy: { computedAt: "desc" }, take: 1 },
-        screens: { include: { inventories: true } },
+        screens: {
+          include: {
+            inventories: {
+              include: { availabilityWindows: true },
+            },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -250,6 +261,21 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
       env,
       locations.map((l) => l.id)
     );
+
+    const flightFrom = query.from
+      ? new Date(`${query.from}T00:00:00.000Z`)
+      : (() => {
+          const d = new Date();
+          d.setUTCHours(0, 0, 0, 0);
+          return d;
+        })();
+    const flightTo = query.to
+      ? new Date(`${query.to}T23:59:59.999Z`)
+      : (() => {
+          const d = new Date(flightFrom);
+          d.setUTCDate(d.getUTCDate() + 30);
+          return d;
+        })();
 
     const platform = await loadPlatformConfig();
     const orgIds = [
@@ -276,11 +302,46 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
           orgCommercial,
           platform
         );
-        return serializeLocation(request.user, l, covers.get(l.id), commercialView);
+        const skyarcCommercialView = canViewClientPricing(request.user)
+          ? resolveEffectiveSkyarcLocationCommercial(
+              parseSkyarcLocationCommercial(l.skyarcCommercialJson),
+              platform
+            )
+          : undefined;
+        const base = serializeLocation(
+          request.user,
+          l,
+          covers.get(l.id),
+          commercialView,
+          skyarcCommercialView
+        );
+        if (!includeLive) return base;
+
+        const inventories = l.screens.flatMap((s) =>
+          (s.inventories ?? []).map((inv) => ({
+            inventoryType: inv.inventoryType,
+            slotCapacity: inv.slotCapacity,
+            status: inv.status,
+            availabilityWindows: inv.availabilityWindows,
+          }))
+        );
+        const liveInventory = summarizeLocationLiveInventory({
+          inventories,
+          startDate: flightFrom,
+          endDate: flightTo,
+        });
+        return {
+          ...base,
+          liveInventory,
+          flight: {
+            from: flightFrom.toISOString().slice(0, 10),
+            to: flightTo.toISOString().slice(0, 10),
+          },
+        };
       }),
       listMeta(query.page, query.limit, total)
     );
-    if (!hasCustomFilters) {
+    if (!hasCustomFilters && !includeLive) {
       setCachedLocationResponse(cacheKey, response);
     }
     return response;

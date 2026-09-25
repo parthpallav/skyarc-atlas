@@ -44,4 +44,48 @@ describe("availability windows", () => {
     expect(isInventoryFreeForFlight({ status: "AVAILABLE" })).toBe(true);
     expect(isInventoryFreeForFlight({ status: "UNAVAILABLE" })).toBe(false);
   });
+
+  it("allows digital faces until concurrent slot capacity is full", () => {
+    const inventory = {
+      status: "AVAILABLE",
+      inventoryType: "DIGITAL_BILLBOARD",
+      slotCapacity: 6,
+      availabilityWindows: [
+        {
+          startDate: new Date("2026-09-01"),
+          endDate: new Date("2026-09-30"),
+          status: "BOOKED",
+          slotsConsumed: 5,
+        },
+      ],
+    };
+    expect(
+      isInventoryFreeForFlight(inventory, new Date("2026-09-10"), new Date("2026-09-20"))
+    ).toBe(true);
+    expect(
+      isInventoryFreeForFlight(inventory, new Date("2026-09-10"), new Date("2026-09-20"), {
+        slotsNeeded: 2,
+      })
+    ).toBe(false);
+  });
+
+  it("ignores expired soft holds when checking capacity", () => {
+    const inventory = {
+      status: "AVAILABLE",
+      inventoryType: "DIGITAL_LED",
+      slotCapacity: 6,
+      availabilityWindows: [
+        {
+          startDate: new Date("2026-09-01"),
+          endDate: new Date("2026-09-30"),
+          status: "HELD",
+          slotsConsumed: 6,
+          expiresAt: new Date("2020-01-01"),
+        },
+      ],
+    };
+    expect(
+      isInventoryFreeForFlight(inventory, new Date("2026-09-10"), new Date("2026-09-20"))
+    ).toBe(true);
+  });
 });

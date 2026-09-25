@@ -23,6 +23,9 @@ export const paginationQuerySchema = z.object({
   q: z.string().optional(),
   status: z.string().optional(),
   type: z.string().optional(),
+  /** Flight window for live inventory / digital slot occupancy (YYYY-MM-DD). */
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 export const errorDetailSchema = z.object({

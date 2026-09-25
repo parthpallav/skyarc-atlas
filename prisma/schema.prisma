@@ -119,6 +119,7 @@ enum MediaPlanStatus {
 enum AvailabilityWindowStatus {
   AVAILABLE
   BLOCKED
+  HELD
   BOOKED
 }
 
@@ -436,6 +437,8 @@ model Inventory {
   productCode    String
   notes          String?
   status         InventoryStatus @default(UNKNOWN)
+  /// Concurrent loop slots for digital faces (static stays 1). Digital defaults to 6 in app logic when 1.
+  slotCapacity   Int             @default(1)
   staticSpecsJson Json?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
@@ -448,18 +451,23 @@ model Inventory {
 }
 
 model AvailabilityWindow {
-  id          String                   @id @default(uuid()) @db.Uuid
-  inventoryId String                   @db.Uuid
-  startDate   DateTime
-  endDate     DateTime
-  status      AvailabilityWindowStatus @default(AVAILABLE)
-  notes       String?
-  createdAt   DateTime                 @default(now())
-  updatedAt   DateTime                 @updatedAt
+  id            String                   @id @default(uuid()) @db.Uuid
+  inventoryId   String                   @db.Uuid
+  startDate     DateTime
+  endDate       DateTime
+  status        AvailabilityWindowStatus @default(AVAILABLE)
+  notes         String?
+  /// How many loop slots this window consumes (digital multi-brand).
+  slotsConsumed Int                      @default(1)
+  /// Soft hold expiry for concurrent sales pitching (HELD only).
+  expiresAt     DateTime?
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
 
   inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
 
   @@index([inventoryId, startDate, endDate])
+  @@index([status, expiresAt])
 }
 
 model RateCard {

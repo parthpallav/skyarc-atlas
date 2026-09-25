@@ -455,3 +455,16 @@ export {
   skyarcRevenueFromRates,
   deriveSkyarcMarginPercent,
 } from "./commercial.js";
+export {
+  DEFAULT_DIGITAL_SLOT_CAPACITY,
+  INVENTORY_HOLD_TTL_MINUTES,
+  isDigitalInventoryType,
+  effectiveSlotCapacity,
+  windowIsActiveHold,
+  windowConsumesSlots,
+  slotsConsumedForFlight,
+  slotOccupancy,
+  earliestVacancyStart,
+  summarizeLocationLiveInventory,
+} from "./slot-occupancy.js";
+export type { SlotWindowLike, LiveBookingStatus } from "./slot-occupancy.js";

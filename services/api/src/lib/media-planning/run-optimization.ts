@@ -1,7 +1,11 @@
 import type { PrismaClient } from "@prisma/client";
-import { inventoryTypeBucket, parseSkyarcLocationCommercial } from "@skyarc/shared";
+import {
+  inventoryTypeBucket,
+  parseSkyarcLocationCommercial,
+  INVENTORY_HOLD_TTL_MINUTES,
+} from "@skyarc/shared";
 import { optimizeMediaPlan } from "./optimizer.js";
-import { isInventoryFreeForFlight } from "./availability.js";
+import { isInventoryFreeForFlight, campaignWindowNote } from "./availability.js";
 import {
   assignGoalAlternatives,
   parseCampaignGoal,
@@ -10,6 +14,7 @@ import {
   type GoalFitSite,
 } from "./goal-fit.js";
 import { buildSiteInsights, resolveFactorScores } from "./insights.js";
+import { invalidateLocationCaches } from "../cache/location-cache.js";
 
 export interface InventoryRow {
   id: string;
@@ -109,7 +114,17 @@ export async function loadEligibleInventory(
   });
 
   return inventories.filter((inv) =>
-    isInventoryFreeForFlight(inv, flight?.startDate, flight?.endDate)
+    isInventoryFreeForFlight(
+      {
+        status: inv.status,
+        screenStatus: inv.screen.inventoryStatus,
+        inventoryType: inv.inventoryType,
+        slotCapacity: inv.slotCapacity,
+        availabilityWindows: inv.availabilityWindows,
+      },
+      flight?.startDate,
+      flight?.endDate
+    )
   );
 }
 
@@ -395,7 +410,8 @@ const planItemInclude = {
 export async function holdInventoryForCampaign(
   prisma: PrismaClient,
   campaignId: string,
-  inventoryIds: string[]
+  inventoryIds: string[],
+  mode: "hold" | "book" = "hold"
 ) {
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
@@ -405,15 +421,40 @@ export async function holdInventoryForCampaign(
     return;
   }
 
-  await prisma.availabilityWindow.createMany({
-    data: inventoryIds.map((inventoryId) => ({
-      inventoryId,
-      startDate: campaign.startDate!,
-      endDate: campaign.endDate!,
-      status: "BOOKED",
-      notes: `Held for campaign ${campaignId}`,
-    })),
+  const uniqueIds = [...new Set(inventoryIds)];
+  const expiresAt =
+    mode === "hold"
+      ? new Date(Date.now() + INVENTORY_HOLD_TTL_MINUTES * 60_000)
+      : null;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.availabilityWindow.deleteMany({
+      where: {
+        inventoryId: { in: uniqueIds },
+        status: { in: mode === "book" ? ["HELD", "BOOKED"] : ["HELD"] },
+        notes: { contains: campaignId },
+      },
+    });
+    await tx.availabilityWindow.deleteMany({
+      where: {
+        inventoryId: { in: uniqueIds },
+        status: "HELD",
+        expiresAt: { lt: new Date() },
+      },
+    });
+    await tx.availabilityWindow.createMany({
+      data: uniqueIds.map((inventoryId) => ({
+        inventoryId,
+        startDate: campaign.startDate!,
+        endDate: campaign.endDate!,
+        status: mode === "book" ? "BOOKED" : "HELD",
+        notes: campaignWindowNote(campaignId, mode),
+        slotsConsumed: 1,
+        expiresAt,
+      })),
+    });
   });
+  invalidateLocationCaches();
 }
 
 export async function buildMediaPlanFromSelection(

@@ -191,7 +191,7 @@ export class ApiClient {
     page = 1,
     limit = 20,
     scope?: "mine" | "discovery" | "all",
-    filters?: { q?: string; status?: string; type?: string }
+    filters?: { q?: string; status?: string; type?: string; from?: string; to?: string }
   ) {
     const params = new URLSearchParams({
       page: String(page),
@@ -201,6 +201,8 @@ export class ApiClient {
     if (filters?.q) params.set("q", filters.q);
     if (filters?.status) params.set("status", filters.status);
     if (filters?.type) params.set("type", filters.type);
+    if (filters?.from) params.set("from", filters.from);
+    if (filters?.to) params.set("to", filters.to);
     return this.request<unknown[]>(`/locations?${params.toString()}`);
   }
 

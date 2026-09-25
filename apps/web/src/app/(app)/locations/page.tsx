@@ -30,6 +30,7 @@ import { formatInr } from "@/lib/format";
 import { InventoryImportModal } from "@/components/inventory-import-modal";
 import { FileSpreadsheet } from "lucide-react";
 import { LocationGridSkeleton } from "@/components/ui/skeleton";
+import { SlotIndicators, liveStatusBadge } from "@/components/slot-indicators";
 
 interface Location {
   id: string;
@@ -55,6 +56,16 @@ interface Location {
     currency: string;
   };
   isOwned?: boolean;
+  liveInventory?: {
+    status: "AVAILABLE" | "ON_HOLD" | "UNAVAILABLE" | "PARTIAL";
+    isDigital: boolean;
+    capacity: number;
+    used: number;
+    remaining: number;
+    indicators: Array<"available" | "booked">;
+    earliestVacancyDate?: string | null;
+  } | null;
+  flight?: { from: string; to: string };
 }
 
 const INVENTORY_TYPE_OPTIONS = [
@@ -148,6 +159,9 @@ export default function LocationsPage() {
       return result.data as Location[];
     },
     retry: 2,
+    // Keep live occupancy fresh for concurrent sales pitching.
+    refetchInterval: isInternal ? 30_000 : false,
+    staleTime: isInternal ? 10_000 : 30_000,
   });
 
   const bulkMutation = useMutation({
@@ -621,17 +635,24 @@ export default function LocationsPage() {
               ? loc.inventoryTypes
               : ["STATIC_BILLBOARD"];
             const visualHighlight = getCustomerVisualHighlights(loc);
+            const live = loc.liveInventory;
+            const booking = live ? liveStatusBadge(live.status) : null;
+            const greyscale = live?.status === "UNAVAILABLE";
 
             return (
               <div
                 key={loc.id}
                 className={`card-surface overflow-hidden flex flex-col justify-between transition-all hover:border-primary/40 hover:shadow-md ${
                   isSelected ? "ring-2 ring-primary" : ""
-                }`}
+                } ${greyscale ? "opacity-75" : ""}`}
               >
                 <div>
                   {/* Location Cover Image */}
-                  <div className="relative h-36 sm:h-44 bg-slate-100 overflow-hidden">
+                  <div
+                    className={`relative h-36 sm:h-44 bg-slate-100 overflow-hidden ${
+                      greyscale ? "grayscale" : ""
+                    }`}
+                  >
                     <LocationImage
                       src={loc.coverImageUrl}
                       alt={loc.name}
@@ -657,13 +678,19 @@ export default function LocationsPage() {
                       </button>
                     )}
 
-                    {/* Top Right: SkyArc Site Code (Brand Facing) or Status Badge */}
+                    {/* Top Right: SkyArc Site Code + live booking (sales) or survey status */}
                     <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-black/70 text-white backdrop-blur-md border border-white/20 font-mono">
                         {loc.skyarcSiteCode ?? `SKY-${loc.id.slice(0, 4).toUpperCase()}`}
                       </span>
 
-                      {!isClient && (
+                      {booking ? (
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-md border backdrop-blur-md ${booking.className}`}
+                        >
+                          {booking.label}
+                        </span>
+                      ) : !isClient ? (
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-md border backdrop-blur-md ${statusColor(
                             loc.surveyStatus
@@ -671,7 +698,7 @@ export default function LocationsPage() {
                         >
                           {loc.surveyStatus}
                         </span>
-                      )}
+                      ) : null}
                     </div>
 
                     {/* Bottom Right: Internal Score (SuperAdmin/Ops Only) OR Visual Highlight Tag (Customer Facing) */}
@@ -691,21 +718,12 @@ export default function LocationsPage() {
                       )}
                     </div>
 
-                    {/* Bottom Left: Formats on Image */}
+                    {/* Bottom Left: one primary format only */}
                     <div className="absolute bottom-2.5 left-2.5 flex flex-wrap gap-1 max-w-[60%]">
-                      {formats.slice(0, 2).map((fmt) => (
-                        <span
-                          key={fmt}
-                          className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-black/60 text-white backdrop-blur-sm border border-white/10"
-                        >
-                          {formatInventoryType(fmt)}
-                        </span>
-                      ))}
-                      {formats.length > 2 && (
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-black/60 text-white backdrop-blur-sm">
-                          +{formats.length - 2}
-                        </span>
-                      )}
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-black/60 text-white backdrop-blur-sm border border-white/10">
+                        {formatInventoryType(formats[0]!)}
+                        {formats.length > 1 ? ` +${formats.length - 1}` : ""}
+                      </span>
                     </div>
                   </div>
 
@@ -737,6 +755,29 @@ export default function LocationsPage() {
                         {loc.road ?? loc.junction ?? loc.address ?? "Rajkot Corridor"}
                       </span>
                     </p>
+
+                    {live?.isDigital ? (
+                      <SlotIndicators
+                        indicators={live.indicators}
+                        label={
+                          live.status === "UNAVAILABLE"
+                            ? live.earliestVacancyDate
+                              ? `Full · next open ${live.earliestVacancyDate}`
+                              : "Fully booked"
+                            : `${live.remaining} of ${live.capacity} slots open`
+                        }
+                      />
+                    ) : live ? (
+                      <p className="text-[11px] text-slate-500">
+                        {live.status === "UNAVAILABLE"
+                          ? live.earliestVacancyDate
+                            ? `Booked · earliest ${live.earliestVacancyDate}`
+                            : "Unavailable for these dates"
+                          : live.status === "ON_HOLD"
+                            ? "On hold — do not re-promise"
+                            : "Available for exclusive booking"}
+                      </p>
+                    ) : null}
 
                     {/* Commercial / Customer Pricing View */}
                     <div className="pt-2 border-t border-violet-100 flex items-center justify-between text-xs">

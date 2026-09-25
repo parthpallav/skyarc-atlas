@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Atlas · Live inventory slots demo</title>
+  <style>
+    :root {
+      --purple: #a855f7;
+      --surface: #f5f3ff;
+      --card: #fff;
+      --border: #e9d5ff;
+      --ink: #1a1a1a;
+      --muted: #6b7280;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      background: var(--surface);
+      color: var(--ink);
+      padding: 28px;
+    }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 22px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(15,23,42,.04);
+    }
+    .media {
+      height: 140px;
+      background: linear-gradient(135deg, #1e1b4b, #4c1d95);
+      position: relative;
+      color: #fff;
+    }
+    .media.grey { filter: grayscale(1); opacity: .85; }
+    .badge {
+      position: absolute; top: 10px; right: 10px;
+      font-size: 10px; font-weight: 700;
+      padding: 4px 8px; border-radius: 7px; border: 1px solid;
+    }
+    .ok { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .partial { background: #f0f9ff; color: #0369a1; border-color: #bae6fd; }
+    .hold { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+    .bad { background: #fff1f2; color: #be123c; border-color: #fecdd3; }
+    .code {
+      position: absolute; top: 10px; left: 10px;
+      font-size: 10px; font-family: ui-monospace, monospace;
+      background: rgba(0,0,0,.65); padding: 4px 8px; border-radius: 6px;
+    }
+    .body { padding: 14px; }
+    .title { font-weight: 700; font-size: 14px; margin: 0 0 4px; }
+    .road { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+    .balls { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
+    .ball {
+      width: 12px; height: 12px; border-radius: 99px; border: 1px solid;
+    }
+    .ball.g { background: #34d399; border-color: #059669; }
+    .ball.r { background: #f43f5e; border-color: #e11d48; }
+    .hint { font-size: 11px; color: var(--muted); }
+    .note {
+      margin-top: 22px; padding: 12px 14px; background: #fff;
+      border: 1px solid var(--border); border-radius: 12px; font-size: 12px; color: var(--muted);
+    }
+    .note b { color: var(--purple); }
+  </style>
+</head>
+<body>
+  <h1>Sales live inventory · cricket-over slots</h1>
+  <p class="sub">Local visual of what internal/sales see on Locations (feat/sales-live-inventory-slots). Green = open slot, red = booked/held.</p>
+
+  <div class="grid" id="grid"></div>
+
+  <p class="note">
+    <b>In the app:</b> sign in as planner/sales → <b>Locations</b>. Cards poll every 30s.
+    Soft holds expire in 30 minutes so concurrent pitching frees capacity.
+    Full stack needs Docker Postgres + API :3001 + web :3000.
+  </p>
+
+  <script>
+    const sites = [
+      {
+        code: "SKY-RK-0142", name: "Kalawad Junction LED", road: "Kalawad Road",
+        status: "PARTIAL", badge: "partial", label: "Slots open",
+        used: 2, capacity: 6, digital: true,
+      },
+      {
+        code: "SKY-RK-0088", name: "Ring Road Unipole A", road: "150 Feet Ring Road",
+        status: "ON_HOLD", badge: "hold", label: "On hold",
+        used: 1, capacity: 1, digital: false,
+      },
+      {
+        code: "SKY-RK-0211", name: "Yagnik Digital Loop", road: "Yagnik Road",
+        status: "AVAILABLE", badge: "ok", label: "Available",
+        used: 0, capacity: 6, digital: true,
+      },
+      {
+        code: "SKY-RK-0034", name: "Gondal Gantry Face", road: "Gondal Road",
+        status: "UNAVAILABLE", badge: "bad", label: "Unavailable",
+        used: 1, capacity: 1, digital: false, grey: true, next: "2026-11-01",
+      },
+      {
+        code: "SKY-RK-0099", name: "University Digital", road: "University Road",
+        status: "UNAVAILABLE", badge: "bad", label: "Fully booked",
+        used: 6, capacity: 6, digital: true, grey: true, next: "2026-10-15",
+      },
+      {
+        code: "SKY-RK-0177", name: "Race Course Static", road: "Race Course",
+        status: "AVAILABLE", badge: "ok", label: "Available",
+        used: 0, capacity: 1, digital: false,
+      },
+    ];
+
+    document.getElementById("grid").innerHTML = sites.map((s) => {
+      const balls = Array.from({ length: s.capacity }, (_, i) =>
+        `<span class="ball ${i < s.used ? "r" : "g"}" title="${i < s.used ? "Booked/held" : "Available"}"></span>`
+      ).join("");
+      const hint = s.digital
+        ? (s.used >= s.capacity
+            ? (s.next ? `Full · next open ${s.next}` : "Fully booked")
+            : `${s.capacity - s.used} of ${s.capacity} slots open`)
+        : (s.status === "UNAVAILABLE"
+            ? (s.next ? `Booked · earliest ${s.next}` : "Unavailable")
+            : s.status === "ON_HOLD"
+              ? "On hold — do not re-promise"
+              : "Available for exclusive booking");
+      return `<article class="card">
+        <div class="media ${s.grey ? "grey" : ""}">
+          <span class="code">${s.code}</span>
+          <span class="badge ${s.badge}">${s.label}</span>
+        </div>
+        <div class="body">
+          <h3 class="title">${s.name}</h3>
+          <p class="road">${s.road} · ${s.digital ? "Digital" : "Static"}</p>
+          ${s.digital ? `<div class="balls">${balls}</div>` : ""}
+          <p class="hint">${hint}</p>
+        </div>
+      </article>`;
+    }).join("");
+  </script>
+</body>
+</html>
