@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createWebApiClient } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
 import { usePermissions } from "@/hooks/use-permissions";
+import { AdminSkyarcIndexSettings } from "@/components/admin-skyarc-index-settings";
 
 export default function AdminSettingsPage() {
   const queryClient = useQueryClient();
@@ -28,6 +29,13 @@ export default function AdminSettingsPage() {
     setShowVendorDetails(data.showVendorDetailsOnLocationPage !== false);
   }, [data]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash === "#skyarc-index") {
+      document.getElementById("skyarc-index")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [data]);
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const client = createWebApiClient();
@@ -48,15 +56,19 @@ export default function AdminSettingsPage() {
   const canEditSettings = isSuperAdmin || isAdmin;
 
   return (
-    <div className="mx-auto w-full max-w-xl">
+    <div className="mx-auto w-full max-w-3xl space-y-8 pb-16">
       <PageHeader
-        title="Platform settings"
-        description="Defaults and showcase controls for location details"
+        title="Settings"
+        description="Platform defaults, showcase controls, and Skyarc Index weights"
       />
+
+      {!canEditSettings ? (
+        <p className="text-sm text-muted">Only Superadmin / Admin can manage settings.</p>
+      ) : null}
 
       {isLoading && <p className="text-sm text-muted">Loading…</p>}
 
-      {data && canEditSettings && (
+      {data && canEditSettings ? (
         <form
           className="card-surface space-y-5 p-6"
           onSubmit={(e) => {
@@ -64,6 +76,7 @@ export default function AdminSettingsPage() {
             saveMutation.mutate();
           }}
         >
+          <h2 className="text-sm font-semibold text-slate-900">Platform</h2>
           <label className="block text-sm">
             <span className="font-medium text-muted">Default Skyarc margin %</span>
             <input
@@ -106,17 +119,19 @@ export default function AdminSettingsPage() {
             ) : null}
           </div>
 
-          {message && (
+          {message ? (
             <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
               {message}
             </p>
-          )}
+          ) : null}
 
           <button type="submit" disabled={saveMutation.isPending} className="btn-primary px-5 py-2.5">
-            {saveMutation.isPending ? "Saving…" : "Save"}
+            {saveMutation.isPending ? "Saving…" : "Save platform settings"}
           </button>
         </form>
-      )}
+      ) : null}
+
+      {canEditSettings ? <AdminSkyarcIndexSettings /> : null}
     </div>
   );
 }

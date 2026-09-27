@@ -30,6 +30,7 @@ export const AssetKind = {
   APPROACH_VIDEO: "APPROACH_VIDEO",
   REVERSE_PHOTO: "REVERSE_PHOTO",
   VOICE_NOTE: "VOICE_NOTE",
+  CAMPAIGN_LIVE_PROOF: "CAMPAIGN_LIVE_PROOF",
   OTHER: "OTHER",
 } as const;
 export type AssetKind = (typeof AssetKind)[keyof typeof AssetKind];
@@ -473,6 +474,8 @@ export {
   canAccessCampaigns,
   canWriteCampaigns,
   canApproveMediaPlan,
+  canMarkCampaignReadyForSiteRequests,
+  canSendSiteRequestsToOwners,
   canRespondToSiteRequest,
   canMutateCampaign,
   canAccessAdmin,

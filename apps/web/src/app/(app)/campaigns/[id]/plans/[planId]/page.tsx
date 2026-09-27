@@ -32,6 +32,7 @@ import {
 } from "@/components/media-plan-insights";
 import { PlanMixViz } from "@/components/plan-mix-viz";
 import { MediaPlanDetailSkeleton } from "@/components/ui/skeleton";
+import { SiteDemandSignals } from "@/components/site-demand-signals";
 
 interface PlanItemRow {
   id: string;
@@ -60,6 +61,17 @@ interface PlanItemRow {
     road?: string | null;
     junction?: string | null;
     coverImageUrl?: string | null;
+  };
+  whyThisSite?: string | null;
+  skyarcIndex?: { overallScore?: number; overallConfidence?: number };
+  demand?: {
+    planCount?: number;
+    viewersNow?: number;
+    highDemand?: boolean;
+    slotsOpen?: number | null;
+    slotCapacity?: number | null;
+    criticallyLowSlots?: boolean;
+    summaryLine?: string | null;
   };
   insights?: SiteInsightsView;
   alternatives?: Array<{
@@ -596,6 +608,7 @@ export default function MediaPlanDetailPage() {
   const isDraftRequest = plan.status === "DRAFT" || plan.isSiteRequest;
   const pricingReady = plan.pricingVisible !== false && plan.status === "APPROVED";
   const showPendingVendor = isVendor && isDraftRequest && !plan.canRespond;
+  const showClientPricing = Boolean(plan.pricingVisible) || isClient || isInternal;
   const canApprove = Boolean(plan.canApprove) || (isInternal && plan.status === "DRAFT");
   const canRespond = Boolean(plan.canRespond);
   const statusBadge = planLifecycleBadge(plan.status, plan.isSiteRequest);
@@ -829,86 +842,111 @@ export default function MediaPlanDetailPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {plan.items.map((item) => {
-              const plannedSpend = item.budgetAllocated;
-              const bucket = item.inventoryBucket ?? inventoryTypeBucket(item.inventoryType);
-              const goalChip = siteGoalChip(item, plan.goal);
-              return (
-                <article
-                  key={item.id}
-                  className="card-surface group overflow-hidden transition-shadow hover:shadow-md"
-                >
-                  <div className="relative h-44 bg-slate-900 sm:h-52">
-                    {item.location?.coverImageUrl ? (
-                      <Image
-                        src={item.location.coverImageUrl}
-                        alt={item.location.name}
-                        fill
-                        className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
-                        sizes="(max-width: 768px) 100vw, 50vw"
-                        unoptimized
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-slate-400">
-                        <MapPin className="h-7 w-7 opacity-50" />
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-black/20" />
-                    <div className="absolute left-3 right-3 top-3 flex flex-wrap items-start justify-between gap-1.5">
-                      {goalChip ? (
-                        <span className="rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-slate-900 shadow-sm">
-                          {goalChip}
-                        </span>
-                      ) : (
-                        <span />
-                      )}
-                      <span className="rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">
-                        {INVENTORY_BUCKET_LABELS[bucket].replace(/s$/, "")}
-                      </span>
-                    </div>
-                    <div className="absolute bottom-0 left-0 right-0 p-3.5 text-white">
-                      <p className="font-mono text-[11px] font-semibold tracking-wide text-white/85">
-                        {item.location?.skyarcSiteCode ?? "SKY"}
-                      </p>
-                      <h4 className="line-clamp-1 text-base font-bold">{item.location?.name}</h4>
-                      <div className="mt-1 flex items-end justify-between gap-2">
-                        <p className="truncate text-[11px] text-white/75">{siteSpecLine(item)}</p>
-                        <p className="shrink-0 text-sm font-semibold tabular-nums text-emerald-200">
-                          {formatInr(plannedSpend)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="space-y-2.5 p-3.5">
-                    {item.creativeBrief ? (
-                      <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-600">
-                        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-                        <span className="line-clamp-3">{item.creativeBrief}</span>
-                      </p>
-                    ) : null}
-                    <SwapChips
-                      item={item}
-                      pending={pendingMix}
-                      planTotal={planTotal}
-                      totalAllocated={totalAllocated}
-                      forCustomer={isClient}
-                      onSwap={(inventoryId) => swapMutation.mutate({ itemId: item.id, inventoryId })}
-                    />
-                    {item.location ? (
-                      <Link
-                        href={`/locations/${item.location.id}`}
-                        className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline"
-                      >
-                        Site details <ChevronRight className="h-3.5 w-3.5" />
-                      </Link>
-                    ) : null}
-                  </div>
-                </article>
-              );
-            })}
+          {plan.summary && plan.summary.siteCount > 0 ? (
+            <PlanSummaryCards summary={plan.summary} />
+          ) : null}
+
+          <div className="space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Sites in this plan</h2>
+              <p className="mt-0.5 text-xs text-muted">
+                Skyarc Index, why each site fits, and calm demand signals — safe to share with brands.
+              </p>
+            </div>
+            <ul className="space-y-3">
+              {plan.items.map((item) => {
+                const plannedSpend = item.budgetAllocated;
+                const indexScore = item.skyarcIndex?.overallScore ?? item.insights?.overallScore;
+                const why =
+                  item.whyThisSite ||
+                  item.explanationText ||
+                  item.insights?.highlights?.[0] ||
+                  item.insights?.explanationText ||
+                  null;
+                const audience = isClient ? "client" : isVendor ? "vendor" : "internal";
+                return (
+                  <li key={item.id}>
+                    <article className="overflow-hidden rounded-2xl border border-violet-100 bg-white shadow-card">
+                      <div className="grid gap-0 sm:grid-cols-[9rem_1fr]">
+                        <div className="relative h-36 bg-slate-100 sm:h-full sm:min-h-[9rem]">
+                          {item.location?.coverImageUrl ? (
+                            <Image
+                              src={item.location.coverImageUrl}
+                              alt={item.location.name}
+                              fill
+                              className="object-cover"
+                              sizes="160px"
+                              unoptimized
+                            />
+                          ) : (
+                            <div className="flex h-full min-h-[9rem] items-center justify-center text-slate-300">
+                              <MapPin className="h-6 w-6" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-2.5 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-mono text-[11px] font-semibold text-primary">
+                                {item.location?.skyarcSiteCode ?? "SKY"}
+                              </p>
+                              <h3 className="truncate text-sm font-semibold text-slate-900">
+                                {item.location?.name}
+                              </h3>
+                              <p className="text-[11px] text-muted">{siteSpecLine(item)}</p>
+                            </div>
+                            <div className="text-right">
+                              {indexScore != null ? (
+                                <p className="text-lg font-bold tabular-nums text-slate-900">
+                                  {Math.round(indexScore)}
+                                  <span className="text-[10px] font-semibold text-muted"> /100</span>
+                                </p>
+                              ) : null}
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                                Skyarc Index
+                              </p>
+                              {showClientPricing && plannedSpend > 0 ? (
+                                <p className="mt-1 text-sm font-semibold tabular-nums text-slate-900">
+                                  {formatInr(plannedSpend)}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                          {why ? (
+                            <p className="text-xs leading-relaxed text-slate-700">
+                              <span className="font-semibold text-slate-900">Why this site · </span>
+                              {why}
+                            </p>
+                          ) : null}
+                          <SiteDemandSignals demand={item.demand} audience={audience} />
+                          {item.insights && item.insights.metrics.length > 0 ? (
+                            <details className="rounded-lg border border-violet-50 bg-violet-50/40 px-3 py-2">
+                              <summary className="cursor-pointer text-[11px] font-semibold text-slate-700">
+                                Factor detail
+                              </summary>
+                              <div className="mt-2">
+                                <SiteMetricsBars metrics={item.insights.metrics} />
+                              </div>
+                            </details>
+                          ) : null}
+                          {item.location ? (
+                            <Link
+                              href={`/locations/${item.location.id}`}
+                              className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline"
+                            >
+                              Site details <ChevronRight className="h-3.5 w-3.5" />
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
+                    </article>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
+
         </div>
       ) : (
         <div className="space-y-5">

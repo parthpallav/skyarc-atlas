@@ -379,6 +379,8 @@ export const presignAssetBodySchema = z.object({
   assetId: uuidSchema,
   kind: z.nativeEnum(AssetKind),
   view: z.nativeEnum(PhotoView).optional(),
+  /** Required when kind is CAMPAIGN_LIVE_PROOF. */
+  campaignId: uuidSchema.optional(),
   contentType: z.string(),
   byteSize: z.number().int().positive(),
   checksumSha256: z.string().optional(),

@@ -18,6 +18,10 @@ export interface MediaPlanPdfLineItem {
   budgetAllocated: number;
   coverImageUrl?: string | null;
   coverImageBuffer?: Buffer | null;
+  /** Customer-safe Skyarc Index (0–100). */
+  skyarcIndex?: number | null;
+  whyThisSite?: string | null;
+  demandLine?: string | null;
 }
 
 export interface MediaPlanPdfInput {
@@ -440,6 +444,35 @@ export async function buildMediaPlanPdf(input: MediaPlanPdfInput): Promise<Buffe
       });
 
       dy += 68;
+
+      if (item.skyarcIndex != null && Number.isFinite(item.skyarcIndex)) {
+        doc
+          .font(fonts.bold)
+          .fontSize(11)
+          .fillColor(COLORS.ink)
+          .text(`Skyarc Index  ${Math.round(item.skyarcIndex)} / 100`, 48, dy);
+        dy = doc.y + 8;
+      }
+
+      if (item.whyThisSite?.trim()) {
+        doc.font(fonts.bold).fontSize(11).fillColor(COLORS.ink).text("Why this site", 48, dy);
+        dy = doc.y + 6;
+        doc
+          .font(fonts.regular)
+          .fontSize(10)
+          .fillColor(COLORS.muted)
+          .text(item.whyThisSite.trim(), 48, dy, { width: 500, lineGap: 3 });
+        dy = doc.y + 12;
+      }
+
+      if (item.demandLine?.trim()) {
+        doc
+          .font(fonts.regular)
+          .fontSize(9)
+          .fillColor(COLORS.purple)
+          .text(item.demandLine.trim(), 48, dy, { width: 500 });
+        dy = doc.y + 12;
+      }
 
       doc.font(fonts.bold).fontSize(11).fillColor(COLORS.ink).text("Artwork guidance", 48, dy);
       dy = doc.y + 6;

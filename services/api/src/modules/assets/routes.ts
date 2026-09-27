@@ -163,6 +163,9 @@ export async function assetRoutes(
       }
 
       const body = presignAssetBodySchema.parse(request.body);
+      if (body.kind === AssetKind.CAMPAIGN_LIVE_PROOF && !body.campaignId) {
+        throw validationError("campaignId is required for live campaign proof photos");
+      }
       if (
         body.kind === AssetKind.PHOTO &&
         !isLocationMediaContentType(body.contentType)
@@ -192,7 +195,7 @@ export async function assetRoutes(
         maxBytes: body.byteSize,
       });
 
-      if (view !== PhotoView.OTHER) {
+      if (view !== PhotoView.OTHER && body.kind !== AssetKind.CAMPAIGN_LIVE_PROOF) {
         await prisma.locationAsset.deleteMany({
           where: { locationId, view },
         });
@@ -203,6 +206,7 @@ export async function assetRoutes(
         create: {
           id: body.assetId,
           locationId,
+          campaignId: body.campaignId ?? null,
           kind: body.kind,
           view,
           r2Key,
@@ -220,6 +224,7 @@ export async function assetRoutes(
         update: {
           kind: body.kind,
           view,
+          campaignId: body.campaignId ?? null,
           r2Key,
           contentType: body.contentType,
           byteSize: body.byteSize,

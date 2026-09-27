@@ -18,6 +18,8 @@ interface MediaPlanRow {
   status: string;
   totalBudget: string | number;
   createdAt: string;
+  isPrimary?: boolean;
+  isRequestDraft?: boolean;
   _count?: { items: number };
 }
 
@@ -30,6 +32,11 @@ interface CampaignDetail {
   createdByUserId?: string | null;
   canEdit?: boolean;
   isSiteRequest?: boolean;
+  readyForSiteRequests?: boolean;
+  readyForSiteRequestsAt?: string | null;
+  canMarkReady?: boolean;
+  canSendSiteRequests?: boolean;
+  primaryMediaPlanId?: string | null;
   advertiser?: { name: string };
   brief?: {
     structuredRequirementsJson?: {
@@ -133,6 +140,19 @@ export default function CampaignDetailPage() {
       setError(err instanceof Error ? err.message : "Could not delete campaign"),
   });
 
+  const readyMutation = useMutation({
+    mutationFn: async () => {
+      const client = createWebApiClient();
+      return client.markCampaignReadyForSiteRequests(id);
+    },
+    onSuccess: async () => {
+      setError("");
+      await queryClient.invalidateQueries({ queryKey: ["campaign", id] });
+    },
+    onError: (err) =>
+      setError(err instanceof Error ? err.message : "Could not mark campaign ready"),
+  });
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -231,6 +251,40 @@ export default function CampaignDetailPage() {
         brief={campaign.brief?.structuredRequirementsJson}
       />
 
+
+      {!isSiteRequest ? (
+        <section className="rounded-xl border border-violet-100 bg-violet-50/50 px-4 py-3 sm:px-5">
+          {campaign.readyForSiteRequests ? (
+            <p className="text-sm text-slate-800">
+              <span className="font-semibold text-emerald-800">Ready for site requests.</span>{" "}
+              Brand and planners can send listed sites to media owners for this flight.
+            </p>
+          ) : campaign.canMarkReady ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Unlock site requests</p>
+                <p className="mt-0.5 text-xs text-muted">
+                  Only Skyarc can mark the campaign ready. Until then, brands cannot send requests to
+                  media owners.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn-primary shrink-0 px-3 py-2 text-xs"
+                disabled={readyMutation.isPending}
+                onClick={() => readyMutation.mutate()}
+              >
+                {readyMutation.isPending ? "Marking…" : "Mark ready for site requests"}
+              </button>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-700">
+              Waiting for Skyarc to mark this campaign ready before site requests go to media owners.
+            </p>
+          )}
+        </section>
+      ) : null}
+
       <section className="card-surface p-5 sm:p-6 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
@@ -264,14 +318,35 @@ export default function CampaignDetailPage() {
 
         {campaign.mediaPlans && campaign.mediaPlans.length > 0 && (
           <div className="space-y-2">
-            {campaign.mediaPlans.map((plan) => (
+            {[...campaign.mediaPlans]
+              .sort((a, b) => {
+                const rank = (p: MediaPlanRow) =>
+                  p.isPrimary || p.status === "APPROVED" ? 0 : p.status === "PROPOSED" ? 1 : 2;
+                return rank(a) - rank(b);
+              })
+              .map((plan) => (
               <Link
                 key={plan.id}
                 href={`/campaigns/${campaign.id}/plans/${plan.id}`}
                 className="p-4 rounded-xl border border-violet-100 bg-white hover:border-primary/40 flex items-center justify-between gap-3"
               >
                 <div>
-                  <h3 className="font-semibold text-slate-900 text-sm">{plan.name}</h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-semibold text-slate-900 text-sm">{plan.name}</h3>
+                    {plan.isPrimary || plan.status === "APPROVED" ? (
+                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
+                        Live / primary
+                      </span>
+                    ) : plan.isRequestDraft || plan.status === "DRAFT" ? (
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                        Request draft
+                      </span>
+                    ) : (
+                      <span className="rounded-full border border-violet-100 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-800">
+                        {plan.status}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-muted mt-0.5">
                     {plan._count?.items ?? 0} sites · {formatInr(Number(plan.totalBudget) || 0)}
                   </p>

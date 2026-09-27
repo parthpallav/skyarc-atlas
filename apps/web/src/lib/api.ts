@@ -8,7 +8,9 @@ export function getApiBaseUrl(): string {
   if (typeof window !== "undefined") {
     const host = window.location.hostname;
     if (host === "localhost" || host === "127.0.0.1") {
-      return "http://localhost:3001";
+      // Keep API host aligned with the page host so CORS Origin matches
+      // (localhost vs 127.0.0.1 are different origins).
+      return `${window.location.protocol}//${host}:3001`;
     }
     // In production (e.g. atlas.skyarcads.com or Vercel preview), use same-origin relative path
     // which Next.js rewrites to the VPS backend over HTTP without triggering browser Mixed Content blocks.

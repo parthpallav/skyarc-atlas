@@ -746,6 +746,30 @@ export default function LocationDetailPage() {
                   isLoading={campaignHistoryLoading}
                   redactNames={isClient}
                 />
+                {assets && assets.some((a) => a.kind === "CAMPAIGN_LIVE_PROOF" && a.url) ? (
+                  <div className="rounded-2xl border border-violet-100 bg-white p-5 shadow-card">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                      Live on site
+                    </p>
+                    <h3 className="mt-0.5 text-sm font-semibold text-slate-900">Campaign proof photos</h3>
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {assets
+                        .filter((a) => a.kind === "CAMPAIGN_LIVE_PROOF" && a.url)
+                        .map((a) => (
+                          <a
+                            key={a.id}
+                            href={a.url!}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="relative aspect-[4/3] overflow-hidden rounded-lg bg-slate-100"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={a.url!} alt="Campaign live proof" className="h-full w-full object-cover" />
+                          </a>
+                        ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           </section>

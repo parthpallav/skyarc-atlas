@@ -27,7 +27,7 @@ services:
       JWT_REFRESH_SECRET: change-me-refresh-secret-min-32-chars-long
       AI_PROVIDER: stub
       PORT: 3001
-      CORS_ORIGINS: http://localhost:3000,http://localhost:8081
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:8081,http://127.0.0.1:8081
       NODE_ENV: production
     depends_on:
       postgres:

@@ -1,7 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Building2,
-  Gauge,
   LayoutDashboard,
   Map,
   MapPin,
@@ -53,7 +52,6 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
 
   if (canAccessAdmin(authUser)) {
     links.push({ href: "/admin/organizations", label: "Vendors", icon: Users });
-    links.push({ href: "/admin/scoring", label: "Index weights", icon: Gauge });
     links.push({ href: "/admin/settings", label: "Settings", icon: Settings });
   }
 

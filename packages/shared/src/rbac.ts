@@ -88,6 +88,25 @@ export function canApproveMediaPlan(user: Pick<AuthUser, "role">): boolean {
   return isInternalUser(user);
 }
 
+/** Skyarc planner/admin may mark a campaign ready so brand can request sites from owners. */
+export function canMarkCampaignReadyForSiteRequests(user: Pick<AuthUser, "role">): boolean {
+  return isInternalUser(user);
+}
+
+/**
+ * Who may create/send site requests to media owners.
+ * Clients only after Skyarc set readyForSiteRequestsAt; internals always; vendors never (they respond).
+ */
+export function canSendSiteRequestsToOwners(
+  user: Pick<AuthUser, "role">,
+  campaign: { readyForSiteRequestsAt?: Date | string | null }
+): boolean {
+  if (isVendorUser(user)) return false;
+  if (isInternalUser(user)) return true;
+  if (!isClientUser(user)) return false;
+  return Boolean(campaign.readyForSiteRequestsAt);
+}
+
 /** Vendors (non read-only) may approve/reject requests that include their inventory. */
 export function canRespondToSiteRequest(user: Pick<AuthUser, "role">): boolean {
   return isVendorUser(user) && !isReadOnly(user);

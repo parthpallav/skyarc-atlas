@@ -45,7 +45,11 @@ export const envSchema = z.object({
   AI_MODEL: z.string().default("openrouter/free"),
   PORT: z.coerce.number().default(3001),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:8081"),
+  CORS_ORIGINS: z
+    .string()
+    .default(
+      "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8081,http://127.0.0.1:8081"
+    ),
 });
 
 export type Env = z.infer<typeof envSchema>;

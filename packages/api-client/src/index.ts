@@ -331,6 +331,14 @@ export class ApiClient {
     return this.request<unknown>(`/campaigns/${id}`);
   }
 
+  markCampaignReadyForSiteRequests(id: string) {
+    return this.request<{
+      id: string;
+      readyForSiteRequestsAt: string | null;
+      readyForSiteRequests: boolean;
+    }>(`/campaigns/${id}/ready-for-site-requests`, { method: "POST" });
+  }
+
   createCampaign(data: Record<string, unknown>) {
     return this.request<unknown>("/campaigns", {
       method: "POST",

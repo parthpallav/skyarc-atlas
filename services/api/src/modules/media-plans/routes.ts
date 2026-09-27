@@ -39,6 +39,8 @@ import {
   buildPlanSummary,
   buildSiteInsights,
 } from "../../lib/media-planning/insights.js";
+import { buildSiteDemandView, type SiteDemandView } from "../../lib/media-planning/demand.js";
+import { countLocationViewersBatch } from "../../lib/cache/presence-cache.js";
 import { coverUrlsForLocations } from "../../lib/asset-url.js";
 import { createStorageProvider } from "../../lib/storage/index.js";
 import { prisma } from "../../lib/prisma.js";
@@ -48,9 +50,12 @@ import { forbidden, notFound, validationError, AppError } from "../../lib/errors
 import {
   AIOperation,
   canApproveMediaPlan,
+  canMarkCampaignReadyForSiteRequests,
+  canSendSiteRequestsToOwners,
   canRespondToSiteRequest,
   canViewClientPricing,
   deriveSkyarcMarginPercent,
+  effectiveSlotCapacity,
   inventoryTypeBucket,
   isClientUser,
   isSiteRequestBrief,
@@ -122,6 +127,7 @@ function serializeMediaPlan(
       inventory: {
         inventoryType?: string | null;
         staticSpecsJson?: unknown;
+        slotCapacity?: number | null;
         rateCards?: Array<{ amount: unknown }>;
         screen: {
           location: {
@@ -147,7 +153,8 @@ function serializeMediaPlan(
     showScores?: boolean;
     forCustomer?: boolean;
     clientRateByLocation: Map<string, number>;
-  }
+  },
+  demandByLocation?: Map<string, SiteDemandView>
 ) {
   const enrichedItems = plan.items.map((item) => {
     const location = item.inventory.screen.location;
@@ -200,6 +207,16 @@ function serializeMediaPlan(
     );
     const lighting = specs.lighting ?? (typeof lightingAttr === "string" ? lightingAttr : null);
 
+    const demand =
+      demandByLocation?.get(location.id) ??
+      buildSiteDemandView({ planCount: 0 });
+    const whyThisSite =
+      (forCustomer
+        ? stripVendorTokensFromText(item.explanationText ?? insights.explanationText)
+        : item.explanationText ?? insights.explanationText) ||
+      insights.highlights[0] ||
+      null;
+
     return {
       id: item.id,
       mediaPlanId: item.mediaPlanId,
@@ -216,9 +233,13 @@ function serializeMediaPlan(
         heightFt: specs.heightFt,
       }),
       budgetAllocated: Number(item.budgetAllocated),
-      explanationText: forCustomer
-        ? stripVendorTokensFromText(item.explanationText ?? insights.explanationText)
-        : item.explanationText ?? insights.explanationText,
+      explanationText: whyThisSite,
+      whyThisSite,
+      skyarcIndex: {
+        overallScore: insights.overallScore,
+        overallConfidence: insights.overallConfidence,
+      },
+      demand,
       rank: item.rank,
       approvalStatus:
         (item as { approvalStatus?: string }).approvalStatus ?? "PENDING",
@@ -234,7 +255,15 @@ function serializeMediaPlan(
       },
       insights,
       alternatives: sanitizeAlternatives(item.alternativesJson, commercial?.showScores === true, forCustomer),
-      ...(pricing ? { pricing } : {}),
+      ...(pricing
+        ? {
+            pricing: forCustomer
+              ? {
+                  ...(pricing.clientRate != null ? { clientRate: pricing.clientRate } : {}),
+                }
+              : pricing,
+          }
+        : {}),
     };
   });
 
@@ -320,6 +349,65 @@ const mediaPlanInclude = {
     },
   },
 } as const;
+
+async function loadDemandByLocationIds(
+  locationIds: string[],
+  inventories: Array<{
+    locationId: string;
+    inventoryType?: string | null;
+    slotCapacity?: number | null;
+  }>,
+  excludeUserId?: string
+): Promise<Map<string, SiteDemandView>> {
+  const unique = [...new Set(locationIds)];
+  const out = new Map<string, SiteDemandView>();
+  if (unique.length === 0) return out;
+
+  const viewers = countLocationViewersBatch(unique, excludeUserId);
+  const planRows = await prisma.mediaPlanItem.findMany({
+    where: {
+      mediaPlan: { status: { in: ["DRAFT", "PROPOSED", "APPROVED"] } },
+      inventory: { screen: { locationId: { in: unique } } },
+    },
+    select: {
+      mediaPlanId: true,
+      inventory: { select: { screen: { select: { locationId: true } } } },
+    },
+  });
+  const plansByLocation = new Map<string, Set<string>>();
+  for (const row of planRows) {
+    const locationId = row.inventory.screen.locationId;
+    if (!plansByLocation.has(locationId)) plansByLocation.set(locationId, new Set());
+    plansByLocation.get(locationId)!.add(row.mediaPlanId);
+  }
+
+  const slotByLocation = new Map<string, { open: number | null; capacity: number | null }>();
+  for (const inv of inventories) {
+    const capacity = effectiveSlotCapacity(inv.inventoryType, inv.slotCapacity);
+    if (capacity == null) {
+      if (!slotByLocation.has(inv.locationId)) {
+        slotByLocation.set(inv.locationId, { open: null, capacity: null });
+      }
+      continue;
+    }
+    // Without flight windows here, surface capacity as "open" upper bound for demand copy.
+    slotByLocation.set(inv.locationId, { open: capacity, capacity });
+  }
+
+  for (const id of unique) {
+    const slots = slotByLocation.get(id);
+    out.set(
+      id,
+      buildSiteDemandView({
+        planCount: plansByLocation.get(id)?.size ?? 0,
+        viewersNow: viewers[id] ?? 0,
+        slotsOpen: slots?.open ?? null,
+        slotCapacity: slots?.capacity ?? null,
+      })
+    );
+  }
+  return out;
+}
 
 export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
   fastify.get("/advertisers", { preHandler: [fastify.authenticate] }, async (request) => {
@@ -425,6 +513,8 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
           createdAt: campaign.createdAt,
           createdByUserId: campaign.createdByUserId,
           lifecycleStatus: campaign.lifecycleStatus,
+          readyForSiteRequestsAt: campaign.readyForSiteRequestsAt,
+          readyForSiteRequests: Boolean(campaign.readyForSiteRequestsAt),
           advertiser: campaign.advertiser,
           brief: campaign.brief
             ? {
@@ -483,8 +573,18 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
       if (!inbound) throw forbidden();
     }
 
+    const primaryPlan =
+      campaign.mediaPlans.find((p) => p.status === "APPROVED") ??
+      campaign.mediaPlans.find((p) => p.status === "PROPOSED") ??
+      null;
+
     const serialized = {
       ...campaign,
+      readyForSiteRequestsAt: campaign.readyForSiteRequestsAt,
+      readyForSiteRequests: Boolean(campaign.readyForSiteRequestsAt),
+      canMarkReady: canMarkCampaignReadyForSiteRequests(request.user),
+      canSendSiteRequests: canSendSiteRequestsToOwners(request.user, campaign),
+      primaryMediaPlanId: primaryPlan?.id ?? null,
       isSiteRequest:
         briefIsRequest ||
         campaign.mediaPlans.some(
@@ -493,6 +593,10 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
       canEdit: canMutateCampaign(request.user, campaign),
       mediaPlans: campaign.mediaPlans.map((plan) => ({
         ...plan,
+        isPrimary: primaryPlan?.id === plan.id,
+        isRequestDraft:
+          plan.status === "DRAFT" &&
+          (briefIsRequest || plan.name.toLowerCase().includes("request")),
         totalBudget:
           isVendorUser(request.user) && plan.status !== "APPROVED" && ownsCampaign
             ? null
@@ -504,6 +608,30 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
 
     return success(serialized);
   });
+
+  /** Skyarc planner/admin unlocks brand site requests to media owners. */
+  fastify.post(
+    "/campaigns/:id/ready-for-site-requests",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      if (!canMarkCampaignReadyForSiteRequests(request.user)) throw forbidden();
+      const id = uuidSchema.parse((request.params as { id: string }).id);
+      const campaign = await prisma.campaign.findUnique({ where: { id } });
+      if (!campaign) throw notFound("Campaign not found");
+      const updated = await prisma.campaign.update({
+        where: { id },
+        data: {
+          readyForSiteRequestsAt: campaign.readyForSiteRequestsAt ?? new Date(),
+        },
+        include: { advertiser: true, brief: true },
+      });
+      return success({
+        id: updated.id,
+        readyForSiteRequestsAt: updated.readyForSiteRequestsAt,
+        readyForSiteRequests: true,
+      });
+    }
+  );
 
   fastify.post("/campaigns", { preHandler: [fastify.authenticate] }, async (request) => {
     if (!canWriteCampaigns(request.user)) throw forbidden();
@@ -729,7 +857,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
 
   async function serializeWithCovers(
     plan: Parameters<typeof serializeMediaPlan>[0] & { status?: string },
-    user: Parameters<typeof buildCommercialContext>[0]
+    user: Parameters<typeof buildCommercialContext>[0] & { id?: string }
   ) {
     const locationIds = plan.items.map((item) => item.inventory.screen.location.id);
     const covers = await coverUrlsForLocations(env, locationIds);
@@ -739,12 +867,21 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       revealPricing: vendorSeesPrice,
     });
     const forCustomer = isClientUser(user);
+    const demandByLocation = await loadDemandByLocationIds(
+      locationIds,
+      plan.items.map((item) => ({
+        locationId: item.inventory.screen.location.id,
+        inventoryType: item.inventory.inventoryType,
+        slotCapacity: (item.inventory as { slotCapacity?: number | null }).slotCapacity,
+      })),
+      user.id
+    );
     const serialized = serializeMediaPlan(plan, covers, {
       showPricing: commercial?.showPricing ?? false,
       showScores: isInternalUser(user),
       forCustomer,
       clientRateByLocation: commercial?.clientRateByLocation ?? new Map(),
-    });
+    }, demandByLocation);
     const hideVendorPricing = isVendorUser(user) && plan.status !== "APPROVED";
     const stripAltRates = <T extends { rateAmount?: number }>(alts: T[]): Omit<T, "rateAmount">[] =>
       alts.map(({ rateAmount: _r, ...rest }) => rest);
@@ -1070,6 +1207,10 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
         brief,
         items: serialized.items.map((item) => {
           const locId = item.location?.id;
+          const demand = (item as { demand?: { summaryLine?: string | null } }).demand;
+          const skyarcIndex = (item as { skyarcIndex?: { overallScore?: number } }).skyarcIndex;
+          const whyThisSite =
+            (item as { whyThisSite?: string | null }).whyThisSite ?? item.explanationText ?? null;
           return {
             rank: item.rank,
             productCode: item.location?.skyarcSiteCode ?? "—",
@@ -1080,10 +1221,14 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
               item.widthFt && item.heightFt ? `${item.widthFt}×${item.heightFt} ft` : null,
             lighting: item.lighting ?? null,
             creativeBrief: item.creativeBrief ?? null,
+            // Customer-safe only — never vendorRate / margin
             clientRate: item.pricing?.clientRate ?? null,
             budgetAllocated: item.budgetAllocated,
             coverImageUrl:
               (locId ? pdfCovers.get(locId) : null) ?? item.location?.coverImageUrl ?? null,
+            skyarcIndex: skyarcIndex?.overallScore ?? item.insights?.overallScore ?? null,
+            whyThisSite,
+            demandLine: demand?.summaryLine ?? null,
           };
         }),
         assumptions: [
@@ -1210,6 +1355,13 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       const body = buildMediaPlanFromSelectionBodySchema.parse(request.body);
       // Site requests (vendors + planners picking sites) are DRAFT until approved
       const asRequest = isVendorUser(request.user) || body.status === "DRAFT";
+      if (asRequest && !isVendorUser(request.user)) {
+        if (!canSendSiteRequestsToOwners(request.user, campaign)) {
+          throw forbidden(
+            "Skyarc must mark this campaign ready before site requests can be sent to media owners."
+          );
+        }
+      }
       const status = asRequest ? "DRAFT" : body.status;
       const holdInventory = true; // soft-hold immediately — no overlapping windows
       const result = await buildMediaPlanFromSelection(prisma, campaignId, {

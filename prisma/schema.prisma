@@ -46,6 +46,7 @@ enum AssetKind {
   APPROACH_VIDEO
   REVERSE_PHOTO
   VOICE_NOTE
+  CAMPAIGN_LIVE_PROOF
   OTHER
 }
 
@@ -261,6 +262,8 @@ model LocationSurvey {
 model LocationAsset {
   id             String       @id @default(uuid()) @db.Uuid
   locationId     String       @db.Uuid
+  /** When set with kind CAMPAIGN_LIVE_PROOF, photo documents a live campaign on this site. */
+  campaignId     String?      @db.Uuid
   kind           AssetKind
   view           PhotoView    @default(OTHER)
   r2Key          String
@@ -279,10 +282,12 @@ model LocationAsset {
   updatedAt      DateTime     @updatedAt
 
   location  Location             @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  campaign  Campaign?            @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   evidences AIAnalysisEvidence[]
 
   @@index([locationId, kind])
   @@index([locationId, view])
+  @@index([campaignId])
 }
 
 model Screen {
@@ -435,6 +440,8 @@ model Campaign {
   endDate         DateTime?
   /// Operational status: PENDING_APPROVAL while site requests open; ACTIVE when all approved for flight.
   lifecycleStatus CampaignLifecycleStatus @default(DRAFT)
+  /// When set by Skyarc planner/admin, brand/client may send site requests to media owners.
+  readyForSiteRequestsAt DateTime?
   createdByUserId String?                 @db.Uuid
   createdAt       DateTime                @default(now())
   updatedAt       DateTime                @updatedAt
@@ -444,6 +451,7 @@ model Campaign {
   mediaPlans      MediaPlan[]
   analyses        AIAnalysis[]
   recommendations Recommendation[]
+  liveProofAssets LocationAsset[]
 
   @@index([lifecycleStatus, startDate, endDate])
 }

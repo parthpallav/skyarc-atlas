@@ -1,30 +1,54 @@
 "use client";
 
-import { Eye, FolderKanban } from "lucide-react";
+import { Eye, FolderKanban, Gauge } from "lucide-react";
 
 export type SiteInterest = {
   viewersNow: number;
   inActivePlans: number;
 };
 
+export type PlanSiteDemand = {
+  planCount?: number;
+  viewersNow?: number;
+  highDemand?: boolean;
+  slotsOpen?: number | null;
+  slotCapacity?: number | null;
+  criticallyLowSlots?: boolean;
+  summaryLine?: string | null;
+};
+
 type Audience = "client" | "vendor" | "internal";
 
 /**
- * Live market demand chips — conversion signals without cluttering the photo.
- * Copy adapts to who is browsing Atlas.
+ * Calm demand chips for location + media plan surfaces.
+ * Critical low-slot cue uses amber border only (never red / blocking).
  */
 export function SiteDemandSignals({
   interest,
+  demand,
   audience = "internal",
   className = "",
 }: {
   interest?: SiteInterest | null;
+  demand?: PlanSiteDemand | null;
   audience?: Audience;
   className?: string;
 }) {
-  if (!interest) return null;
-  const { viewersNow, inActivePlans } = interest;
-  if (viewersNow <= 0 && inActivePlans <= 0) return null;
+  const viewersNow = demand?.viewersNow ?? interest?.viewersNow ?? 0;
+  const inActivePlans = demand?.planCount ?? interest?.inActivePlans ?? 0;
+  const highDemand = demand?.highDemand ?? false;
+  const criticallyLow = demand?.criticallyLowSlots ?? false;
+  const slotsOpen = demand?.slotsOpen;
+  const slotCapacity = demand?.slotCapacity;
+
+  if (
+    viewersNow <= 0 &&
+    inActivePlans <= 0 &&
+    !highDemand &&
+    slotsOpen == null
+  ) {
+    return null;
+  }
 
   const exploringLabel =
     audience === "client"
@@ -42,8 +66,8 @@ export function SiteDemandSignals({
   const plansLabel =
     audience === "client"
       ? inActivePlans === 1
-        ? "In 1 other media plan"
-        : `In ${inActivePlans} other media plans`
+        ? "In 1 media plan"
+        : `In ${inActivePlans} media plans`
       : audience === "vendor"
         ? inActivePlans === 1
           ? "Shortlisted in 1 plan"
@@ -52,28 +76,45 @@ export function SiteDemandSignals({
           ? "In 1 media plan"
           : `In ${inActivePlans} media plans`;
 
+  const chipBase =
+    "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold";
+
   return (
     <div className={`flex flex-wrap gap-1.5 ${className}`}>
       {viewersNow > 0 ? (
         <span
-          className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-950"
+          className={`${chipBase} border-slate-200 bg-slate-50 text-slate-800`}
           title="Someone is looking at this site right now"
         >
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-500" />
-          </span>
-          <Eye className="h-3 w-3 text-amber-700" aria-hidden />
+          <Eye className="h-3 w-3 text-slate-500" aria-hidden />
           {exploringLabel}
         </span>
       ) : null}
       {inActivePlans > 0 ? (
         <span
-          className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-950"
-          title="Already added to draft or proposed media plans"
+          className={`${chipBase} border-slate-200 bg-violet-50/80 text-slate-800`}
+          title="Already on draft, proposed, or approved media plans"
         >
-          <FolderKanban className="h-3 w-3 text-sky-700" aria-hidden />
+          <FolderKanban className="h-3 w-3 text-violet-600" aria-hidden />
           {plansLabel}
+        </span>
+      ) : null}
+      {highDemand && inActivePlans < 2 ? (
+        <span className={`${chipBase} border-slate-200 bg-violet-50/60 text-slate-800`}>
+          High demand
+        </span>
+      ) : null}
+      {slotsOpen != null && slotCapacity != null && slotCapacity > 0 ? (
+        <span
+          className={`${chipBase} ${
+            criticallyLow
+              ? "border-amber-200 bg-amber-50 text-amber-950"
+              : "border-slate-200 bg-slate-50 text-slate-800"
+          }`}
+          title={criticallyLow ? "Few digital slots remain for this window" : "Digital slot capacity"}
+        >
+          <Gauge className="h-3 w-3 opacity-70" aria-hidden />
+          {slotsOpen} of {slotCapacity} slots open
         </span>
       ) : null}
     </div>
