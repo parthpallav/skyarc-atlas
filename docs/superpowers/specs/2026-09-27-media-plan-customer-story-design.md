@@ -11,7 +11,7 @@ Make the media plan detail page and PDF export read as a **customer-shareable pi
 ## Out of scope (explicit)
 
 - Media-owner picking among competing brand site-requests and auto-updating the booking calendar / map. Keep today’s request/approve/hold behaviour. Track as a follow-up.
-- Redesigning `/admin/scoring` beyond treating it as quiet default Index **weights** (not a “profile”). Site Index remains per-location.
+- Site Index remains per-location; default weights are settings, not a “profile.”
 
 ## Decisions locked
 
@@ -20,7 +20,7 @@ Make the media plan detail page and PDF export read as a **customer-shareable pi
 | Customer Index + why | **Both** in-app plan view and PDF |
 | Demand signals | Soft chip always; mild critical cue only when digital slots are critically low; **customers** see plan-count + high-demand (no admin secrets) |
 | PDF content | **Always customer-safe** — never vendor rates, margins, internal notes, approval ops, or admin-only fields |
-| Index weights UI | Keep as admin defaults; do not frame as a scoring “profile” |
+| Index weights UI | **No separate nav tab** — merge default weights + methodology into **Admin → Settings**; remove `/admin/scoring` from navigation (redirect old URL to Settings section) |
 
 ## In-app media plan detail
 
@@ -48,9 +48,9 @@ Make the media plan detail page and PDF export read as a **customer-shareable pi
 - **Mild** critical cue only when remaining digital slots are critically low (e.g. ≤1 open or ≤15% remaining — pick one threshold in implementation and document in code). Amber border/text only; never block add/approve from this cue alone.
 - Data sources: existing site-interest / multi-plan membership and live digital slot capacity already used on location detail where available; extend plan item payload so the plan page does not N+1 fetch blindly.
 
-### Admin Index weights
+### Admin Index weights (in Settings)
 
-Leave `/admin/scoring` as configuration of default weights + methodology copy. Copy should not imply a global “score profile”; site scoring stays on the location Index tab.
+Merge Index default weights + customer-facing methodology copy into `/admin/settings` as a section (e.g. “Skyarc Index defaults”). Remove the standalone “Index weights” nav item and `/admin/scoring` page (or thin redirect to Settings#index). Do not frame this as a scoring profile; per-site Index editing stays on the location Index tab.
 
 ## PDF export (customer-only contract)
 

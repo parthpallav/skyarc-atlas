@@ -130,7 +130,7 @@ Unchanged from sibling spec:
 - Vendor choosing among multiple competing brands’ requests (auction / exclusive pick UI)
 - Replacing soft-hold mechanics
 - Mobile-native field app (web path only unless already present)
-- Changing Index weight defaults beyond quiet admin settings
+- Changing Index weight defaults beyond merging them into Admin Settings (no separate Index weights tab)
 
 ## Non-regression rules
 
@@ -154,9 +154,10 @@ Unchanged from sibling spec:
 1. Campaign Ready gate + role checks + grandfathering  
 2. Campaign-centric plan IA (list nesting / primary plan)  
 3. Plan page redesign + PDF Index/why/demand (sibling spec)  
-4. Inventory sync verification / small fixes if map or list lag bookings  
-5. Field live-proof asset + UI  
-6. Copy/empty states per role so stages read clearly  
+4. Merge Index weights UI into Admin Settings; drop separate nav tab  
+5. Inventory sync verification / small fixes if map or list lag bookings  
+6. Field live-proof asset + UI  
+7. Copy/empty states per role so stages read clearly  
 
 ## Testing focus
 
