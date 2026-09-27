@@ -51,11 +51,18 @@ export interface EffectiveLocationCommercial {
 export interface PlatformConfigData {
   defaultSkyarcMarginPercent: number;
   currency: string;
+  /**
+   * When false, location details hide vendor identity and vendor rates
+   * for internal users (useful while screen-sharing with clients).
+   * Vendors still see their own commercial data.
+   */
+  showVendorDetailsOnLocationPage: boolean;
 }
 
 export const DEFAULT_PLATFORM_CONFIG: PlatformConfigData = {
   defaultSkyarcMarginPercent: DEFAULT_SKYARC_MARGIN_PERCENT,
   currency: DEFAULT_CURRENCY,
+  showVendorDetailsOnLocationPage: true,
 };
 
 export function parseOrganizationCommercial(
@@ -185,6 +192,10 @@ export function parsePlatformConfig(value: unknown): PlatformConfigData {
         : DEFAULT_PLATFORM_CONFIG.defaultSkyarcMarginPercent,
     currency:
       typeof raw.currency === "string" ? raw.currency : DEFAULT_PLATFORM_CONFIG.currency,
+    showVendorDetailsOnLocationPage:
+      typeof raw.showVendorDetailsOnLocationPage === "boolean"
+        ? raw.showVendorDetailsOnLocationPage
+        : DEFAULT_PLATFORM_CONFIG.showVendorDetailsOnLocationPage,
   };
 }
 

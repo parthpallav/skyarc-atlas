@@ -30,8 +30,8 @@ describe("shared rbac", () => {
     expect(getDefaultLandingPath(UserRole.VENDOR_OPS)).toBe("/locations");
   });
 
-  it("vendor cannot access campaigns in UI rules", () => {
-    expect(canAccessCampaigns(vendorA)).toBe(false);
+  it("vendor can access campaigns for network requests", () => {
+    expect(canAccessCampaigns(vendorA)).toBe(true);
     expect(isInternalUser(vendorA)).toBe(false);
     expect(isVendorRole(vendorA.role)).toBe(true);
   });
@@ -73,18 +73,25 @@ describe("shared rbac", () => {
     ).toBe(false);
   });
 
-  it("only the creator or superadmin can mutate a campaign", () => {
+  it("creator, internal staff, or superadmin can mutate a campaign", () => {
     const creator: AuthUser = {
       id: "user-1",
       email: "planner@example.com",
       role: UserRole.MEDIA_PLANNER,
       organizationId: "org-a",
     };
-    const other: AuthUser = { ...creator, id: "user-2" };
+    const otherPlanner: AuthUser = { ...creator, id: "user-2" };
+    const vendorOther: AuthUser = {
+      id: "vendor-2",
+      email: "v2@example.com",
+      role: UserRole.VENDOR,
+      organizationId: "org-b",
+    };
     const superadmin: AuthUser = { ...creator, id: "admin", role: UserRole.SUPERADMIN };
     const campaign = { createdByUserId: "user-1" };
     expect(canMutateCampaign(creator, campaign)).toBe(true);
-    expect(canMutateCampaign(other, campaign)).toBe(false);
+    expect(canMutateCampaign(otherPlanner, campaign)).toBe(true);
+    expect(canMutateCampaign(vendorOther, campaign)).toBe(false);
     expect(canMutateCampaign(superadmin, campaign)).toBe(true);
   });
 });

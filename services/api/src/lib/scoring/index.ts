@@ -1,6 +1,7 @@
 import {
   ScoringFactor,
   ScoreStatus,
+  SCORING_FACTOR_ATTRIBUTE_KEY,
   type ScoringFactor as ScoringFactorType,
 } from "@skyarc/shared";
 
@@ -13,8 +14,11 @@ export interface ScoreComponent {
 }
 
 export interface ComputeScoreInput {
-  weights: Record<ScoringFactorType, number>;
-  attributes: Record<string, { value: unknown; confidence?: number | null }>;
+  weights: Record<string, number>;
+  attributes: Record<
+    string,
+    { value: unknown; confidence?: number | null; evidence?: string[] }
+  >;
 }
 
 export interface ComputeScoreResult {
@@ -24,22 +28,18 @@ export interface ComputeScoreResult {
   components: ScoreComponent[];
 }
 
-const FACTOR_ATTRIBUTE_MAP: Record<ScoringFactorType, string> = {
-  [ScoringFactor.VISIBILITY]: "visibility",
-  [ScoringFactor.AUDIENCE_FIT]: "audience_fit",
-  [ScoringFactor.COMMERCIAL_FIT]: "commercial_fit",
-  [ScoringFactor.APPROACH_EXPOSURE]: "approach_exposure",
-  [ScoringFactor.BRAND_SUITABILITY]: "brand_suitability",
-  [ScoringFactor.VISUAL_COMPETITION]: "visual_competition",
-  [ScoringFactor.LOCATION_QUALITY]: "location_quality",
-  [ScoringFactor.DATA_CONFIDENCE]: "data_confidence",
-};
-
 function toScore(value: unknown): number | null {
   if (typeof value === "number" && !Number.isNaN(value)) {
     return Math.max(0, Math.min(100, value));
   }
   return null;
+}
+
+function evidenceFromAttr(attr?: {
+  evidence?: string[];
+}): string[] {
+  if (!attr?.evidence?.length) return [];
+  return attr.evidence.filter((e) => typeof e === "string" && e.trim()).slice(0, 8);
 }
 
 export function computeLocationScore(input: ComputeScoreInput): ComputeScoreResult {
@@ -52,10 +52,11 @@ export function computeLocationScore(input: ComputeScoreInput): ComputeScoreResu
 
   for (const factor of Object.values(ScoringFactor)) {
     const weight = input.weights[factor] ?? 0;
-    const attrKey = FACTOR_ATTRIBUTE_MAP[factor];
+    const attrKey = SCORING_FACTOR_ATTRIBUTE_KEY[factor];
     const attr = input.attributes[attrKey];
     const rawScore = attr ? toScore(attr.value) : null;
     const confidence = attr?.confidence ?? (rawScore !== null ? 0.5 : 0);
+    const evidence = evidenceFromAttr(attr);
 
     if (rawScore === null) {
       hasIncomplete = true;
@@ -64,7 +65,7 @@ export function computeLocationScore(input: ComputeScoreInput): ComputeScoreResu
         score: 0,
         confidence: 0,
         status: ScoreStatus.INCOMPLETE,
-        evidence: [`Missing attribute: ${attrKey}`],
+        evidence: evidence.length ? evidence : [`Missing attribute: ${attrKey}`],
       });
       continue;
     }
@@ -79,7 +80,7 @@ export function computeLocationScore(input: ComputeScoreInput): ComputeScoreResu
       score: rawScore,
       confidence,
       status: ScoreStatus.COMPUTED,
-      evidence: [],
+      evidence,
     });
   }
 

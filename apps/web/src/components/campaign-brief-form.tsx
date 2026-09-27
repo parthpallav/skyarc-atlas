@@ -13,13 +13,22 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { formatInr } from "@/lib/format";
-import { SAMPLE_CAMPAIGN_BRIEF } from "@skyarc/shared";
+import {
+  SAMPLE_CAMPAIGN_BRIEF,
+  corridorsForCity,
+  getMarketCity,
+  listMarketCities,
+  listStates,
+} from "@skyarc/shared";
 
 export interface StructuredBriefState {
   objective?: string;
   brandCategory?: string;
   targetAudience?: string[];
+  /** Corridor / arterial names */
   geographicFocus?: string[];
+  cities?: string[];
+  states?: string[];
   preferredFormats?: string[];
   budget?: number;
   durationDays?: number;
@@ -76,20 +85,8 @@ export const AUDIENCE_PRESETS = [
   "Business Owners & Traders",
 ];
 
-export const CORRIDOR_PRESETS = [
-  "Kalawad Road",
-  "150 Feet Ring Road",
-  "Yagnik Road",
-  "University Road",
-  "Gondal Road",
-  "Kotecha Chowk",
-  "Indira Circle",
-  "Madhapar Chowk",
-  "Raiya Road",
-  "Crystal Mall Area",
-  "Airport Road",
-  "Ring Road 2",
-];
+/** @deprecated Prefer corridorsForCity / market catalog; kept for campaign-wizard imports. */
+export const CORRIDOR_PRESETS = corridorsForCity(getMarketCity().name);
 
 export const FORMAT_PRESETS = [
   "Digital Billboard (DOOH)",
@@ -155,11 +152,16 @@ export function CampaignBriefBuilder({
       AUDIENCE_PRESETS[2],
     ]
   );
+  const defaultCity = getMarketCity().name;
+  const [cities, setCities] = useState<string[]>(
+    initialValues?.structuredRequirements?.cities ?? [defaultCity]
+  );
+  const [states, setStates] = useState<string[]>(
+    initialValues?.structuredRequirements?.states ?? []
+  );
   const [corridors, setCorridors] = useState<string[]>(
-    initialValues?.structuredRequirements?.geographicFocus ?? [
-      CORRIDOR_PRESETS[0],
-      CORRIDOR_PRESETS[1],
-    ]
+    initialValues?.structuredRequirements?.geographicFocus ??
+      corridorsForCity(defaultCity).slice(0, 2)
   );
   const [formats, setFormats] = useState<string[]>(
     initialValues?.structuredRequirements?.preferredFormats ?? [
@@ -209,12 +211,25 @@ export function CampaignBriefBuilder({
   };
 
   // Synthesize brief text from structured state
+  const corridorOptions =
+    cities.length > 0
+      ? [...new Set(cities.flatMap((c) => corridorsForCity(c)))]
+      : [...new Set(listMarketCities().flatMap((c) => c.corridors.map((x) => x.name)))];
+  const stateOptions = listStates();
+  const cityOptions = listMarketCities().map((c) => c.name);
+
   const generateSynthesizedText = () => {
     const lines = [
       `# Campaign Brief: ${objective}`,
       `**Industry / Category**: ${brandCategory}`,
       `**Budget**: ${formatInr(budget)} for a ${durationDays}-day flight`,
       `**Target Audience**: ${audiences.join(", ") || "General Public"}`,
+      `**Markets**: ${[
+        states.length ? `States: ${states.join(", ")}` : null,
+        cities.length ? `Cities: ${cities.join(", ")}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ") || "All markets"}`,
       `**Geographic Corridors**: ${corridors.join(", ") || "Citywide"}`,
       `**Preferred Media Formats**: ${formats.join(", ") || "All formats"}`,
       `**Core KPIs**: ${kpis.join(", ") || "Brand awareness"}`,
@@ -233,6 +248,8 @@ export function CampaignBriefBuilder({
         brandCategory,
         targetAudience: audiences,
         geographicFocus: corridors,
+        cities,
+        states,
         preferredFormats: formats,
         budget,
         durationDays,
@@ -257,6 +274,8 @@ export function CampaignBriefBuilder({
     objective,
     brandCategory,
     audiences,
+    cities,
+    states,
     corridors,
     formats,
     budget,
@@ -450,31 +469,87 @@ export function CampaignBriefBuilder({
             </div>
           </div>
 
-          {/* Geographic Corridors (Multi-Select Chips) */}
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase mb-2">
-              <MapPin className="w-3.5 h-3.5 text-primary" />
-              Target Corridors & Arterial Roads (Rajkot)
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {CORRIDOR_PRESETS.map((corr) => {
-                const isSelected = corridors.includes(corr);
-                return (
-                  <button
-                    key={corr}
-                    type="button"
-                    onClick={() => toggleArrayItem(corr, corridors, setCorridors)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full border transition-all ${
-                      isSelected
-                        ? "bg-violet-800 text-white border-violet-800 font-semibold shadow-sm"
-                        : "bg-white text-slate-700 border-violet-200 hover:bg-violet-50"
-                    }`}
-                  >
-                    {isSelected && <CheckCircle2 className="w-3 h-3" />}
-                    {corr}
-                  </button>
-                );
-              })}
+          {/* Geographic markets + corridors */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase mb-2">
+                  <MapPin className="w-3.5 h-3.5 text-primary" />
+                  State
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {stateOptions.map((state) => {
+                    const isSelected = states.includes(state);
+                    return (
+                      <button
+                        key={state}
+                        type="button"
+                        onClick={() => toggleArrayItem(state, states, setStates)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full border transition-all ${
+                          isSelected
+                            ? "bg-cyan-800 text-white border-cyan-800 font-semibold shadow-sm"
+                            : "bg-white text-slate-700 border-violet-200 hover:bg-violet-50"
+                        }`}
+                      >
+                        {isSelected && <CheckCircle2 className="w-3 h-3" />}
+                        {state}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase mb-2">
+                  <MapPin className="w-3.5 h-3.5 text-primary" />
+                  City
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {cityOptions.map((city) => {
+                    const isSelected = cities.includes(city);
+                    return (
+                      <button
+                        key={city}
+                        type="button"
+                        onClick={() => toggleArrayItem(city, cities, setCities)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full border transition-all ${
+                          isSelected
+                            ? "bg-emerald-700 text-white border-emerald-700 font-semibold shadow-sm"
+                            : "bg-white text-slate-700 border-violet-200 hover:bg-violet-50"
+                        }`}
+                      >
+                        {isSelected && <CheckCircle2 className="w-3 h-3" />}
+                        {city}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase mb-2">
+                <MapPin className="w-3.5 h-3.5 text-primary" />
+                Target corridors & arterial roads
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {corridorOptions.map((corr) => {
+                  const isSelected = corridors.includes(corr);
+                  return (
+                    <button
+                      key={corr}
+                      type="button"
+                      onClick={() => toggleArrayItem(corr, corridors, setCorridors)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full border transition-all ${
+                        isSelected
+                          ? "bg-violet-800 text-white border-violet-800 font-semibold shadow-sm"
+                          : "bg-white text-slate-700 border-violet-200 hover:bg-violet-50"
+                      }`}
+                    >
+                      {isSelected && <CheckCircle2 className="w-3 h-3" />}
+                      {corr}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -610,7 +685,7 @@ export function CampaignBriefBuilder({
               onClick={() => setRawText(SAMPLE_CAMPAIGN_BRIEF)}
             >
               <FileText className="w-3.5 h-3.5" />
-              Load sample Rajkot FMCG brief
+              Load sample FMCG brief
             </button>
             <span className="text-xs text-muted">
               You can parse this text using the AI button on the campaign page.

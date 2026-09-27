@@ -12,6 +12,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { optimizeMediaPlan } from "../services/api/src/lib/media-planning/optimizer.ts";
+import { buildSkyarcSiteCode, getMarketCity } from "@skyarc/shared";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -404,7 +405,8 @@ async function main() {
 
     if (!locationId) {
       locationId = randomUUID();
-      const skyarcSiteCode = `SKY-RAJ-${String(i + 1).padStart(3, "0")}`;
+      const market = getMarketCity("Rajkot");
+      const skyarcSiteCode = buildSkyarcSiteCode(market.name, i + 1);
 
       await prisma.location.create({
         data: {
@@ -417,6 +419,9 @@ async function main() {
           road: row.area,
           junction,
           address: row.location,
+          city: market.name,
+          district: market.district,
+          state: market.state,
           mountingNotes: `${row.widthFt}ft x ${row.heightFt}ft · ${LIGHT_LABELS[row.light]}`,
           surveyStatus: "SUBMITTED",
           capturedAt: new Date(),
@@ -492,10 +497,14 @@ async function main() {
       });
     } else {
       // Update existing location commercial JSON & details
+      const market = getMarketCity("Rajkot");
       await prisma.location.update({
         where: { id: locationId },
         data: {
           organizationId: assignedOrg,
+          city: market.name,
+          district: market.district,
+          state: market.state,
           skyarcCommercialJson: {
             clientRateAmount: clientFacingRate,
             ratePeriod: "MONTHLY",

@@ -1,6 +1,9 @@
 export interface CampaignGoal {
   objective?: string;
+  /** Corridor / arterial road names */
   geographicFocus?: string[];
+  cities?: string[];
+  states?: string[];
   kpis?: string[];
   budget?: number;
   maxLocations?: number;
@@ -12,6 +15,9 @@ export interface GoalFitSite {
   locationName: string;
   skyarcSiteCode?: string | null;
   road: string | null;
+  city?: string | null;
+  district?: string | null;
+  state?: string | null;
   overallScore: number;
   rateAmount: number;
   inventoryType?: string | null;
@@ -37,6 +43,19 @@ function clamp(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function norm(value?: string | null): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function listHas(list: string[] | undefined, value?: string | null): boolean {
+  if (!list?.length || !value?.trim()) return false;
+  const token = norm(value);
+  return list.some((item) => {
+    const needle = norm(item);
+    return needle.length > 0 && (token === needle || token.includes(needle) || needle.includes(token));
+  });
+}
+
 function textHaystack(site: GoalFitSite): string {
   return `${site.locationName} ${site.road ?? ""}`.toLowerCase();
 }
@@ -48,6 +67,25 @@ function corridorMatch(site: GoalFitSite, focus: string[]): boolean {
     const token = item.toLowerCase().trim();
     return token.length > 2 && hay.includes(token);
   });
+}
+
+function hasGeoConstraints(goal: CampaignGoal): boolean {
+  return (
+    (goal.cities?.length ?? 0) +
+      (goal.states?.length ?? 0) +
+      (goal.geographicFocus?.length ?? 0) >
+    0
+  );
+}
+
+/** Inclusive OR across city, state, and corridor tokens. */
+function geoSpecific(site: GoalFitSite, goal: CampaignGoal): { score: number; hit: boolean } {
+  if (!hasGeoConstraints(goal)) return { score: 70, hit: false };
+  const cityHit = listHas(goal.cities, site.city);
+  const stateHit = listHas(goal.states, site.state);
+  const corridorHit = corridorMatch(site, goal.geographicFocus ?? []);
+  const hit = cityHit || stateHit || corridorHit;
+  return { score: hit ? 100 : 35, hit };
 }
 
 function factor(site: GoalFitSite, key: string): number {
@@ -87,7 +125,7 @@ function relevantScore(site: GoalFitSite, kind: string): { value: number; reason
 export function scoreGoalFit(site: GoalFitSite, goal: CampaignGoal): { score: number; reason: string } {
   const kind = objectiveKey(goal);
   const relevant = relevantScore(site, kind);
-  const specific = corridorMatch(site, goal.geographicFocus ?? []) ? 100 : 35;
+  const specific = geoSpecific(site, goal);
   const measurable = site.overallScore;
   const share = goal.budget && goal.maxLocations ? goal.budget / Math.max(1, goal.maxLocations) : 0;
   let achievable = 70;
@@ -99,12 +137,20 @@ export function scoreGoalFit(site: GoalFitSite, goal: CampaignGoal): { score: nu
   }
 
   const score = clamp(
-    relevant.value * 0.4 + specific * 0.25 + measurable * 0.2 + achievable * 0.15
+    relevant.value * 0.4 + specific.score * 0.25 + measurable * 0.2 + achievable * 0.15
   );
 
   let reason = relevant.reason;
-  if (specific === 100) reason = "On your target corridor";
-  else if (achievable >= 90 && site.rateAmount > 0) reason = "Fits this budget";
+  if (specific.hit) {
+    reason =
+      corridorMatch(site, goal.geographicFocus ?? []) &&
+      !listHas(goal.cities, site.city) &&
+      !listHas(goal.states, site.state)
+        ? "On your target corridor"
+        : "On your target market";
+  } else if (achievable >= 90 && site.rateAmount > 0) {
+    reason = "Fits this budget";
+  }
   return { score, reason };
 }
 
@@ -158,6 +204,8 @@ export function parseCampaignGoal(briefJson: unknown, budget?: number, maxLocati
         ? brief.objective
         : fromObjectives,
     geographicFocus: stringList(brief.geographicFocus),
+    cities: stringList(brief.cities),
+    states: stringList(brief.states),
     kpis: stringList(brief.kpis),
     budget: typeof brief.budget === "number" ? brief.budget : budget,
     maxLocations:

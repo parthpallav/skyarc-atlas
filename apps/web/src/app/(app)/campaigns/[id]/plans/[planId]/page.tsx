@@ -37,6 +37,9 @@ interface PlanItemRow {
   id: string;
   rank: number | null;
   budgetAllocated: number;
+  inventoryId?: string;
+  approvalStatus?: string;
+  organizationId?: string | null;
   inventoryType?: string | null;
   inventoryBucket?: "hoarding" | "digital" | "kiosk" | "other";
   lighting?: string | null;
@@ -97,6 +100,11 @@ interface MediaPlanDetail {
   status: string;
   totalBudget: number | null;
   createdAt: string;
+  canApprove?: boolean;
+  canRespond?: boolean;
+  isSiteRequest?: boolean;
+  ownedItemCount?: number;
+  pricingVisible?: boolean;
   _count?: { items: number };
   summary?: PlanSummaryView;
   mix?: {
@@ -225,6 +233,37 @@ function SwapChips({
   );
 }
 
+function planLifecycleBadge(status: string, isSiteRequest?: boolean) {
+  if (status === "APPROVED") {
+    return {
+      label: isSiteRequest ? "Request approved" : "Approved",
+      className: "bg-emerald-50 text-emerald-800 border-emerald-200",
+    };
+  }
+  if (status === "REJECTED") {
+    return {
+      label: "Rejected",
+      className: "bg-rose-50 text-rose-800 border-rose-200",
+    };
+  }
+  if (status === "DRAFT" || isSiteRequest) {
+    return {
+      label: "Needs approval",
+      className: "bg-amber-50 text-amber-900 border-amber-200",
+    };
+  }
+  if (status === "PROPOSED") {
+    return {
+      label: "Proposed",
+      className: "bg-violet-50 text-violet-800 border-violet-200",
+    };
+  }
+  return {
+    label: status || "Draft",
+    className: "bg-slate-100 text-slate-700 border-slate-200",
+  };
+}
+
 function BudgetMeter({
   allocated,
   budget,
@@ -243,12 +282,12 @@ function BudgetMeter({
 
   return (
     <section
-      className={`rounded-xl border px-3 py-2.5 ${
+      className={`rounded-xl border px-3.5 py-3 ${
         over
-          ? "border-red-200 bg-red-50"
+          ? "border-red-200 bg-red-50/80"
           : leftover > 0
-            ? "border-amber-200 bg-amber-50"
-            : "border-emerald-200 bg-emerald-50"
+            ? "border-amber-200/80 bg-amber-50/70"
+            : "border-emerald-200/80 bg-emerald-50/70"
       }`}
     >
       <div className="flex items-center gap-3">
@@ -268,7 +307,9 @@ function BudgetMeter({
           aria-label="Campaign budget used"
         >
           <div
-            className={`h-full rounded-full ${over ? "bg-red-600" : leftover > 0 ? "bg-amber-500" : "bg-emerald-500"}`}
+            className={`h-full rounded-full transition-[width] duration-500 ${
+              over ? "bg-red-600" : leftover > 0 ? "bg-amber-500" : "bg-emerald-500"
+            }`}
             style={{ width: `${fillPct}%` }}
           />
         </div>
@@ -281,8 +322,8 @@ function BudgetMeter({
         </p>
       </div>
       <p className="text-[11px] text-slate-600 mt-1.5">
-        Calculated {formatInr(allocated)} of {formatInr(budget)} · {pct}%
-        {over ? " · swaps and adds still allowed" : leftover > 0 ? " leftover" : ""}
+        Calculated {formatInr(allocated)} of {formatInr(budget)} · {pct}% used
+        {over ? " · swaps and adds still allowed" : leftover > 0 ? ` · ${formatInr(leftover)} left` : ""}
       </p>
     </section>
   );
@@ -368,7 +409,7 @@ function AvailableOptions({
                   </p>
                   <p className="text-sm font-semibold text-slate-900 truncate">{site.locationName}</p>
                   <p className="text-[11px] text-muted truncate">
-                    {site.road ?? "Rajkot"}
+                    {site.road ?? "Site"}
                     {site.fitReason ? ` · ${site.fitReason}` : ""}
                   </p>
                   <p className="text-[11px] text-slate-600">{siteSpecLine(site)}</p>
@@ -405,7 +446,7 @@ export default function MediaPlanDetailPage() {
   const planId = params.planId;
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { authUser, isClient } = usePermissions();
+  const { authUser, isClient, isVendor, isInternal } = usePermissions();
   const canExportPdf = Boolean(authUser);
 
   const [viewMode, setViewMode] = useState<"customer" | "internal">("customer");
@@ -438,6 +479,14 @@ export default function MediaPlanDetailPage() {
     }
   }, [plan]);
 
+  // Site requests have their own detail experience
+  useEffect(() => {
+    if (!plan) return;
+    if (plan.isSiteRequest || plan.status === "DRAFT") {
+      router.replace(`/requests/${campaignId}/${planId}`);
+    }
+  }, [plan, campaignId, planId, router]);
+
   const swapMutation = useMutation({
     mutationFn: async ({ itemId, inventoryId }: { itemId: string; inventoryId: string }) => {
       const client = createWebApiClient();
@@ -466,6 +515,30 @@ export default function MediaPlanDetailPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["campaign", campaignId] });
       router.push(`/campaigns/${campaignId}`);
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async (status: "APPROVED" | "REJECTED") => {
+      const client = createWebApiClient();
+      return client.updateMediaPlanStatus(campaignId, planId, status);
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(["media-plan", campaignId, planId], result.data as MediaPlanDetail);
+      void queryClient.invalidateQueries({ queryKey: ["media-plans"] });
+      void queryClient.invalidateQueries({ queryKey: ["locations"] });
+    },
+  });
+
+  const respondMutation = useMutation({
+    mutationFn: async (action: "APPROVE" | "REJECT") => {
+      const client = createWebApiClient();
+      return client.respondSiteRequest(campaignId, planId, { action });
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(["media-plan", campaignId, planId], result.data as MediaPlanDetail);
+      void queryClient.invalidateQueries({ queryKey: ["media-plans"] });
+      void queryClient.invalidateQueries({ queryKey: ["locations"] });
     },
   });
 
@@ -510,104 +583,209 @@ export default function MediaPlanDetailPage() {
     );
   }
 
+  if (plan.isSiteRequest || plan.status === "DRAFT") {
+    return <div className="py-12 text-center text-sm text-muted">Opening request…</div>;
+  }
+
   const totalAllocated = plan.items.reduce((sum, item) => sum + item.budgetAllocated, 0);
   const planTotal = plan.totalBudget ?? totalAllocated;
   const leftover = Math.max(0, planTotal - totalAllocated);
   const overBy = Math.max(0, plan.overBudget ?? totalAllocated - planTotal);
   const pendingMix = swapMutation.isPending || addMutation.isPending;
   const goalLabel = plan.goal?.objective ?? null;
+  const isDraftRequest = plan.status === "DRAFT" || plan.isSiteRequest;
+  const pricingReady = plan.pricingVisible !== false && plan.status === "APPROVED";
+  const showPendingVendor = isVendor && isDraftRequest && !plan.canRespond;
+  const canApprove = Boolean(plan.canApprove) || (isInternal && plan.status === "DRAFT");
+  const canRespond = Boolean(plan.canRespond);
+  const statusBadge = planLifecycleBadge(plan.status, plan.isSiteRequest);
+  const displayName =
+    plan.isSiteRequest || plan.status === "DRAFT"
+      ? plan.name.replace(/^Network request/i, "Request")
+      : plan.name;
 
   return (
-    <div className="max-w-5xl mx-auto w-full pb-16 space-y-6">
-      <Link
-        href={`/campaigns/${campaignId}`}
-        className="inline-flex items-center gap-1 text-sm text-muted hover:text-slate-900 mb-2 font-medium"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to Campaign
-      </Link>
+    <div className="mx-auto w-full max-w-5xl space-y-5 pb-16">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link
+          href={isDraftRequest || isVendor ? "/campaigns" : `/campaigns/${campaignId}`}
+          className="inline-flex items-center gap-1 text-sm font-medium text-muted hover:text-slate-900"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {isVendor || isDraftRequest ? "Back to Requests" : "Back to Campaign"}
+        </Link>
+        <span
+          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusBadge.className}`}
+        >
+          {statusBadge.label}
+        </span>
+      </div>
+
+      {showPendingVendor ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold">Request pending</p>
+          <p className="mt-1 text-xs text-amber-900/90">
+            Waiting for review. Sites are held for this flight so they cannot be double-booked.
+            Pricing appears after approval.
+          </p>
+        </div>
+      ) : null}
+
+      {canRespond ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">
+              Request for your inventory
+              {plan.ownedItemCount ? ` · ${plan.ownedItemCount} site(s)` : ""}
+            </p>
+            <p className="text-xs text-muted">
+              Approve to book your sites for these dates, or reject to free them.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="btn-secondary px-3 py-2 text-xs"
+              disabled={respondMutation.isPending}
+              onClick={() => respondMutation.mutate("REJECT")}
+            >
+              Reject my sites
+            </button>
+            <button
+              type="button"
+              className="btn-primary px-3 py-2 text-xs"
+              disabled={respondMutation.isPending}
+              onClick={() => respondMutation.mutate("APPROVE")}
+            >
+              {respondMutation.isPending ? "Saving…" : "Approve my sites"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {canApprove ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Site request</p>
+            <p className="text-xs text-muted">
+              Approve to book all sites and release the priced plan. Reject releases holds.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="btn-secondary px-3 py-2 text-xs"
+              disabled={approveMutation.isPending}
+              onClick={() => approveMutation.mutate("REJECTED")}
+            >
+              Reject
+            </button>
+            <button
+              type="button"
+              className="btn-primary px-3 py-2 text-xs"
+              disabled={approveMutation.isPending}
+              onClick={() => approveMutation.mutate("APPROVED")}
+            >
+              {approveMutation.isPending ? "Saving…" : "Approve request"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {isVendor && pricingReady ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+          <p className="font-semibold">Approved — priced plan</p>
+          <p className="mt-1 text-xs">Site rates below are now visible for this campaign window.</p>
+        </div>
+      ) : null}
 
       <PageHeader
-        title={plan.name}
-        description={goalLabel ?? plan.status}
+        title={displayName}
+        description={
+          plan.status === "DRAFT"
+            ? "Request · pending approval"
+            : plan.status === "APPROVED"
+              ? "Request approved — sites booked for this flight"
+              : goalLabel ?? "Media plan mix"
+        }
         action={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               onClick={handleCopyShareLink}
-              className="btn-secondary text-xs gap-1.5 py-2 px-3 shadow-xs"
+              className="btn-secondary gap-1.5 px-2.5 py-2 text-xs shadow-xs"
             >
               {copiedLink ? (
                 <>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                   Copied
                 </>
               ) : (
                 <>
-                  <Share2 className="w-4 h-4 text-primary" />
+                  <Share2 className="h-4 w-4 text-primary" />
                   Share
                 </>
               )}
             </button>
 
-            {canExportPdf && (
+            {canExportPdf && (!isVendor || pricingReady) ? (
               <button
                 type="button"
-                className="btn-primary text-xs gap-2 py-2 px-3.5 shadow-sm"
+                className="btn-primary gap-1.5 px-3 py-2 text-xs shadow-sm"
                 disabled={exportMutation.isPending}
                 onClick={() => exportMutation.mutate()}
               >
-                <Download className="w-4 h-4" />
-                {exportMutation.isPending ? "Exporting…" : "Download PDF"}
+                <Download className="h-4 w-4" />
+                {exportMutation.isPending ? "Exporting…" : "PDF"}
               </button>
-            )}
+            ) : null}
 
-            {!isClient && (
-            <button
-              type="button"
-              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-              disabled={deleteMutation.isPending}
-              onClick={() => {
-                if (window.confirm(`Delete "${plan.name}"? This cannot be undone.`)) {
-                  deleteMutation.mutate();
-                }
-              }}
-              title="Delete plan"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-            )}
+            {!isClient && !isVendor ? (
+              <button
+                type="button"
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                disabled={deleteMutation.isPending}
+                onClick={() => {
+                  if (window.confirm(`Delete "${plan.name}"? This cannot be undone.`)) {
+                    deleteMutation.mutate();
+                  }
+                }}
+                title="Delete plan"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            ) : null}
           </div>
         }
       />
 
-      {!isClient && (
-        <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200">
+      {!isClient ? (
+        <div className="inline-flex w-full items-center rounded-xl border border-slate-200 bg-slate-100 p-1 sm:w-auto">
           <button
             type="button"
             onClick={() => setViewMode("customer")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold ${
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold sm:flex-none ${
               viewMode === "customer" ? "bg-white text-primary shadow-xs" : "text-slate-600"
             }`}
           >
-            <LayoutGrid className="w-3.5 h-3.5 text-primary" />
+            <LayoutGrid className="h-3.5 w-3.5 text-primary" />
             Presentation
           </button>
           <button
             type="button"
             onClick={() => setViewMode("internal")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold ${
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold sm:flex-none ${
               viewMode === "internal" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600"
             }`}
           >
-            <Layers className="w-3.5 h-3.5 text-slate-500" />
+            <Layers className="h-3.5 w-3.5 text-slate-500" />
             Scoring
           </button>
         </div>
-      )}
+      ) : null}
 
       {(exportMutation.isError || swapMutation.isError || addMutation.isError) && (
-        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">
+        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
           {(exportMutation.error ?? swapMutation.error ?? addMutation.error) instanceof Error
             ? ((exportMutation.error ?? swapMutation.error ?? addMutation.error) as Error).message
             : "Something went wrong"}
@@ -623,14 +801,16 @@ export default function MediaPlanDetailPage() {
 
       {viewMode === "customer" ? (
         <div className="space-y-5">
-          <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-5 sm:p-6 space-y-4">
+          <div className="space-y-4 rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50/80 to-white p-5 sm:p-6">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <p className="text-[11px] uppercase tracking-wider text-primary font-semibold">
-                  This plan · {plan.items.length} sites
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">
+                  This plan · {plan.items.length} {plan.items.length === 1 ? "site" : "sites"}
                 </p>
-                <p className="text-2xl font-extrabold text-slate-900">{formatInr(totalAllocated)}</p>
-                <p className="text-xs text-muted mt-1">
+                <p className="text-2xl font-extrabold tabular-nums text-slate-900">
+                  {formatInr(totalAllocated)}
+                </p>
+                <p className="mt-1 text-xs text-muted">
                   {overBy > 1
                     ? `Over budget by ${formatInr(overBy)} of ${formatInr(planTotal)}`
                     : leftover > 0
@@ -649,51 +829,63 @@ export default function MediaPlanDetailPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {plan.items.map((item) => {
               const plannedSpend = item.budgetAllocated;
               const bucket = item.inventoryBucket ?? inventoryTypeBucket(item.inventoryType);
+              const goalChip = siteGoalChip(item, plan.goal);
               return (
-                <div key={item.id} className="card-surface overflow-hidden">
-                  <div className="relative h-40 sm:h-48 bg-slate-900">
+                <article
+                  key={item.id}
+                  className="card-surface group overflow-hidden transition-shadow hover:shadow-md"
+                >
+                  <div className="relative h-44 bg-slate-900 sm:h-52">
                     {item.location?.coverImageUrl ? (
                       <Image
                         src={item.location.coverImageUrl}
                         alt={item.location.name}
                         fill
-                        className="object-cover"
+                        className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                         sizes="(max-width: 768px) 100vw, 50vw"
                         unoptimized
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-400">
-                        <MapPin className="w-7 h-7 opacity-50" />
+                      <div className="flex h-full w-full items-center justify-center text-slate-400">
+                        <MapPin className="h-7 w-7 opacity-50" />
                       </div>
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/10" />
-                    {siteGoalChip(item, plan.goal) && (
-                      <span className="absolute top-3 left-3 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white/90 text-slate-900">
-                        {siteGoalChip(item, plan.goal)}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-black/20" />
+                    <div className="absolute left-3 right-3 top-3 flex flex-wrap items-start justify-between gap-1.5">
+                      {goalChip ? (
+                        <span className="rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-slate-900 shadow-sm">
+                          {goalChip}
+                        </span>
+                      ) : (
+                        <span />
+                      )}
+                      <span className="rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">
+                        {INVENTORY_BUCKET_LABELS[bucket].replace(/s$/, "")}
                       </span>
-                    )}
-                    <span className="absolute top-3 right-3 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-black/55 text-white backdrop-blur-sm">
-                      {INVENTORY_BUCKET_LABELS[bucket].replace(/s$/, "")}
-                    </span>
-                    <div className="absolute bottom-3 left-3 right-3 text-white">
-                      <p className="text-[11px] font-mono font-semibold tracking-wide">
+                    </div>
+                    <div className="absolute bottom-0 left-0 right-0 p-3.5 text-white">
+                      <p className="font-mono text-[11px] font-semibold tracking-wide text-white/85">
                         {item.location?.skyarcSiteCode ?? "SKY"}
                       </p>
-                      <h4 className="font-bold text-base line-clamp-1">{item.location?.name}</h4>
-                      <p className="text-[11px] text-white/80 truncate">{siteSpecLine(item)}</p>
-                      <p className="text-sm font-semibold text-emerald-200">{formatInr(plannedSpend)}</p>
+                      <h4 className="line-clamp-1 text-base font-bold">{item.location?.name}</h4>
+                      <div className="mt-1 flex items-end justify-between gap-2">
+                        <p className="truncate text-[11px] text-white/75">{siteSpecLine(item)}</p>
+                        <p className="shrink-0 text-sm font-semibold tabular-nums text-emerald-200">
+                          {formatInr(plannedSpend)}
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="p-3 space-y-2">
+                  <div className="space-y-2.5 p-3.5">
                     {item.creativeBrief ? (
-                      <p className="text-[11px] text-slate-600 leading-relaxed flex items-start gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                        <span>{item.creativeBrief}</span>
+                      <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-600">
+                        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span className="line-clamp-3">{item.creativeBrief}</span>
                       </p>
                     ) : null}
                     <SwapChips
@@ -704,45 +896,48 @@ export default function MediaPlanDetailPage() {
                       forCustomer={isClient}
                       onSwap={(inventoryId) => swapMutation.mutate({ itemId: item.id, inventoryId })}
                     />
-                    {item.location && (
+                    {item.location ? (
                       <Link
                         href={`/locations/${item.location.id}`}
-                        className="text-[11px] font-semibold text-primary inline-flex items-center gap-0.5"
+                        className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline"
                       >
-                        Site details <ChevronRight className="w-3.5 h-3.5" />
+                        Site details <ChevronRight className="h-3.5 w-3.5" />
                       </Link>
-                    )}
+                    ) : null}
                   </div>
-                </div>
+                </article>
               );
             })}
           </div>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-5">
           <section className="card-surface p-5 sm:p-6">
-            <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+            <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
               <div>
-                <dt className="text-muted font-medium">Total budget</dt>
-                <dd className="text-slate-900 mt-0.5 font-semibold">
+                <dt className="font-medium text-muted">Total budget</dt>
+                <dd className="mt-0.5 font-semibold text-slate-900">
                   {plan.totalBudget != null ? formatInr(plan.totalBudget) : "—"}
                 </dd>
               </div>
               <div>
-                <dt className="text-muted font-medium">Allocated</dt>
-                <dd className="text-slate-900 mt-0.5 font-semibold">{formatInr(totalAllocated)}</dd>
+                <dt className="font-medium text-muted">Allocated</dt>
+                <dd className="mt-0.5 font-semibold tabular-nums text-slate-900">
+                  {formatInr(totalAllocated)}
+                </dd>
               </div>
               <div>
-                <dt className="text-muted font-medium">Sites</dt>
-                <dd className="text-slate-900 mt-0.5 font-semibold">
+                <dt className="font-medium text-muted">Sites</dt>
+                <dd className="mt-0.5 font-semibold text-slate-900">
                   {plan._count?.items ?? plan.items.length}
                 </dd>
               </div>
               {plan.mix ? (
                 <div className="sm:col-span-3">
-                  <dt className="text-muted font-medium">Inventory mix</dt>
-                  <dd className="text-slate-900 mt-0.5 font-semibold">
-                    {plan.mix.hoardings} hoardings · {plan.mix.digital} digital · {plan.mix.kiosks} kiosks
+                  <dt className="font-medium text-muted">Inventory mix</dt>
+                  <dd className="mt-0.5 font-semibold text-slate-900">
+                    {plan.mix.hoardings} hoardings · {plan.mix.digital} digital · {plan.mix.kiosks}{" "}
+                    kiosks
                     {plan.mix.other > 0 ? ` · ${plan.mix.other} other` : ""}
                   </dd>
                 </div>
@@ -750,13 +945,14 @@ export default function MediaPlanDetailPage() {
             </dl>
           </section>
 
-          {plan.summary && plan.summary.siteCount > 0 && (
+          {plan.summary && plan.summary.siteCount > 0 ? (
             <PlanSummaryCards summary={plan.summary} />
-          )}
+          ) : null}
 
           <section className="card-surface overflow-hidden">
-            <div className="px-5 py-4 border-b border-violet-100">
+            <div className="border-b border-violet-100 px-5 py-4">
               <h2 className="font-semibold text-slate-900">Placements</h2>
+              <p className="mt-0.5 text-xs text-muted">Score breakdown and swap options per site</p>
             </div>
 
             <ul className="divide-y divide-violet-50">
@@ -764,7 +960,7 @@ export default function MediaPlanDetailPage() {
                 <li key={item.id} className="px-5 py-4">
                   <div className="flex gap-4">
                     {item.location?.coverImageUrl ? (
-                      <div className="relative w-20 h-20 sm:w-24 sm:h-24 shrink-0 rounded-lg overflow-hidden bg-slate-100 border border-violet-100">
+                      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-violet-100 bg-slate-100 sm:h-24 sm:w-24">
                         <Image
                           src={item.location.coverImageUrl}
                           alt={item.location.name}
@@ -775,60 +971,61 @@ export default function MediaPlanDetailPage() {
                         />
                       </div>
                     ) : (
-                      <div className="w-20 h-20 sm:w-24 sm:h-24 shrink-0 rounded-lg bg-violet-50 border border-violet-100 flex items-center justify-center text-xs text-muted">
+                      <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg border border-violet-100 bg-violet-50 text-xs text-muted sm:h-24 sm:w-24">
                         No photo
                       </div>
                     )}
 
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                      <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
                         <div className="min-w-0">
                           <Link
                             href={item.location ? `/locations/${item.location.id}` : "#"}
-                            className="font-semibold text-slate-900 hover:text-primary truncate block"
+                            className="block truncate font-semibold text-slate-900 hover:text-primary"
                           >
-                            #{item.rank ?? "—"} {item.location?.skyarcSiteCode ?? item.location?.name ?? "Unknown site"}
+                            #{item.rank ?? "—"}{" "}
+                            {item.location?.skyarcSiteCode ?? item.location?.name ?? "Unknown site"}
                           </Link>
-                          {item.location?.road && (
-                            <p className="text-xs text-muted truncate">{item.location.road}</p>
-                          )}
+                          {item.location?.road ? (
+                            <p className="truncate text-xs text-muted">{item.location.road}</p>
+                          ) : null}
                           {item.inventoryType ? (
                             <p className="text-xs text-muted">{siteSpecLine(item)}</p>
                           ) : null}
                         </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-sm font-semibold text-slate-900">
+                        <div className="shrink-0 text-right">
+                          <p className="text-sm font-semibold tabular-nums text-slate-900">
                             {formatInr(item.budgetAllocated)}
                           </p>
-                          {item.pricing && (
-                            <div className="mt-1 text-xs text-muted space-y-0.5">
-                              {item.pricing.vendorRate != null && (
+                          {item.pricing ? (
+                            <div className="mt-1 space-y-0.5 text-xs text-muted">
+                              {item.pricing.vendorRate != null ? (
                                 <p>Vendor Net: {formatInr(item.pricing.vendorRate)}</p>
-                              )}
+                              ) : null}
                               {item.pricing.clientRate != null ? (
-                                <p className="text-slate-900 font-medium">
+                                <p className="font-medium text-slate-900">
                                   Client Rate: {formatInr(item.pricing.clientRate)}
                                 </p>
                               ) : (
                                 <p className="text-amber-700">Client price not set</p>
                               )}
                               {item.pricing.impliedMarginPercent != null &&
-                                item.pricing.skyarcRevenue != null && (
-                                  <p className="text-emerald-700 font-medium">
-                                    Margin {item.pricing.impliedMarginPercent}% (
-                                    {formatInr(item.pricing.skyarcRevenue)})
-                                  </p>
-                                )}
+                              item.pricing.skyarcRevenue != null ? (
+                                <p className="font-medium text-emerald-700">
+                                  Margin {item.pricing.impliedMarginPercent}% (
+                                  {formatInr(item.pricing.skyarcRevenue)})
+                                </p>
+                              ) : null}
                             </div>
-                          )}
+                          ) : null}
                         </div>
                       </div>
 
-                      {item.insights && (
-                        <div className="mt-3 pt-3 border-t border-violet-50">
+                      {item.insights ? (
+                        <div className="mt-3 border-t border-violet-50 pt-3">
                           <SiteMetricsBars metrics={item.insights.metrics} />
                         </div>
-                      )}
+                      ) : null}
 
                       <div className="mt-3">
                         <SwapChips
@@ -838,7 +1035,9 @@ export default function MediaPlanDetailPage() {
                           planTotal={planTotal}
                           totalAllocated={totalAllocated}
                           forCustomer={isClient}
-                          onSwap={(inventoryId) => swapMutation.mutate({ itemId: item.id, inventoryId })}
+                          onSwap={(inventoryId) =>
+                            swapMutation.mutate({ itemId: item.id, inventoryId })
+                          }
                         />
                       </div>
                     </div>

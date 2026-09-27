@@ -5,11 +5,10 @@ import { usePathname } from "next/navigation";
 import {
   MapPin,
   Map,
-  Layers,
   Building2,
   User,
   LayoutDashboard,
-  PlusCircle,
+  Send,
 } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
@@ -36,22 +35,22 @@ export function MobileBottomNav() {
       show: true,
     },
     {
-      label: isVendor ? "Agency" : "Campaigns",
-      href: isVendor ? "/organization" : "/campaigns",
-      icon: isVendor ? Building2 : Layers,
+      label: isVendor ? "Requests" : "Campaigns",
+      href: isVendor ? "/requests" : "/campaigns",
+      icon: isVendor ? Send : LayoutDashboard,
       active: isVendor
-        ? pathname.startsWith("/organization")
+        ? pathname.startsWith("/requests")
         : pathname.startsWith("/campaigns"),
-      show: isVendor ? canAccessRoute("/organization") : canAccessRoute("/campaigns"),
+      show: isVendor ? canAccessRoute("/requests") : canAccessRoute("/campaigns"),
     },
     {
-      label: isVendor ? "Dashboard" : "Vendors",
-      href: isVendor ? "/dashboard" : "/admin/organizations",
-      icon: isVendor ? LayoutDashboard : Building2,
+      label: isVendor ? "Agency" : "Vendors",
+      href: isVendor ? "/organization" : "/admin/organizations",
+      icon: Building2,
       active: isVendor
-        ? pathname === "/dashboard"
+        ? pathname.startsWith("/organization")
         : pathname.startsWith("/admin/organizations"),
-      show: isVendor ? canAccessRoute("/dashboard") : canAccessRoute("/admin/organizations"),
+      show: isVendor ? canAccessRoute("/organization") : canAccessRoute("/admin/organizations"),
     },
     {
       label: "Account",

@@ -14,6 +14,8 @@ import {
   ScoreStatus,
   UserRole,
   maybeVendorRate,
+  buildSkyarcSiteCode,
+  getMarketCity,
 } from "@skyarc/shared";
 import argon2 from "argon2";
 import { prisma } from "../../lib/prisma.js";
@@ -21,6 +23,7 @@ import { success } from "../../lib/response.js";
 import { canAccessLocation, canWriteLocation, isReadOnly, isVendorUser, isInternalUser } from "../../lib/rbac.js";
 import { forbidden, notFound, validationError } from "../../lib/errors.js";
 import { invalidateLocationCaches } from "../../lib/cache/location-cache.js";
+import { loadPlatformConfig } from "../../lib/commercial-config.js";
 
 function estimateScore(sqft: number, lightingType?: string | null): number {
   let score = 58;
@@ -47,6 +50,7 @@ function serializeInventory(
     productCode: string;
     notes: string | null;
     status: string;
+    slotCapacity?: number | null;
     staticSpecsJson: unknown;
     createdAt: Date;
     updatedAt: Date;
@@ -64,7 +68,8 @@ function serializeInventory(
     updatedAt: Date;
   } | null,
   user?: Parameters<typeof maybeVendorRate>[0],
-  organizationId?: string | null
+  organizationId?: string | null,
+  opts?: { allowVendorRate?: boolean }
 ) {
   const base = {
     id: inv.id,
@@ -73,12 +78,13 @@ function serializeInventory(
     productCode: inv.productCode,
     notes: inv.notes,
     status: inv.status,
+    slotCapacity: inv.slotCapacity ?? 1,
     staticSpecsJson: inv.staticSpecsJson,
     createdAt: inv.createdAt.toISOString(),
     updatedAt: inv.updatedAt.toISOString(),
   };
 
-  if (!user || !latestRate) return base;
+  if (!user || !latestRate || opts?.allowVendorRate === false) return base;
 
   const rate = maybeVendorRate(user, { organizationId: organizationId ?? null }, {
     id: latestRate.id,
@@ -161,15 +167,15 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
       });
 
       const orgId = screen.location.organizationId;
+      const platform = await loadPlatformConfig();
+      const allowVendorRate =
+        !isInternalUser(request.user) || platform.showVendorDetailsOnLocationPage;
 
       return success(
         inventories.map((inv) =>
-          serializeInventory(
-            inv,
-            inv.rateCards[0] ?? null,
-            request.user,
-            orgId
-          )
+          serializeInventory(inv, inv.rateCards[0] ?? null, request.user, orgId, {
+            allowVendorRate,
+          })
         )
       );
     }
@@ -193,9 +199,11 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
           productCode: body.productCode,
           notes: body.notes,
           status: body.status,
+          ...(body.slotCapacity != null ? { slotCapacity: body.slotCapacity } : {}),
           staticSpecsJson: body.staticSpecsJson as Prisma.InputJsonValue | undefined,
         },
       });
+      invalidateLocationCaches(screen.locationId);
       return success(serializeInventory(inventory));
     }
   );
@@ -217,10 +225,15 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
       const updated = await prisma.inventory.update({
         where: { id },
         data: {
-          ...body,
+          productCode: body.productCode,
+          inventoryType: body.inventoryType,
+          notes: body.notes,
+          status: body.status,
+          ...(body.slotCapacity != null ? { slotCapacity: body.slotCapacity } : {}),
           staticSpecsJson: body.staticSpecsJson as Prisma.InputJsonValue | undefined,
         },
       });
+      invalidateLocationCaches(inventory.screen.locationId);
       return success(serializeInventory(updated));
     }
   );
@@ -259,6 +272,14 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
       });
 
       const orgId = inventory.screen.location.organizationId;
+      const platform = await loadPlatformConfig();
+      const allowVendorRate =
+        !isInternalUser(request.user) || platform.showVendorDetailsOnLocationPage;
+
+      if (!allowVendorRate) {
+        return success([]);
+      }
+
       const visible = maybeVendorRate(
         request.user,
         { organizationId: orgId },
@@ -554,7 +575,8 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
           invalidateLocationCaches(existingLoc.id);
           updatedCount++;
         } else {
-          const generatedSkyarcCode = `SKY-RAJ-${String(siteSeq++).padStart(3, "0")}`;
+          const cityName = item.city?.trim() || getMarketCity().name;
+          const generatedSkyarcCode = buildSkyarcSiteCode(cityName, siteSeq++);
 
           const newLoc = await prisma.location.create({
             data: {
@@ -565,6 +587,9 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
               longitude: item.longitude,
               road: item.area,
               address: item.locationDescription,
+              city: cityName,
+              district: item.district?.trim() || cityName,
+              state: item.state?.trim() || getMarketCity(cityName).state,
               surveyStatus: SurveyStatus.SUBMITTED,
               organizationId: targetOrgId,
               createdByUserId: request.user.id,

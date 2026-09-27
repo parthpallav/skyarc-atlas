@@ -36,4 +36,18 @@ export class TtlCache<T> {
   clear(): void {
     this.store.clear();
   }
+
+  /** Live keys only (expired entries are purged). */
+  keys(): string[] {
+    const now = Date.now();
+    const out: string[] = [];
+    for (const [key, entry] of this.store) {
+      if (now > entry.expiresAt) {
+        this.store.delete(key);
+        continue;
+      }
+      out.push(key);
+    }
+    return out;
+  }
 }

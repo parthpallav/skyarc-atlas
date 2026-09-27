@@ -1,13 +1,14 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Building2,
+  Gauge,
   LayoutDashboard,
   Map,
   MapPin,
   Megaphone,
   Layers,
+  Send,
   Settings,
-  User,
   Users,
 } from "lucide-react";
 import { canAccessAdmin, canAccessCampaigns, isVendorRole } from "@skyarc/shared";
@@ -28,6 +29,7 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
   if (isVendorRole(user.role)) {
     return [
       { href: "/locations", label: "My Inventory", icon: MapPin },
+      { href: "/requests", label: "Requests", icon: Send },
       { href: "/organization", label: "My Organization", icon: Building2 },
       { href: "/map", label: "Map", icon: Map },
     ];
@@ -43,6 +45,7 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
 
   if (canAccessCampaigns(authUser)) {
     links.push({ href: "/campaigns", label: "Campaigns", icon: Megaphone });
+    links.push({ href: "/requests", label: "Requests", icon: Send });
     links.push({ href: "/media-plans", label: "Media Plans", icon: Layers });
   }
 
@@ -50,6 +53,7 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
 
   if (canAccessAdmin(authUser)) {
     links.push({ href: "/admin/organizations", label: "Vendors", icon: Users });
+    links.push({ href: "/admin/scoring", label: "Index weights", icon: Gauge });
     links.push({ href: "/admin/settings", label: "Settings", icon: Settings });
   }
 

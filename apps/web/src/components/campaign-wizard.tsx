@@ -11,7 +11,7 @@ import {
   Target,
   Users,
 } from "lucide-react";
-import { SAMPLE_CAMPAIGN } from "@skyarc/shared";
+import { SAMPLE_CAMPAIGN, corridorsForCity, getMarketCity, listMarketCities, listStates } from "@skyarc/shared";
 import { formatInr } from "@/lib/format";
 import { addDaysYmd, durationDaysBetween, toIsoDate, todayYmd } from "@/lib/dates";
 import { FlightAvailabilityPanel } from "@/components/flight-availability-panel";
@@ -22,7 +22,6 @@ import {
   BUDGET_PRESETS,
   CATEGORY_OPTIONS,
   CONSTRAINT_PRESETS,
-  CORRIDOR_PRESETS,
   DURATION_PRESETS,
   FORMAT_PRESETS,
   KPI_PRESETS,
@@ -98,6 +97,8 @@ export interface CampaignWizardInitial {
   budget?: number;
   maxLocations?: number;
   audiences?: string[];
+  cities?: string[];
+  states?: string[];
   corridors?: string[];
   formats?: string[];
   kpis?: string[];
@@ -131,13 +132,24 @@ export function CampaignWizard({
   const [budget, setBudget] = useState(initial?.budget ?? 500000);
   const [maxLocations, setMaxLocations] = useState(initial?.maxLocations ?? 10);
   const [audiences, setAudiences] = useState<string[]>(initial?.audiences ?? [AUDIENCE_PRESETS[1], AUDIENCE_PRESETS[4]]);
-  const [corridors, setCorridors] = useState<string[]>(initial?.corridors ?? [CORRIDOR_PRESETS[0], CORRIDOR_PRESETS[1]]);
+  const defaultCity = getMarketCity().name;
+  const [cities, setCities] = useState<string[]>(initial?.cities ?? [defaultCity]);
+  const [states, setStates] = useState<string[]>(initial?.states ?? []);
+  const [corridors, setCorridors] = useState<string[]>(
+    initial?.corridors ?? corridorsForCity(defaultCity).slice(0, 2)
+  );
   const [formats, setFormats] = useState<string[]>(initial?.formats ?? [FORMAT_PRESETS[0], FORMAT_PRESETS[1], FORMAT_PRESETS[2]]);
   const [kpis, setKpis] = useState<string[]>(initial?.kpis ?? [KPI_PRESETS[0], KPI_PRESETS[2]]);
   const [constraints, setConstraints] = useState<string[]>(initial?.constraints ?? [CONSTRAINT_PRESETS[0], CONSTRAINT_PRESETS[2]]);
   const [notes, setNotes] = useState(initial?.notes ?? "");
 
   const days = durationDaysBetween(startDate, endDate);
+  const cityOptions = listMarketCities().map((c) => c.name);
+  const stateOptions = listStates();
+  const corridorOptions =
+    cities.length > 0
+      ? [...new Set(cities.flatMap((c) => corridorsForCity(c)))]
+      : [...new Set(listMarketCities().flatMap((c) => c.corridors.map((x) => x.name)))];
 
   function fillSample() {
     const start = todayYmd();
@@ -150,7 +162,9 @@ export function CampaignWizard({
     setBudget(500000);
     setMaxLocations(10);
     setAudiences([AUDIENCE_PRESETS[0], AUDIENCE_PRESETS[1], AUDIENCE_PRESETS[4]]);
-    setCorridors(["Kalawad Road", "University Road", "150 Feet Ring Road"]);
+    setCities([defaultCity]);
+    setStates([getMarketCity(defaultCity).state]);
+    setCorridors(corridorsForCity(defaultCity).slice(0, 3));
     setFormats([FORMAT_PRESETS[0], FORMAT_PRESETS[1], FORMAT_PRESETS[2]]);
     setKpis(["Maximum Reach & Impressions", "Corridor Dominance & Impact"]);
     setConstraints(["High Visibility Score (> 75) Only", "Night Illumination Required"]);
@@ -164,6 +178,8 @@ export function CampaignWizard({
       brandCategory,
       targetAudience: audiences,
       geographicFocus: corridors,
+      cities,
+      states,
       preferredFormats: formats,
       budget,
       durationDays: days,
@@ -183,6 +199,12 @@ export function CampaignWizard({
       `**Budget**: ${formatInr(budget)} for a ${days ?? "—"}-day flight`,
       `**Sites**: up to ${maxLocations}`,
       `**Target Audience**: ${audiences.join(", ") || "General Public"}`,
+      `**Markets**: ${[
+        states.length ? `States: ${states.join(", ")}` : null,
+        cities.length ? `Cities: ${cities.join(", ")}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ") || "All markets"}`,
       `**Geographic Corridors**: ${corridors.join(", ") || "Citywide"}`,
       `**Preferred Media Formats**: ${formats.join(", ") || "All formats"}`,
       `**Core KPIs**: ${kpis.join(", ") || "Brand awareness"}`,
@@ -284,7 +306,7 @@ export function CampaignWizard({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Campaign name</label>
-              <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Summer launch — Rajkot" />
+              <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Summer launch — multi-city" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Brand / client</label>
@@ -420,9 +442,23 @@ export function CampaignWizard({
           <div>
             <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase mb-2">
               <MapPin className="w-3.5 h-3.5 text-primary" />
+              State
+            </label>
+            <ChipGroup options={stateOptions} selected={states} onToggle={(item) => toggle(item, states, setStates)} activeClass="bg-cyan-800 text-white border-cyan-800" />
+          </div>
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase mb-2">
+              <MapPin className="w-3.5 h-3.5 text-primary" />
+              City
+            </label>
+            <ChipGroup options={cityOptions} selected={cities} onToggle={(item) => toggle(item, cities, setCities)} activeClass="bg-emerald-700 text-white border-emerald-700" />
+          </div>
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase mb-2">
+              <MapPin className="w-3.5 h-3.5 text-primary" />
               Target corridors
             </label>
-            <ChipGroup options={CORRIDOR_PRESETS} selected={corridors} onToggle={(item) => toggle(item, corridors, setCorridors)} activeClass="bg-violet-800 text-white border-violet-800" />
+            <ChipGroup options={corridorOptions} selected={corridors} onToggle={(item) => toggle(item, corridors, setCorridors)} activeClass="bg-violet-800 text-white border-violet-800" />
           </div>
           <div>
             <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase mb-2">
@@ -453,7 +489,7 @@ export function CampaignWizard({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
-              placeholder="e.g. Prioritize university campuses and Kalawad commercial hubs."
+              placeholder="e.g. Prioritize university campuses and prime commercial hubs."
               className={inputClass}
             />
           </div>
@@ -462,7 +498,11 @@ export function CampaignWizard({
             <p className="text-slate-700">{objective}</p>
             <p className="text-slate-700">{formatInr(budget)} · up to {maxLocations} sites · {days ?? "—"} days</p>
             <p className="text-slate-600 text-xs">{audiences.join(" · ") || "Audience not set"}</p>
-            <p className="text-slate-600 text-xs">{corridors.join(" · ") || "Citywide"}</p>
+            <p className="text-slate-600 text-xs">
+              {[states.join(", "), cities.join(", "), corridors.join(" · ")]
+                .filter((part) => part.trim().length > 0)
+                .join(" · ") || "Citywide"}
+            </p>
           </div>
         </div>
       )}

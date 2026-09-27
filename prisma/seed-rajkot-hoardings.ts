@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { PrismaClient, ScoreStatus, AssetKind, PhotoView } from "@prisma/client";
+import { getMarketCity } from "@skyarc/shared";
 
 function slugifyLocationFolder(name: string): string {
   return name
@@ -236,6 +237,7 @@ async function main() {
     const locationId = randomUUID();
     const name = `${row.iid} — ${row.area}`;
     const mountingNotes = row.location;
+    const market = getMarketCity("Rajkot");
 
     await prisma.location.create({
       data: {
@@ -245,6 +247,9 @@ async function main() {
         longitude: row.longitude,
         road: row.area,
         mountingNotes,
+        city: market.name,
+        district: market.district,
+        state: market.state,
         surveyStatus: "SUBMITTED",
         capturedAt: new Date(),
         createdByUserId: admin.id,

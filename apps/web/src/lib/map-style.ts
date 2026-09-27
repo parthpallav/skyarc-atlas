@@ -1,14 +1,24 @@
 import type { StyleSpecification } from "maplibre-gl";
+import { getMarketCity } from "@skyarc/shared";
 
-/** Rajkot, Gujarat — default map focus for Skyarc field operations. */
-export const RAJKOT_CENTER: [number, number] = [70.8022, 22.3039];
-export const RAJKOT_DEFAULT_ZOOM = 13;
+const defaultMarket = getMarketCity();
+
+/** Default map focus — follows active market catalog (not a single hardcoded city). */
+export const DEFAULT_MAP_CENTER: [number, number] = [
+  defaultMarket.center.lng,
+  defaultMarket.center.lat,
+];
+export const DEFAULT_MAP_ZOOM = defaultMarket.defaultZoom;
+
+/** @deprecated Prefer DEFAULT_MAP_CENTER — kept for existing imports. */
+export const RAJKOT_CENTER = DEFAULT_MAP_CENTER;
+/** @deprecated Prefer DEFAULT_MAP_ZOOM */
+export const RAJKOT_DEFAULT_ZOOM = DEFAULT_MAP_ZOOM;
 
 /**
  * Street-level OpenStreetMap raster tiles (roads, buildings, labels).
- * Replaces the MapLibre demo style (flat yellow blocks).
  */
-export const rajkotStreetMapStyle: StyleSpecification = {
+export const atlasStreetMapStyle: StyleSpecification = {
   version: 8,
   glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
   sources: {
@@ -31,3 +41,6 @@ export const rajkotStreetMapStyle: StyleSpecification = {
     },
   ],
 };
+
+/** @deprecated Prefer atlasStreetMapStyle */
+export const rajkotStreetMapStyle = atlasStreetMapStyle;

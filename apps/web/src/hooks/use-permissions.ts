@@ -3,6 +3,8 @@ import {
   canViewClientPricing,
   isClientUser,
   isInternalUser,
+  isAdminRole,
+  isSuperAdmin,
   canWriteCampaigns,
   canMutateCampaign,
 } from "@skyarc/shared";
@@ -28,6 +30,8 @@ export function usePermissions() {
     isVendor: user ? isVendorPortalUser(user) : false,
     isClient: authUser ? isClientUser(authUser) : false,
     isInternal: authUser ? isInternalUser(authUser) : false,
+    isAdmin: authUser ? isAdminRole(authUser) : false,
+    isSuperAdmin: authUser ? isSuperAdmin(authUser) : false,
     canWriteCampaigns: authUser ? canWriteCampaigns(authUser) : false,
     canMutateCampaign: (campaign: { createdByUserId?: string | null }) =>
       authUser ? canMutateCampaign(authUser, campaign) : false,

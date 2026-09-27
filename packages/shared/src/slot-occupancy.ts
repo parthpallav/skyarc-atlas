@@ -5,13 +5,16 @@ export const DEFAULT_DIGITAL_SLOT_CAPACITY = 6;
 export const INVENTORY_HOLD_TTL_MINUTES = 30;
 
 export function isDigitalInventoryType(inventoryType?: string | null): boolean {
-  return (inventoryType ?? "").toUpperCase().includes("DIGITAL");
+  const value = (inventoryType ?? "").toUpperCase();
+  // Kiosk faces are digital loops even though the type string may not contain "DIGITAL".
+  return value.includes("DIGITAL") || value.includes("KIOSK") || value === "STANDEE";
 }
 
 /**
  * Effective concurrent capacity for a face.
- * Digital: Prisma default 1 means use loop default (6); explicit >1 wins.
- * Static / other: 1 exclusive face.
+ * Digital: configured values above 1 are honored; 1/null use the product loop default (6)
+ * so legacy Prisma `@default(1)` rows still behave as a multi-brand loop until edited.
+ * Static / other: 1 exclusive face (or explicit capacity when set).
  */
 export function effectiveSlotCapacity(
   inventoryType?: string | null,
@@ -19,7 +22,7 @@ export function effectiveSlotCapacity(
 ): number {
   if (isDigitalInventoryType(inventoryType)) {
     if (typeof slotCapacity === "number" && slotCapacity > 1) {
-      return Math.max(1, Math.floor(slotCapacity));
+      return Math.max(2, Math.floor(slotCapacity));
     }
     return DEFAULT_DIGITAL_SLOT_CAPACITY;
   }
@@ -192,27 +195,36 @@ export function summarizeLocationLiveInventory(input: {
     };
   }
 
-  const digital = faces.find((f) => isDigitalInventoryType(f.inventoryType));
-  const primary = digital ?? faces[0]!;
-  const isDigital = isDigitalInventoryType(primary.inventoryType);
-  const occ = slotOccupancy({
-    inventoryType: primary.inventoryType,
-    slotCapacity: primary.slotCapacity,
-    availabilityWindows: primary.availabilityWindows,
-    startDate: input.startDate,
-    endDate: input.endDate,
-    now: input.now,
+  const scored = faces.map((face) => {
+    const isDigital = isDigitalInventoryType(face.inventoryType);
+    const occ = slotOccupancy({
+      inventoryType: face.inventoryType,
+      slotCapacity: face.slotCapacity,
+      availabilityWindows: face.availabilityWindows,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      now: input.now,
+    });
+    return { face, isDigital, occ };
   });
+
+  // Prefer an open digital face for slot UI; otherwise any open face; else any digital.
+  const open = scored.filter((row) => !row.occ.fullyBooked);
+  const primary =
+    open.find((row) => row.isDigital) ??
+    open[0] ??
+    scored.find((row) => row.isDigital) ??
+    scored[0]!;
 
   const durationDays = Math.max(
     1,
     Math.round((input.endDate.getTime() - input.startDate.getTime()) / 86_400_000)
   );
-  const vacancy = occ.fullyBooked
+  const vacancy = primary.occ.fullyBooked
     ? earliestVacancyStart({
-        inventoryType: primary.inventoryType,
-        slotCapacity: primary.slotCapacity,
-        availabilityWindows: primary.availabilityWindows,
+        inventoryType: primary.face.inventoryType,
+        slotCapacity: primary.face.slotCapacity,
+        availabilityWindows: primary.face.availabilityWindows,
         durationDays,
         searchFrom: input.startDate,
         now: input.now,
@@ -220,23 +232,23 @@ export function summarizeLocationLiveInventory(input: {
     : null;
 
   let status: LiveBookingStatus;
-  if (occ.fullyBooked) status = "UNAVAILABLE";
-  else if (occ.used > 0 && isDigital) status = "PARTIAL";
-  else if (occ.used > 0) status = "ON_HOLD";
-  else status = "AVAILABLE";
-
-  // Static exclusive: if any overlapping HELD (active) without BOOKED → ON_HOLD
-  if (!isDigital && occ.used > 0 && !occ.fullyBooked) {
+  if (open.length === 0) {
+    status = "UNAVAILABLE";
+  } else if (open.some((row) => row.occ.used === 0)) {
+    status = "AVAILABLE";
+  } else if (open.some((row) => row.isDigital)) {
+    status = "PARTIAL";
+  } else {
     status = "ON_HOLD";
   }
 
   return {
     status,
-    isDigital,
-    capacity: occ.capacity,
-    used: occ.used,
-    remaining: occ.remaining,
-    indicators: occ.slots,
+    isDigital: primary.isDigital,
+    capacity: primary.occ.capacity,
+    used: primary.occ.used,
+    remaining: primary.occ.remaining,
+    indicators: primary.occ.slots,
     earliestVacancyDate: vacancy ? vacancy.toISOString().slice(0, 10) : null,
   };
 }

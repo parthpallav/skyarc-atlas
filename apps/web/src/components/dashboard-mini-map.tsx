@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
-  RAJKOT_CENTER,
-  RAJKOT_DEFAULT_ZOOM,
-  rajkotStreetMapStyle,
+  DEFAULT_MAP_CENTER,
+  DEFAULT_MAP_ZOOM,
+  atlasStreetMapStyle,
 } from "@/lib/map-style";
 import { MIX_COLORS, primaryInventoryBucket } from "@/components/dashboard-viz";
 
@@ -31,9 +31,9 @@ export function DashboardMiniMap({ locations }: { locations: DashboardMapPin[] }
 
     const map = new maplibregl.Map({
       container: mapContainer.current,
-      style: rajkotStreetMapStyle,
-      center: RAJKOT_CENTER,
-      zoom: RAJKOT_DEFAULT_ZOOM - 0.6,
+      style: atlasStreetMapStyle,
+      center: DEFAULT_MAP_CENTER,
+      zoom: DEFAULT_MAP_ZOOM - 0.6,
       attributionControl: false,
       scrollZoom: false,
     });

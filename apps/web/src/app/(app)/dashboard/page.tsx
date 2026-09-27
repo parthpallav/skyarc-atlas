@@ -250,15 +250,15 @@ export default function DashboardPage() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-70" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
               </span>
-              Rajkot network
+              Live network
             </div>
             <h1 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight">
               {hello}
             </h1>
             <p className="mt-2 text-sm text-zinc-400 max-w-lg">
               {isClient
-                ? "Your campaigns against live Rajkot inventory — mix, corridors, and budget at a glance."
-                : "DOOH inventory, campaign flight, and corridor mix across Rajkot — the picture before you plan."}
+                ? "Your campaigns against live inventory — mix, corridors, and budget at a glance."
+                : "DOOH inventory, campaign flight, and corridor mix across your markets — the picture before you plan."}
             </p>
             <div className="mt-4 max-w-md">
               <SurveyPipeline
@@ -336,7 +336,7 @@ export default function DashboardPage() {
           <div className="relative h-[300px] sm:h-[340px] overflow-hidden">
             {locationsLoading && (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-violet-50/70">
-                <p className="text-sm font-medium text-slate-600">Plotting Rajkot sites…</p>
+                <p className="text-sm font-medium text-slate-600">Plotting sites…</p>
               </div>
             )}
             {!locationsLoading && locations.length === 0 && (
@@ -360,7 +360,7 @@ export default function DashboardPage() {
           </div>
           <div>
             <h2 className="font-semibold text-slate-900">Top corridors</h2>
-            <p className="text-xs text-muted mt-0.5 mb-3">Sites clustered on named Rajkot roads</p>
+            <p className="text-xs text-muted mt-0.5 mb-3">Sites clustered on named corridors</p>
             {locationsLoading ? (
               <Skeleton className="h-32 w-full rounded-xl" />
             ) : (
@@ -455,7 +455,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h2 className="font-semibold text-slate-900">Network faces</h2>
-            <p className="text-xs text-muted mt-0.5">Recent sites across Rajkot</p>
+            <p className="text-xs text-muted mt-0.5">Recent sites across your markets</p>
           </div>
           <Link href="/locations" className="text-sm text-primary font-medium hover:underline">
             All locations

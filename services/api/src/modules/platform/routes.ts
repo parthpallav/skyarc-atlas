@@ -3,6 +3,7 @@ import { platformConfigBodySchema } from "@skyarc/validation";
 import { DEFAULT_PLATFORM_CONFIG, parsePlatformConfig } from "@skyarc/shared";
 import { prisma } from "../../lib/prisma.js";
 import { loadPlatformConfig } from "../../lib/commercial-config.js";
+import { invalidateLocationCaches } from "../../lib/cache/location-cache.js";
 import { canManageOrganizations } from "../../lib/rbac.js";
 import { forbidden } from "../../lib/errors.js";
 import { success } from "../../lib/response.js";
@@ -22,12 +23,15 @@ export async function platformRoutes(fastify: FastifyInstance) {
       defaultSkyarcMarginPercent:
         body.defaultSkyarcMarginPercent ?? current.defaultSkyarcMarginPercent,
       currency: body.currency ?? current.currency,
+      showVendorDetailsOnLocationPage:
+        body.showVendorDetailsOnLocationPage ?? current.showVendorDetailsOnLocationPage,
     };
     const row = await prisma.platformConfig.upsert({
       where: { id: "default" },
       create: { id: "default", data: next },
       update: { data: next },
     });
+    invalidateLocationCaches();
     return success(parsePlatformConfig(row.data ?? DEFAULT_PLATFORM_CONFIG));
   });
 }

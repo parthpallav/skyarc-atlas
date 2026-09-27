@@ -26,6 +26,9 @@ export interface InventoryRow {
     location: {
       name: string;
       road: string | null;
+      city?: string | null;
+      district?: string | null;
+      state?: string | null;
       skyarcCommercialJson?: unknown;
       skyarcSiteCode?: string | null;
       attributes: Array<{ key: string; valueJson: unknown }>;
@@ -109,7 +112,11 @@ export async function loadEligibleInventory(
   flight?: { startDate?: Date | null; endDate?: Date | null }
 ) {
   const inventories = await prisma.inventory.findMany({
-    where: { status: "AVAILABLE" },
+    where: {
+      status: "AVAILABLE",
+      // Hidden (archived) sites stay out of catalog, requests, and new plans
+      screen: { location: { archivedAt: null } },
+    },
     include: inventoryPlanningInclude,
   });
 
@@ -153,6 +160,9 @@ export function inventoryToGoalFitSite(inv: InventoryRow): GoalFitSite | null {
     locationName: location.name,
     skyarcSiteCode: location.skyarcSiteCode ?? null,
     road: location.road,
+    city: location.city ?? null,
+    district: location.district ?? null,
+    state: location.state ?? null,
     overallScore: scoreRow.overallScore,
     rateAmount: customerRateForInventory(inv),
     inventoryType: inv.inventoryType ?? null,
@@ -457,6 +467,71 @@ export async function holdInventoryForCampaign(
   invalidateLocationCaches();
 }
 
+/** Drop soft holds (HELD only) for inventory on hidden/archived locations. Keeps BOOKED flights. */
+export async function releaseHoldsForHiddenLocations(
+  prisma: PrismaClient,
+  locationIds: string[]
+) {
+  if (locationIds.length === 0) {
+    return { releasedInventoryIds: [] as string[], campaignIds: [] as string[] };
+  }
+
+  const inventories = await prisma.inventory.findMany({
+    where: { screen: { locationId: { in: locationIds } } },
+    select: { id: true },
+  });
+  const inventoryIds = inventories.map((i) => i.id);
+  if (inventoryIds.length === 0) {
+    return { releasedInventoryIds: [] as string[], campaignIds: [] as string[] };
+  }
+
+  const pendingItems = await prisma.mediaPlanItem.findMany({
+    where: {
+      inventoryId: { in: inventoryIds },
+      approvalStatus: "PENDING",
+      mediaPlan: { status: "DRAFT" },
+    },
+    select: { mediaPlan: { select: { campaignId: true } } },
+  });
+  const campaignIds = [...new Set(pendingItems.map((i) => i.mediaPlan.campaignId))];
+
+  await prisma.availabilityWindow.deleteMany({
+    where: {
+      inventoryId: { in: inventoryIds },
+      status: "HELD",
+    },
+  });
+
+  // Drop pending request line-items that pointed at these sites (cannot book hidden inventory)
+  await prisma.mediaPlanItem.deleteMany({
+    where: {
+      inventoryId: { in: inventoryIds },
+      approvalStatus: "PENDING",
+      mediaPlan: { status: "DRAFT" },
+    },
+  });
+
+  invalidateLocationCaches();
+  return { releasedInventoryIds: inventoryIds, campaignIds };
+}
+
+/** Drop soft holds / books tagged to this campaign for the given inventory. */
+export async function releaseInventoryForCampaign(
+  prisma: PrismaClient,
+  campaignId: string,
+  inventoryIds: string[]
+) {
+  if (inventoryIds.length === 0) return;
+  await prisma.availabilityWindow.deleteMany({
+    where: {
+      inventoryId: { in: [...new Set(inventoryIds)] },
+      status: { in: ["HELD", "BOOKED"] },
+      notes: { contains: campaignId },
+    },
+  });
+  invalidateLocationCaches();
+}
+
 export async function buildMediaPlanFromSelection(
   prisma: PrismaClient,
   campaignId: string,
@@ -466,6 +541,7 @@ export async function buildMediaPlanFromSelection(
     inventoryIds?: string[];
     locationIds?: string[];
     holdInventory?: boolean;
+    status?: "DRAFT" | "PROPOSED";
   }
 ) {
   const campaign = await prisma.campaign.findUnique({
@@ -498,49 +574,70 @@ export async function buildMediaPlanFromSelection(
     };
   }
 
-  const leftovers = eligible.filter((inv) => !selectedIds.includes(inv.id));
-  const goal = parseCampaignGoal(
-    campaign?.brief?.structuredRequirementsJson,
-    input.totalBudget,
-    selected.length
-  );
-  const candidates = buildOptimizerCandidates(selected, goal);
-  const fitted = optimizeMediaPlan(candidates, {
-    totalBudget: input.totalBudget,
-    maxLocations: selected.length,
-    minLocations: selected.length,
-  });
-  if (fitted.items.length === 0) {
-    return {
-      ok: false as const,
-      diagnostics: { availableInventory: eligible.length, selected: selected.length },
-      message: "Could not build a plan from the selected sites.",
-    };
+  const planStatus = input.status ?? "PROPOSED";
+  const isNetworkRequest = planStatus === "DRAFT";
+
+  let items: Array<{
+    inventoryId: string;
+    budgetAllocated: number;
+    rank: number;
+    alternatives: GoalAlternative[];
+  }>;
+
+  if (isNetworkRequest) {
+    // Include every selected site at list rate — no budget packing for requests.
+    items = selected.map((inv, index) => ({
+      inventoryId: inv.id,
+      budgetAllocated: Math.max(0, customerRateForInventory(inv)),
+      rank: index + 1,
+      alternatives: [],
+    }));
+  } else {
+    const leftovers = eligible.filter((inv) => !selectedIds.includes(inv.id));
+    const goal = parseCampaignGoal(
+      campaign?.brief?.structuredRequirementsJson,
+      input.totalBudget,
+      selected.length
+    );
+    const candidates = buildOptimizerCandidates(selected, goal);
+    const fitted = optimizeMediaPlan(candidates, {
+      totalBudget: input.totalBudget,
+      maxLocations: selected.length,
+      minLocations: selected.length,
+    });
+    if (fitted.items.length === 0) {
+      return {
+        ok: false as const,
+        diagnostics: { availableInventory: eligible.length, selected: selected.length },
+        message: "Could not build a plan from the selected sites.",
+      };
+    }
+    const fittedIds = new Set(fitted.items.map((item) => item.inventoryId));
+    const unusedSelected = selected.filter((inv) => !fittedIds.has(inv.id));
+    const leftoverPool = [...leftovers, ...unusedSelected];
+    const selectedSites = fitted.items
+      .map((item) => eligible.find((inv) => inv.id === item.inventoryId))
+      .filter((inv): inv is NonNullable<typeof inv> => Boolean(inv))
+      .map(inventoryToGoalFitSite)
+      .filter((site): site is GoalFitSite => Boolean(site));
+    const leftoverSites = leftoverPool
+      .map(inventoryToGoalFitSite)
+      .filter((site): site is GoalFitSite => Boolean(site));
+    const goalAlts = assignGoalAlternatives(selectedSites, leftoverSites, goal);
+    items = fitted.items.map((item) => ({
+      ...item,
+      alternatives: goalAlts.get(item.inventoryId) ?? [],
+    }));
   }
-  const fittedIds = new Set(fitted.items.map((item) => item.inventoryId));
-  const unusedSelected = selected.filter((inv) => !fittedIds.has(inv.id));
-  const leftoverPool = [...leftovers, ...unusedSelected];
-  const selectedSites = fitted.items
-    .map((item) => eligible.find((inv) => inv.id === item.inventoryId))
-    .filter((inv): inv is NonNullable<typeof inv> => Boolean(inv))
-    .map(inventoryToGoalFitSite)
-    .filter((site): site is GoalFitSite => Boolean(site));
-  const leftoverSites = leftoverPool
-    .map(inventoryToGoalFitSite)
-    .filter((site): site is GoalFitSite => Boolean(site));
-  const goalAlts = assignGoalAlternatives(selectedSites, leftoverSites, goal);
-  const items = fitted.items.map((item) => ({
-    ...item,
-    alternatives: goalAlts.get(item.inventoryId) ?? [],
-  }));
 
   const inventoryById = new Map(eligible.map((inv) => [inv.id, inv]));
+  const totalAllocated = items.reduce((sum, item) => sum + item.budgetAllocated, 0);
   const plan = await prisma.mediaPlan.create({
     data: {
       campaignId,
       name: input.name,
-      totalBudget: input.totalBudget,
-      status: "PROPOSED",
+      totalBudget: isNetworkRequest ? totalAllocated : input.totalBudget,
+      status: planStatus,
       items: {
         create: items.map((item) => {
           const inv = inventoryById.get(item.inventoryId);
@@ -565,6 +662,8 @@ export async function buildMediaPlanFromSelection(
             rank: item.rank,
             explanationText: insights?.explanationText ?? null,
             alternativesJson: toAlternativesJson(item.alternatives),
+            // Site requests need per-owner response; other plans auto-approved items
+            approvalStatus: isNetworkRequest ? "PENDING" : "APPROVED",
           };
         }),
       },
@@ -572,7 +671,9 @@ export async function buildMediaPlanFromSelection(
     include: planItemInclude,
   });
 
-  if (input.holdInventory !== false) {
+  // Soft-hold immediately so requested inventory cannot overlap elsewhere
+  const shouldHold = input.holdInventory !== false || isNetworkRequest;
+  if (shouldHold) {
     await holdInventoryForCampaign(
       prisma,
       campaignId,
@@ -583,7 +684,7 @@ export async function buildMediaPlanFromSelection(
   return {
     ok: true as const,
     plan,
-    totalAllocated: items.reduce((sum, item) => sum + item.budgetAllocated, 0),
-    diagnostics: { selected: items.length, alternatives: leftoverSites.length },
+    totalAllocated,
+    diagnostics: { selected: items.length, alternatives: 0 },
   };
 }

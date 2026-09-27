@@ -21,18 +21,21 @@ export function requireOrganization(user: AuthUser): string {
 }
 
 export type LocationListScope = "mine" | "discovery" | "all";
+export type LocationVisibility = "active" | "hidden" | "all";
+
+function archivedFilter(visibility: LocationVisibility = "active"): Record<string, unknown> {
+  if (visibility === "hidden") return { archivedAt: { not: null } };
+  if (visibility === "all") return {};
+  return { archivedAt: null };
+}
 
 /** Prisma-compatible filter for listing locations scoped to the caller. */
 export function buildLocationListWhere(
   user: AuthUser,
-  scope?: LocationListScope
-): {
-  archivedAt: null;
-  organizationId?: string;
-  createdByUserId?: string;
-  NOT?: { organizationId: string };
-} {
-  const base = { archivedAt: null as null };
+  scope?: LocationListScope,
+  visibility: LocationVisibility = "active"
+): Record<string, unknown> {
+  const base = archivedFilter(visibility);
 
   if (isInternalUser(user)) {
     return base;
@@ -50,7 +53,8 @@ export function buildLocationListWhere(
   if (role === UserRole.VENDOR) {
     const orgId = requireOrganization(user);
     if (scope === "discovery") {
-      return { ...base, NOT: { organizationId: orgId } };
+      // Discovery never surfaces other orgs' hidden inventory
+      return { archivedAt: null, NOT: { organizationId: orgId } };
     }
     if (scope === "all") {
       return base;
@@ -59,7 +63,8 @@ export function buildLocationListWhere(
   }
 
   if (isClientUser(user)) {
-    return base;
+    // Clients only see live catalog
+    return { archivedAt: null };
   }
 
   return base;

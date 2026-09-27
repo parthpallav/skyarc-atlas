@@ -191,7 +191,18 @@ export class ApiClient {
     page = 1,
     limit = 20,
     scope?: "mine" | "discovery" | "all",
-    filters?: { q?: string; status?: string; type?: string; from?: string; to?: string }
+    filters?: {
+      q?: string;
+      status?: string;
+      type?: string;
+      from?: string;
+      to?: string;
+      cities?: string[];
+      districts?: string[];
+      states?: string[];
+      corridors?: string[];
+      visibility?: "active" | "hidden" | "all";
+    }
   ) {
     const params = new URLSearchParams({
       page: String(page),
@@ -203,7 +214,34 @@ export class ApiClient {
     if (filters?.type) params.set("type", filters.type);
     if (filters?.from) params.set("from", filters.from);
     if (filters?.to) params.set("to", filters.to);
+    if (filters?.cities?.length) params.set("cities", filters.cities.join(","));
+    if (filters?.districts?.length) params.set("districts", filters.districts.join(","));
+    if (filters?.states?.length) params.set("states", filters.states.join(","));
+    if (filters?.corridors?.length) params.set("corridors", filters.corridors.join(","));
+    if (filters?.visibility && filters.visibility !== "active") {
+      params.set("visibility", filters.visibility);
+    }
     return this.request<unknown[]>(`/locations?${params.toString()}`);
+  }
+
+  getLocationGeoFacets() {
+    return this.request<{
+      cities: string[];
+      districts: string[];
+      states: string[];
+      corridors: string[];
+      markets: Array<{
+        id: string;
+        name: string;
+        district: string;
+        state: string;
+        stateCode: string;
+        siteCodePrefix: string;
+        center: { lat: number; lng: number };
+        defaultZoom: number;
+        corridors: string[];
+      }>;
+    }>("/locations/geo-facets");
   }
 
   listLocationAvailability(from: string, to: string) {
@@ -226,8 +264,34 @@ export class ApiClient {
     });
   }
 
-  getLocation(id: string) {
-    return this.request<unknown>(`/locations/${id}`);
+  getLocation(id: string, flight?: { from?: string; to?: string }) {
+    const params = new URLSearchParams();
+    if (flight?.from) params.set("from", flight.from);
+    if (flight?.to) params.set("to", flight.to);
+    const qs = params.toString();
+    return this.request<unknown>(`/locations/${id}${qs ? `?${qs}` : ""}`);
+  }
+
+  /** Heartbeat: this user is exploring a site right now. */
+  touchLocationPresence(id: string, surface?: "list" | "detail" | "map") {
+    return this.request<{ ok: boolean; expiresIn: number }>(`/locations/${id}/presence`, {
+      method: "POST",
+      body: JSON.stringify({ surface }),
+    });
+  }
+
+  /** Batch: live explorers + draft/proposed plan counts for conversion signals. */
+  getSiteInterest(locationIds: string[]) {
+    return this.request<{
+      byLocationId: Record<
+        string,
+        { viewersNow: number; inActivePlans: number }
+      >;
+      computedAt: string;
+    }>("/locations/site-interest", {
+      method: "POST",
+      body: JSON.stringify({ locationIds }),
+    });
   }
 
   updateLocation(id: string, data: Record<string, unknown>) {
@@ -332,9 +396,59 @@ export class ApiClient {
       inventoryIds?: string[];
       locationIds?: string[];
       holdInventory?: boolean;
+      status?: "DRAFT" | "PROPOSED";
     }
   ) {
     return this.request<unknown>(`/campaigns/${campaignId}/media-plans/from-selection`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** Play-based AdTech quote (feasibility + price breakdown). Read-only. */
+  bookingQuote(data: {
+    inventoryId: string;
+    startDate: string;
+    endDate: string;
+    playsPerDay: number;
+    creativeDurationSec?: number;
+    distributionMode?:
+      | "AUTOMATIC"
+      | "ALL_DAY"
+      | "MORNING"
+      | "AFTERNOON"
+      | "EVENING"
+      | "CUSTOM";
+    customTimeStartMinute?: number;
+    customTimeEndMinute?: number;
+    loopDurationSec?: number;
+    baseRateAmount?: number;
+    ratePeriod?: string;
+    gstPercent?: number;
+  }) {
+    return this.request<unknown>("/booking/quote", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  updateMediaPlanStatus(
+    campaignId: string,
+    planId: string,
+    status: "APPROVED" | "REJECTED" | "PROPOSED" | "DRAFT"
+  ) {
+    return this.request<unknown>(`/campaigns/${campaignId}/media-plans/${planId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  respondSiteRequest(
+    campaignId: string,
+    planId: string,
+    data: { action: "APPROVE" | "REJECT"; inventoryIds?: string[] }
+  ) {
+    return this.request<unknown>(`/campaigns/${campaignId}/media-plans/${planId}/respond`, {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -449,7 +563,109 @@ export class ApiClient {
   }
 
   getLocationScore(locationId: string) {
-    return this.request<unknown | null>(`/locations/${locationId}/score`);
+    return this.request<{
+      id: string;
+      locationId: string;
+      scoringConfigId: string;
+      overallScore: number;
+      overallConfidence: number;
+      status: string;
+      components: unknown;
+      methodology?: unknown;
+      configName?: string;
+      configUpdatedAt?: string;
+      computedAt: string;
+    } | null>(`/locations/${locationId}/score`);
+  }
+
+  getScoringConfig() {
+    return this.request<{
+      id: string;
+      name: string;
+      isActive: boolean;
+      weights: Record<string, number>;
+      methodology: unknown;
+      updatedAt: string;
+      canEdit: boolean;
+    }>("/scoring-config");
+  }
+
+  updateScoringConfig(data: {
+    name?: string;
+    weights?: Record<string, number>;
+    methodology?: unknown;
+  }) {
+    return this.request<unknown>("/scoring-config", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  getLocationScoreInputs(locationId: string) {
+    return this.request<{
+      locationId: string;
+      scenario?: {
+        scenarioTitle: string;
+        scenarioSummary: string;
+        trustNotes: string[];
+      };
+      factors: Array<{
+        factor: string;
+        attributeKey: string;
+        score: number | null;
+        confidence: number | null;
+        evidence: string[];
+        reasonIds?: string[];
+        provenance: string | null;
+        source: string | null;
+        updatedAt: string | null;
+      }>;
+    }>(`/locations/${locationId}/score-inputs`);
+  }
+
+  updateLocationScoreInputs(
+    locationId: string,
+    factors: Array<{
+      factor: string;
+      score: number;
+      confidence?: number;
+      evidence?: string[];
+      reasonIds?: string[];
+      source?: string;
+    }>,
+    scenario?: {
+      scenarioTitle?: string;
+      scenarioSummary?: string;
+      trustNotes?: string[];
+    }
+  ) {
+    return this.request<unknown>(`/locations/${locationId}/score-inputs`, {
+      method: "PUT",
+      body: JSON.stringify({ factors, scenario }),
+    });
+  }
+
+  recomputeLocationScore(locationId: string) {
+    return this.request<unknown>(`/locations/${locationId}/score/recompute`, {
+      method: "POST",
+    });
+  }
+
+  getLocationCampaignHistory(locationId: string, limit = 6) {
+    return this.request<{
+      campaigns: Array<{
+        campaignId: string;
+        campaignName: string;
+        advertiserName: string;
+        planId: string;
+        planName: string;
+        planStatus: string;
+        startDate: string | null;
+        endDate: string | null;
+        updatedAt: string;
+      }>;
+      total: number;
+    }>(`/locations/${locationId}/campaign-history?limit=${limit}`);
   }
 
   requestAnalysis(locationId: string, operation?: string) {
@@ -485,12 +701,18 @@ export class ApiClient {
   }
 
   getPlatformConfig() {
-    return this.request<{ defaultSkyarcMarginPercent: number; currency: string }>(
-      "/platform/config"
-    );
+    return this.request<{
+      defaultSkyarcMarginPercent: number;
+      currency: string;
+      showVendorDetailsOnLocationPage: boolean;
+    }>("/platform/config");
   }
 
-  updatePlatformConfig(data: { defaultSkyarcMarginPercent?: number; currency?: string }) {
+  updatePlatformConfig(data: {
+    defaultSkyarcMarginPercent?: number;
+    currency?: string;
+    showVendorDetailsOnLocationPage?: boolean;
+  }) {
     return this.request<unknown>("/platform/config", {
       method: "PATCH",
       body: JSON.stringify(data),
@@ -546,6 +768,8 @@ export class ApiClient {
       inventoryType?: string;
       notes?: string;
       status?: string;
+      slotCapacity?: number;
+      staticSpecsJson?: Record<string, unknown>;
     }
   ) {
     return this.request<unknown>(`/screens/${screenId}/inventories`, {
@@ -577,6 +801,8 @@ export class ApiClient {
       inventoryType?: string;
       notes?: string;
       status?: string;
+      slotCapacity?: number;
+      staticSpecsJson?: Record<string, unknown>;
     }
   ) {
     return this.request<unknown>(`/inventories/${inventoryId}`, {

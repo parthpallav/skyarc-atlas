@@ -29,6 +29,7 @@ interface CampaignDetail {
   endDate?: string | null;
   createdByUserId?: string | null;
   canEdit?: boolean;
+  isSiteRequest?: boolean;
   advertiser?: { name: string };
   brief?: {
     structuredRequirementsJson?: {
@@ -43,9 +44,18 @@ interface CampaignDetail {
       kpis?: string[];
       constraints?: string[];
       additionalNotes?: string;
+      requestKind?: string;
     } | null;
   } | null;
   mediaPlans?: MediaPlanRow[];
+}
+
+function isSiteRequestCampaign(campaign: CampaignDetail): boolean {
+  return (
+    Boolean(campaign.isSiteRequest) ||
+    campaign.brief?.structuredRequirementsJson?.requestKind === "SITE_REQUEST" ||
+    campaign.name.toLowerCase().includes("request")
+  );
 }
 
 export default function CampaignDetailPage() {
@@ -76,6 +86,18 @@ export default function CampaignDetailPage() {
     const saved = campaign?.brief?.structuredRequirementsJson?.budget;
     if (saved) setBudget(saved);
   }, [campaign]);
+
+  // Site requests use the dedicated Requests experience
+  useEffect(() => {
+    if (!campaign) return;
+    if (!isSiteRequestCampaign(campaign)) return;
+    const only = campaign.mediaPlans?.[0];
+    if (only?.id) {
+      router.replace(`/requests/${campaign.id}/${only.id}`);
+    } else {
+      router.replace("/requests");
+    }
+  }, [campaign, router]);
 
   const optimizeMutation = useMutation({
     mutationFn: async () => {
@@ -145,6 +167,13 @@ export default function CampaignDetailPage() {
   }
 
   const canEdit = campaign.canEdit ?? canMutateCampaign(campaign);
+  const isSiteRequest = isSiteRequestCampaign(campaign);
+
+  if (isSiteRequest && campaign.mediaPlans?.[0]?.id) {
+    return (
+      <div className="py-12 text-center text-sm text-muted">Opening request…</div>
+    );
+  }
 
   return (
     <div className="max-w-3xl space-y-6 pb-12">
@@ -153,14 +182,18 @@ export default function CampaignDetailPage() {
         className="inline-flex items-center gap-1 text-sm text-muted hover:text-slate-900 font-medium"
       >
         <ArrowLeft className="w-4 h-4" />
-        Campaigns
+        {isSiteRequest ? "Requests" : "Campaigns"}
       </Link>
 
       <PageHeader
         title={campaign.name}
-        description="Saved campaign. Create a plan now, or book later."
+        description={
+          isSiteRequest
+            ? "Site request for the selected locations and dates. Approve to book inventory."
+            : "Saved campaign. Create a plan now, or book later."
+        }
         action={
-          canEdit ? (
+          canEdit && !isSiteRequest ? (
             <div className="flex items-center gap-2">
               <Link href={`/campaigns/${campaign.id}/edit`} className="btn-secondary text-xs gap-1.5 py-2 px-3">
                 <Pencil className="w-4 h-4" />
@@ -201,20 +234,26 @@ export default function CampaignDetailPage() {
       <section className="card-surface p-5 sm:p-6 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h2 className="font-bold text-slate-900 text-base">Media plans</h2>
+            <h2 className="font-bold text-slate-900 text-base">
+              {isSiteRequest ? "Request plans" : "Media plans"}
+            </h2>
             <p className="text-xs text-muted mt-0.5">
-              Build a site mix now, or come back later to book.
+              {isSiteRequest
+                ? "Open the request to approve, reject, or view pricing."
+                : "Build a site mix now, or come back later to book."}
             </p>
           </div>
-          <button
-            type="button"
-            className="btn-primary gap-2"
-            disabled={optimizeMutation.isPending}
-            onClick={() => optimizeMutation.mutate()}
-          >
-            <Layers className="w-4 h-4" />
-            {optimizeMutation.isPending ? "Creating plan…" : "Create media plan"}
-          </button>
+          {!isSiteRequest ? (
+            <button
+              type="button"
+              className="btn-primary gap-2"
+              disabled={optimizeMutation.isPending}
+              onClick={() => optimizeMutation.mutate()}
+            >
+              <Layers className="w-4 h-4" />
+              {optimizeMutation.isPending ? "Creating plan…" : "Create media plan"}
+            </button>
+          ) : null}
         </div>
 
         {(!campaign.mediaPlans || campaign.mediaPlans.length === 0) && (

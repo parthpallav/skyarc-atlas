@@ -383,6 +383,40 @@ export const SKYARC_LOGO_WHITE_URL =
 
 export { SAMPLE_CAMPAIGN, SAMPLE_CAMPAIGN_BRIEF, CAMPAIGN_OBJECTIVES } from "./campaign-brief.js";
 export {
+  InventoryClass,
+  DigitalSubtype,
+  StaticLighting,
+  INVENTORY_CLASS_LABELS,
+  DIGITAL_SUBTYPE_LABELS,
+  STATIC_LIGHTING_LABELS,
+  inventoryTypeFromTaxonomy,
+  inventoryClassFromType,
+  digitalSubtypeFromType,
+  DEFAULT_DIGITAL_LED_PRODUCTION,
+  DEFAULT_DIGITAL_KIOSK_PRODUCTION,
+  defaultProductionFor,
+  parseInventorySpecsJson,
+  buildInventorySpecsJson,
+  type DigitalProductionSpecs,
+  type StaticProductionSpecs,
+  type ConceptualProductionSpecs,
+  type InventorySpecsJson,
+} from "./inventory-taxonomy.js";
+export {
+  MARKET_CITIES,
+  DEFAULT_MARKET_CITY_ID,
+  getMarketCity,
+  listMarketCities,
+  listStates,
+  listDistricts,
+  corridorsForCity,
+  siteCodePrefixForCity,
+  buildSkyarcSiteCode,
+  normalizeCityName,
+  type MarketCity,
+  type MarketCorridor,
+} from "./markets.js";
+export {
   looksLikeVendorCode,
   stripVendorCodeFromTitle,
   publicSkyarcSiteCode,
@@ -390,15 +424,42 @@ export {
   customerSiteTitle,
   siteNameForAudience,
   siteLabelForAudience,
+  LocationBookingBadge,
+  locationBookingBadge,
   buildSiteCreativeSpec,
   stripVendorTokensFromText,
 } from "./site-display.js";
+export type { LocationBookingBadge as LocationBookingStatus } from "./site-display.js";
 export {
   SCORING_FACTOR_CLIENT,
   PLAN_HIGHLIGHT_FACTORS,
   scoreBand,
   type ClientFactorMeta,
 } from "./scoring-display.js";
+export {
+  DEFAULT_SCORING_METHODOLOGY,
+  SCORING_FACTOR_ATTRIBUTE_KEY,
+  parseScoringMethodology,
+  type ScoringFactorKey,
+  type ScoringMethodology,
+  type ScoringMethodologyFactor,
+} from "./scoring-methodology.js";
+export {
+  EMPTY_LOCATION_SCORING,
+  parseLocationScoring,
+  type LocationScoringScenario,
+} from "./location-scoring.js";
+export {
+  SCORING_REASON_PRESETS,
+  SITE_SCENARIO_PRESETS,
+  scoringReasonsForFactor,
+  scoringReasonById,
+  suggestedScoreFromReasonIds,
+  parseEvidenceReasonIds,
+  type ScoringReasonPreset,
+  type ScoringReasonBand,
+  type SiteScenarioPreset,
+} from "./scoring-reasons.js";
 export {
   type AuthUser,
   type LocationRecord,
@@ -411,6 +472,8 @@ export {
   isReadOnly,
   canAccessCampaigns,
   canWriteCampaigns,
+  canApproveMediaPlan,
+  canRespondToSiteRequest,
   canMutateCampaign,
   canAccessAdmin,
   canAccessLocations,
@@ -420,6 +483,14 @@ export {
   organizationIdForNewLocation,
   getDefaultLandingPath,
 } from "./rbac.js";
+export {
+  SITE_REQUEST_KIND,
+  isSiteRequestBrief,
+  siteRequestBrief,
+  campaignLifecycleLabel,
+  type SiteRequestKind,
+  type CampaignLifecycleStatus,
+} from "./site-request.js";
 export {
   isSuperAdmin,
   isAdminRole,
@@ -468,3 +539,27 @@ export {
   summarizeLocationLiveInventory,
 } from "./slot-occupancy.js";
 export type { SlotWindowLike, LiveBookingStatus } from "./slot-occupancy.js";
+export {
+  DistributionMode,
+  DeliveryMode,
+  DEFAULT_DISTRIBUTION_MODE,
+  DEFAULT_OPERATING_HOURS,
+  TIMING_PRESETS,
+  resolveEligibleHours,
+  eligibleMinutesPerDay,
+  playsPerLoop,
+  dailyPlayCapacity,
+  totalTargetPlays,
+  eligibleCampaignDays,
+  slotsRequiredForPlayCampaign,
+  assessPlayFeasibility,
+  type OperatingHours,
+  type FeasibilityResult,
+} from "./delivery.js";
+export {
+  calculatePlayBasedPrice,
+  type PricingModel,
+  type PriceLineItem,
+  type PriceBreakdown,
+  type PlayBasedPriceInput,
+} from "./pricing-engine.js";

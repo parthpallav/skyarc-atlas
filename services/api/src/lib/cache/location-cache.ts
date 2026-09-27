@@ -19,8 +19,16 @@ export function locationListCacheKey(
   return `locations:list:${role}:${userId}:${page}:${limit}`;
 }
 
-export function locationDetailCacheKey(id: string, role: string): string {
-  return `locations:detail:${role}:${id}`;
+export function locationDetailCacheKey(
+  id: string,
+  role: string,
+  from?: string,
+  to?: string,
+  vendorDetails?: boolean
+): string {
+  const flight = from && to ? `${from}:${to}` : "default";
+  const vendor = vendorDetails === false ? "novendor" : "vendor";
+  return `locations:detail:${role}:${id}:${flight}:${vendor}`;
 }
 
 export function getCachedLocationResponse<T>(key: string): T | undefined {
@@ -33,12 +41,15 @@ export function setCachedLocationResponse<T>(key: string, value: T): void {
   cache.set(key, value);
 }
 
-/** Call after any location or cover-photo change. */
+/** Call after any location, cover-photo, or platform showcase-flag change. */
 export function invalidateLocationCaches(locationId?: string): void {
   if (locationId) {
     cache.deleteWhere(
-      (key) => key.startsWith("locations:detail:") && key.endsWith(`:${locationId}`)
+      (key) => key.startsWith("locations:detail:") && key.includes(`:${locationId}:`)
     );
+  } else {
+    // Full flush — e.g. showcase flag flipped on platform settings
+    cache.deleteWhere((key) => key.startsWith("locations:detail:"));
   }
   cache.deleteWhere((key) => key.startsWith("locations:list:"));
 }

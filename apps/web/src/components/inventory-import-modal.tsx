@@ -214,7 +214,7 @@ export function InventoryImportModal({
                   </div>
                   <div className="inline-flex items-center gap-1.5 text-xs text-primary font-semibold bg-white border border-violet-100 px-3 py-1.5 rounded-full shadow-xs">
                     <Layers className="w-3.5 h-3.5" />
-                    Auto-maps Rajkot locations, IIDs, SQFT & Rate Cards
+                    Auto-maps city, corridor, IIDs, SQFT & rate cards
                   </div>
                 </div>
               ) : (

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSiteCreativeSpec,
   customerSitePlaceName,
+  locationBookingBadge,
   looksLikeVendorCode,
   publicSkyarcSiteCode,
   siteLabelForAudience,
@@ -26,10 +27,100 @@ describe("customer site display", () => {
     expect(customerSitePlaceName({ name: "H-0101", road: "Kalawad Road" })).toBe("Kalawad Road");
   });
 
-  it("shows Skyarc codes to customers and vendor prefixes internally", () => {
+  it("shows place names to customers and vendor prefixes internally", () => {
     const loc = { name: "H-0101 — Kalawad Road", skyarcSiteCode: "SKY-RAJ-009", id: "x" };
-    expect(siteLabelForAudience(loc, true)).toBe("SKY-RAJ-009");
+    expect(siteLabelForAudience(loc, true)).toBe("Kalawad Road");
     expect(siteLabelForAudience(loc, false)).toBe("H-0101");
+  });
+
+  it("badges locations as available, on hold, or unavailable", () => {
+    const now = new Date("2026-09-09T00:00:00Z");
+    expect(
+      locationBookingBadge({
+        now,
+        inventories: [{ status: "AVAILABLE", availabilityWindows: [] }],
+      })
+    ).toBe("AVAILABLE");
+    expect(
+      locationBookingBadge({
+        now,
+        inventories: [
+          {
+            status: "AVAILABLE",
+            inventoryType: "STATIC_BILLBOARD",
+            availabilityWindows: [
+              { status: "HELD", startDate: "2026-09-01", endDate: "2026-09-30" },
+            ],
+          },
+        ],
+      })
+    ).toBe("ON_HOLD");
+    expect(
+      locationBookingBadge({
+        now,
+        inventories: [
+          {
+            status: "AVAILABLE",
+            inventoryType: "STATIC_BILLBOARD",
+            availabilityWindows: [
+              { status: "BOOKED", startDate: "2026-09-01", endDate: "2026-09-30" },
+            ],
+          },
+        ],
+      })
+    ).toBe("UNAVAILABLE");
+  });
+
+  it("keeps digital sites available when only some slots are booked", () => {
+    const now = new Date("2026-09-09T00:00:00Z");
+    expect(
+      locationBookingBadge({
+        now,
+        startDate: new Date("2026-09-01T00:00:00Z"),
+        endDate: new Date("2026-09-30T23:59:59Z"),
+        inventories: [
+          {
+            status: "AVAILABLE",
+            inventoryType: "DIGITAL_BILLBOARD",
+            slotCapacity: 6,
+            availabilityWindows: [
+              {
+                status: "BOOKED",
+                startDate: "2026-09-01",
+                endDate: "2026-09-30",
+                slotsConsumed: 1,
+              },
+            ],
+          },
+        ],
+      })
+    ).toBe("AVAILABLE");
+  });
+
+  it("marks digital unavailable only when every slot is taken", () => {
+    const now = new Date("2026-09-09T00:00:00Z");
+    expect(
+      locationBookingBadge({
+        now,
+        startDate: new Date("2026-09-01T00:00:00Z"),
+        endDate: new Date("2026-09-30T23:59:59Z"),
+        inventories: [
+          {
+            status: "AVAILABLE",
+            inventoryType: "DIGITAL_BILLBOARD",
+            slotCapacity: 6,
+            availabilityWindows: [
+              {
+                status: "BOOKED",
+                startDate: "2026-09-01",
+                endDate: "2026-09-30",
+                slotsConsumed: 6,
+              },
+            ],
+          },
+        ],
+      })
+    ).toBe("UNAVAILABLE");
   });
 
   it("builds a size-based creative spec", () => {

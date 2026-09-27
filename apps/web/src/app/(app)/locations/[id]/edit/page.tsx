@@ -3,35 +3,23 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
-import { SurveyStatus } from "@skyarc/shared";
 import { createWebApiClient } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { PageHeader } from "@/components/page-header";
 import { LocationPhotoEditor } from "@/components/location-photo-editor";
-
-const inputClass =
-  "w-full rounded-lg border border-violet-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30";
+import { LocationInventoryPanel } from "@/components/location-inventory-panel";
+import { LocationInventoryWizard } from "@/components/location-inventory-wizard";
 
 export default function LocationEditPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { canEditLocation } = usePermissions();
-
-  const [name, setName] = useState("");
-  const [latitude, setLatitude] = useState("");
-  const [longitude, setLongitude] = useState("");
-  const [address, setAddress] = useState("");
-  const [road, setRoad] = useState("");
-  const [roadType, setRoadType] = useState("");
-  const [junction, setJunction] = useState("");
-  const [mountingType, setMountingType] = useState("");
-  const [mountingNotes, setMountingNotes] = useState("");
-  const [surveyStatus, setSurveyStatus] = useState<string>(SurveyStatus.DRAFT);
+  const { canEditLocation, isInternal } = usePermissions();
   const [error, setError] = useState("");
+  const [ready, setReady] = useState(false);
 
   const { data: location, isLoading } = useQuery({
     queryKey: ["location", id],
@@ -51,199 +39,102 @@ export default function LocationEditPage() {
         location.organizationId != null ? String(location.organizationId) : null,
       archivedAt: location.archivedAt as Date | null | undefined,
     };
-    if (!canEditLocation(record)) {
+    const isOwned = (location.isOwned as boolean | undefined) !== false;
+    if (!canEditLocation(record) || !(isOwned || isInternal)) {
       router.replace(`/locations/${id}`);
       return;
     }
-    setName(String(location.name ?? ""));
-    setLatitude(String(location.latitude ?? ""));
-    setLongitude(String(location.longitude ?? ""));
-    setAddress(String(location.address ?? ""));
-    setRoad(String(location.road ?? ""));
-    setRoadType(String(location.roadType ?? ""));
-    setJunction(String(location.junction ?? ""));
-    setMountingType(String(location.mountingType ?? ""));
-    setMountingNotes(String(location.mountingNotes ?? ""));
-    setSurveyStatus(String(location.surveyStatus ?? SurveyStatus.DRAFT));
-  }, [location, canEditLocation, id, router]);
+    setReady(true);
+  }, [location, canEditLocation, isInternal, id, router]);
 
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      const client = createWebApiClient();
-      const lat = Number(latitude);
-      const lng = Number(longitude);
-      if (!name.trim()) throw new Error("Name is required");
-      if (Number.isNaN(lat) || lat < -90 || lat > 90) throw new Error("Invalid latitude");
-      if (Number.isNaN(lng) || lng < -180 || lng > 180) throw new Error("Invalid longitude");
-
-      return client.updateLocation(id, {
-        name: name.trim(),
-        latitude: lat,
-        longitude: lng,
-        address: address.trim() || undefined,
-        road: road.trim() || undefined,
-        roadType: roadType.trim() || undefined,
-        junction: junction.trim() || undefined,
-        mountingType: mountingType.trim() || undefined,
-        mountingNotes: mountingNotes.trim() || undefined,
-        surveyStatus,
-      });
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["location", id] });
-      await queryClient.invalidateQueries({ queryKey: ["locations"] });
-      router.push(`/locations/${id}`);
-    },
-    onError: (err) => {
-      setError(err instanceof Error ? err.message : "Failed to save");
-    },
-  });
-
-  if (isLoading) {
+  if (isLoading || !ready) {
     return (
-      <div className="max-w-2xl mx-auto">
-        <div className="h-8 w-48 bg-slate-200 rounded animate-pulse mb-6" />
-        <div className="h-96 card-surface animate-pulse bg-slate-50" />
+      <div className="mx-auto max-w-2xl">
+        <div className="mb-6 h-8 w-48 animate-pulse rounded bg-slate-200" />
+        <div className="card-surface h-96 animate-pulse bg-slate-50" />
       </div>
     );
   }
 
   if (!location) {
     return (
-      <div className="text-center py-12">
-        <p className="text-red-600 mb-4">Location not found</p>
-        <Link href="/locations" className="text-primary hover:underline text-sm font-medium">
+      <div className="py-12 text-center">
+        <p className="mb-4 text-red-600">Location not found</p>
+        <Link href="/locations" className="text-sm font-medium text-primary hover:underline">
           Back to locations
         </Link>
       </div>
     );
   }
 
+  const showVendorRates =
+    (location.showVendorDetails as boolean | undefined) !== false;
+
   return (
-    <div className="max-w-4xl mx-auto w-full">
+    <div className="mx-auto w-full max-w-4xl pb-16">
       <Link
         href={`/locations/${id}`}
-        className="inline-flex items-center gap-1 text-sm text-muted hover:text-slate-900 mb-4 font-medium"
+        className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-muted hover:text-slate-900"
       >
-        <ArrowLeft className="w-4 h-4" />
+        <ArrowLeft className="h-4 w-4" />
         Back to location
       </Link>
 
-      <PageHeader title="Edit location" description={String(location.name)} />
+      <PageHeader
+        title="Edit location"
+        description="Site & market → format class → production specs (same flow as Add)"
+      />
 
-      <section className="card-surface p-5 sm:p-6 mb-4">
-        <h2 className="font-semibold text-slate-900 mb-4">Site photos</h2>
+      {error ? (
+        <p className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          {error}
+        </p>
+      ) : null}
+
+      <section className="card-surface mb-4 p-5 sm:p-6">
+        <h2 className="mb-4 font-semibold text-slate-900">Site photos</h2>
         <LocationPhotoEditor locationId={id} />
       </section>
 
-      <form
-        className="card-surface p-5 sm:p-6 space-y-5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setError("");
-          saveMutation.mutate();
-        }}
-      >
-        {error && (
-          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-            {error}
-          </p>
-        )}
+      <section className="card-surface mb-4 p-5 sm:p-6">
+        <h2 className="mb-1 font-semibold text-slate-900">Site, class & specs</h2>
+        <p className="mb-4 text-sm text-muted">
+          Update market geo and optionally add another face with production specs. Leave product
+          code blank to save site details only.
+        </p>
+        <LocationInventoryWizard
+          mode="edit"
+          allowSiteOnlySave
+          initial={{
+            id,
+            name: String(location.name ?? ""),
+            latitude: location.latitude as number,
+            longitude: location.longitude as number,
+            address: location.address ? String(location.address) : "",
+            road: location.road ? String(location.road) : "",
+            junction: location.junction ? String(location.junction) : "",
+            city: location.city ? String(location.city) : "",
+            district: location.district ? String(location.district) : "",
+            state: location.state ? String(location.state) : "",
+            mountingType: location.mountingType ? String(location.mountingType) : "",
+            mountingNotes: location.mountingNotes ? String(location.mountingNotes) : "",
+          }}
+          onError={setError}
+          onSuccess={async () => {
+            await queryClient.invalidateQueries({ queryKey: ["location", id] });
+            await queryClient.invalidateQueries({ queryKey: ["locations"] });
+            await queryClient.invalidateQueries({ queryKey: ["location-screens", id] });
+            await queryClient.invalidateQueries({ queryKey: ["screen-inventories"] });
+            router.push(`/locations/${id}`);
+          }}
+        />
+      </section>
 
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
-          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Latitude</label>
-            <input
-              className={inputClass}
-              type="number"
-              step="any"
-              value={latitude}
-              onChange={(e) => setLatitude(e.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Longitude</label>
-            <input
-              className={inputClass}
-              type="number"
-              step="any"
-              value={longitude}
-              onChange={(e) => setLongitude(e.target.value)}
-              required
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Survey status</label>
-          <select
-            className={inputClass}
-            value={surveyStatus}
-            onChange={(e) => setSurveyStatus(e.target.value)}
-          >
-            {Object.values(SurveyStatus).map((status) => (
-              <option key={status} value={status}>
-                {status.replace(/_/g, " ")}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Address</label>
-          <input className={inputClass} value={address} onChange={(e) => setAddress(e.target.value)} />
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Road</label>
-            <input className={inputClass} value={road} onChange={(e) => setRoad(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Road type</label>
-            <input className={inputClass} value={roadType} onChange={(e) => setRoadType(e.target.value)} />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Junction</label>
-            <input className={inputClass} value={junction} onChange={(e) => setJunction(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Mounting type</label>
-            <input
-              className={inputClass}
-              value={mountingType}
-              onChange={(e) => setMountingType(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Mounting notes</label>
-          <textarea
-            className={`${inputClass} min-h-[88px]`}
-            value={mountingNotes}
-            onChange={(e) => setMountingNotes(e.target.value)}
-          />
-        </div>
-
-        <div className="flex flex-wrap gap-3 pt-2">
-          <button type="submit" className="btn-primary" disabled={saveMutation.isPending}>
-            {saveMutation.isPending ? "Saving…" : "Save changes"}
-          </button>
-          <Link href={`/locations/${id}`} className="btn-secondary">
-            Cancel
-          </Link>
-        </div>
-      </form>
+      <LocationInventoryPanel
+        locationId={id}
+        canWrite
+        showVendorRates={showVendorRates}
+      />
     </div>
   );
 }

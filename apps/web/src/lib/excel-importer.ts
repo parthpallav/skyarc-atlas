@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { getMarketCity } from "@skyarc/shared";
 
 export interface ParsedInventoryItem {
   name: string;
@@ -10,6 +11,7 @@ export interface ParsedInventoryItem {
   longitude: number;
   city?: string;
   district?: string;
+  state?: string;
   area?: string;
   locationDescription?: string;
   mediaType: string;
@@ -29,8 +31,8 @@ export interface ExcelParseResult {
   errors: string[];
 }
 
-// Calibrated Rajkot geographical landmarks & corridor centers
-const RAJKOT_AREA_COORDS: Record<string, { lat: number; lng: number }> = {
+// Landmark fallbacks for common Gujarat corridors (seed / import datasets)
+const AREA_LANDMARK_COORDS: Record<string, { lat: number; lng: number }> = {
   "150ft ring road": { lat: 22.2850, lng: 70.7680 },
   "150 feet ring road": { lat: 22.2850, lng: 70.7680 },
   "80 feet road": { lat: 22.2808, lng: 70.8062 },
@@ -187,6 +189,7 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
           colIndexMap.vendorMediaCode = cIdx;
         else if (norm === "district") colIndexMap.district = cIdx;
         else if (norm === "city") colIndexMap.city = cIdx;
+        else if (norm === "state") colIndexMap.state = cIdx;
         else if (norm === "area") colIndexMap.area = cIdx;
         else if (norm === "location" || norm === "location description" || norm === "site description" || norm === "site location") colIndexMap.location = cIdx;
         else if (norm === "lat" || norm === "latitude") colIndexMap.latitude = cIdx;
@@ -230,8 +233,15 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
     const mediaTypeRaw = colIndexMap.mediaType != null ? extractCellValue(row[colIndexMap.mediaType]) : undefined;
     const area = colIndexMap.area != null ? extractCellValue(row[colIndexMap.area]) : "";
     const locDesc = colIndexMap.location != null ? extractCellValue(row[colIndexMap.location]) : "";
-    const city = colIndexMap.city != null ? extractCellValue(row[colIndexMap.city]) : "Rajkot";
-    const district = colIndexMap.district != null ? extractCellValue(row[colIndexMap.district]) : "Rajkot";
+    const defaultMarket = getMarketCity();
+    const city =
+      colIndexMap.city != null ? extractCellValue(row[colIndexMap.city]) : defaultMarket.name;
+    const district =
+      colIndexMap.district != null
+        ? extractCellValue(row[colIndexMap.district])
+        : defaultMarket.district;
+    const state =
+      colIndexMap.state != null ? extractCellValue(row[colIndexMap.state]) : defaultMarket.state;
 
     // Latitude & Longitude
     let lat = colIndexMap.latitude != null ? parseNumber(row[colIndexMap.latitude]) : undefined;
@@ -240,14 +250,15 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
     // Fallback coordinates from Area/Location matching
     if (lat == null || lng == null) {
       const combinedText = `${area} ${locDesc}`.toLowerCase().trim();
-      const match = Object.entries(RAJKOT_AREA_COORDS).find(([k]) => combinedText.includes(k));
+      const match = Object.entries(AREA_LANDMARK_COORDS).find(([k]) => combinedText.includes(k));
       if (match) {
         const jitter = ((r % 10) - 5) * 0.0015;
         lat = match[1].lat + jitter;
         lng = match[1].lng + jitter;
       } else {
-        lat = 22.3039 + ((r % 20) - 10) * 0.002;
-        lng = 70.8022 + ((r % 20) - 10) * 0.002;
+        const market = getMarketCity(city);
+        lat = market.center.lat + ((r % 20) - 10) * 0.002;
+        lng = market.center.lng + ((r % 20) - 10) * 0.002;
       }
     }
 
@@ -269,7 +280,7 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
 
     const siteName = vendorMediaCode
       ? `${vendorMediaCode} - ${area || locDesc || "Billboard Site"}`
-      : `${area || locDesc || "Rajkot Site"} #${r}`;
+      : `${area || locDesc || `${city} Site`} #${r}`;
 
     items.push({
       name: siteName,
@@ -279,6 +290,7 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
       longitude: Number(lng.toFixed(6)),
       city,
       district,
+      state,
       area,
       locationDescription: locDesc,
       mediaType: normalizeMediaType(mediaTypeRaw),

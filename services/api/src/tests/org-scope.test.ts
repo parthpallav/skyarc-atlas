@@ -46,6 +46,12 @@ describe("organization scoping", () => {
     expect(buildLocationListWhere(admin)).toEqual({ archivedAt: null });
   });
 
+  it("internal admin can list only hidden sites", () => {
+    expect(buildLocationListWhere(admin, undefined, "hidden")).toEqual({
+      archivedAt: { not: null },
+    });
+  });
+
   it("vendor list filter is scoped to organization", () => {
     expect(buildLocationListWhere(vendorA)).toEqual({
       archivedAt: null,
@@ -53,8 +59,15 @@ describe("organization scoping", () => {
     });
   });
 
-  it("vendor discovery list excludes own org", () => {
-    expect(buildLocationListWhere(vendorA, "discovery")).toEqual({
+  it("vendor can list own hidden inventory", () => {
+    expect(buildLocationListWhere(vendorA, "mine", "hidden")).toEqual({
+      archivedAt: { not: null },
+      organizationId: "org-vendor-a",
+    });
+  });
+
+  it("vendor discovery list excludes own org and never shows hidden", () => {
+    expect(buildLocationListWhere(vendorA, "discovery", "hidden")).toEqual({
       archivedAt: null,
       NOT: { organizationId: "org-vendor-a" },
     });
@@ -65,8 +78,18 @@ describe("organization scoping", () => {
     expect(canAccessLocation(vendorA, locationA)).toBe(true);
   });
 
+  it("vendor can access own hidden site to restore it", () => {
+    expect(
+      canAccessLocation(vendorA, { ...locationA, archivedAt: new Date() })
+    ).toBe(true);
+    expect(
+      canAccessLocation(vendorA, { ...locationB, archivedAt: new Date() })
+    ).toBe(false);
+  });
+
   it("admin can access any location", () => {
     expect(canAccessLocation(admin, locationB)).toBe(true);
+    expect(canAccessLocation(admin, { ...locationB, archivedAt: new Date() })).toBe(true);
   });
 
   it("vendor can write only own organization locations", () => {

@@ -54,6 +54,39 @@ describe("goal-fit alternatives", () => {
     expect(picked[0]?.fitReason).toBe("On your target corridor");
   });
 
+  it("boosts sites in the campaign target city", () => {
+    const inCity = site({
+      inventoryId: "in",
+      locationId: "l1",
+      city: "Ahmedabad",
+      district: "Ahmedabad",
+      state: "Gujarat",
+      overallScore: 60,
+    });
+    const outCity = site({
+      inventoryId: "out",
+      locationId: "l2",
+      city: "Surat",
+      district: "Surat",
+      state: "Gujarat",
+      overallScore: 90,
+    });
+    const inFit = scoreGoalFit(inCity, {
+      objective: "Brand Awareness & Recall",
+      cities: ["Ahmedabad"],
+      budget: 500000,
+      maxLocations: 10,
+    });
+    const outFit = scoreGoalFit(outCity, {
+      objective: "Brand Awareness & Recall",
+      cities: ["Ahmedabad"],
+      budget: 500000,
+      maxLocations: 10,
+    });
+    expect(inFit.score).toBeGreaterThan(outFit.score);
+    expect(inFit.reason).toBe("On your target market");
+  });
+
   it("gives each selected site several swap options from the leftover pool", () => {
     const selected = [
       site({ inventoryId: "a", locationId: "l1", overallScore: 80 }),

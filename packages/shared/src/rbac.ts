@@ -70,12 +70,27 @@ export function isReadOnly(user: Pick<AuthUser, "role">): boolean {
 }
 
 export function canAccessCampaigns(user: Pick<AuthUser, "role">): boolean {
-  return isInternalUser(user) || isClientUser(user);
+  return isInternalUser(user) || isClientUser(user) || isVendorUser(user);
 }
 
-/** Internal planners and brand clients can create/optimize campaigns. Location writes stay blocked for clients. */
+/**
+ * Internal planners, brand clients, and vendors can create campaigns.
+ * Vendors use this for network inventory requests (not full media planning).
+ * Location writes stay blocked for clients. Vendor ops stays read-only.
+ */
 export function canWriteCampaigns(user: Pick<AuthUser, "role">): boolean {
-  return isInternalUser(user) || isClientUser(user);
+  if (isReadOnly(user) && !isClientUser(user)) return false;
+  return isInternalUser(user) || isClientUser(user) || isVendorUser(user);
+}
+
+/** Superadmin, admin, or media planner may approve a full site request. */
+export function canApproveMediaPlan(user: Pick<AuthUser, "role">): boolean {
+  return isInternalUser(user);
+}
+
+/** Vendors (non read-only) may approve/reject requests that include their inventory. */
+export function canRespondToSiteRequest(user: Pick<AuthUser, "role">): boolean {
+  return isVendorUser(user) && !isReadOnly(user);
 }
 
 export function canMutateCampaign(
@@ -83,6 +98,7 @@ export function canMutateCampaign(
   campaign: { createdByUserId?: string | null }
 ): boolean {
   if (normalizedRole(user) === UserRole.SUPERADMIN) return true;
+  if (isInternalUser(user)) return true;
   return Boolean(campaign.createdByUserId) && campaign.createdByUserId === user.id;
 }
 
@@ -107,7 +123,16 @@ export function canAccessOrganizationPage(user: Pick<AuthUser, "role">): boolean
 
 export function canAccessLocation(user: AuthUser, location: LocationRecord): boolean {
   if (location.archivedAt) {
-    return isInternalUser(user);
+    // Hidden sites: internals, or the owning vendor org (so they can restore)
+    if (isInternalUser(user)) return true;
+    if (
+      isVendorRole(user.role) &&
+      !!user.organizationId &&
+      location.organizationId === user.organizationId
+    ) {
+      return true;
+    }
+    return false;
   }
 
   if (isInternalUser(user) || isClientUser(user)) {

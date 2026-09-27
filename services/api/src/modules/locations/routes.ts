@@ -11,14 +11,19 @@ import {
   bulkApplyLocationCommercialBodySchema,
   updateSkyarcLocationCommercialBodySchema,
   bulkLocationActionBodySchema,
+  siteInterestBodySchema,
+  locationPresenceBodySchema,
   uuidSchema,
 } from "@skyarc/validation";
 import {
   SurveyStatus,
   canViewClientPricing,
   isClientUser,
+  isDigitalInventoryType,
+  effectiveSlotCapacity,
   publicSkyarcSiteCode,
   siteNameForAudience,
+  locationBookingBadge,
   parseLocationCommercial,
   parseOrganizationCommercial,
   parseSkyarcLocationCommercial,
@@ -27,6 +32,10 @@ import {
   sanitizeLocationCommercialViewForUser,
   sanitizeOrganizationCommercialForUser,
   summarizeLocationLiveInventory,
+  buildSkyarcSiteCode,
+  normalizeCityName,
+  getMarketCity,
+  listMarketCities,
 } from "@skyarc/shared";
 import { prisma } from "../../lib/prisma.js";
 import { success, listMeta, toIso } from "../../lib/response.js";
@@ -52,14 +61,19 @@ import {
   customerRateForInventory,
   loadEligibleInventory,
   parseInventorySpecs,
+  releaseHoldsForHiddenLocations,
 } from "../../lib/media-planning/run-optimization.js";
+import { syncCampaignLifecycle } from "../../lib/media-planning/campaign-lifecycle.js";
 import {
   getCachedLocationResponse,
   invalidateLocationCaches,
   locationDetailCacheKey,
-  locationListCacheKey,
   setCachedLocationResponse,
 } from "../../lib/cache/location-cache.js";
+import {
+  countLocationViewersBatch,
+  touchLocationPresence,
+} from "../../lib/cache/presence-cache.js";
 
 function serializeLocation(
   user: AuthUser,
@@ -76,6 +90,9 @@ function serializeLocation(
     road: string | null;
     roadType: string | null;
     junction: string | null;
+    city?: string | null;
+    district?: string | null;
+    state?: string | null;
     orientationDeg: number | null;
     mountingType: string | null;
     mountingNotes: string | null;
@@ -87,11 +104,29 @@ function serializeLocation(
     createdAt: Date;
     updatedAt: Date;
     scores?: Array<{ overallScore: number; overallConfidence: number }>;
-    screens?: Array<{ inventories?: Array<{ inventoryType: string }> }>;
+    screens?: Array<{
+      inventoryStatus?: string | null;
+      inventories?: Array<{
+        inventoryType: string;
+        status?: string | null;
+        slotCapacity?: number | null;
+        staticSpecsJson?: unknown;
+        availabilityWindows?: Array<{
+          status: string;
+          startDate?: Date | string | null;
+          endDate?: Date | string | null;
+          slotsConsumed?: number | null;
+          expiresAt?: Date | string | null;
+          notes?: string | null;
+        }>;
+      }>;
+    }>;
+    organization?: { name: string; type: string } | null;
   },
   coverImageUrl?: string | null,
   commercialView?: ReturnType<typeof resolveEffectiveLocationCommercial>,
-  skyarcCommercialView?: ReturnType<typeof resolveEffectiveSkyarcLocationCommercial>
+  skyarcCommercialView?: ReturnType<typeof resolveEffectiveSkyarcLocationCommercial>,
+  flightWindow?: { startDate: Date; endDate: Date }
 ) {
   const owned = locationOwnedByUser(user, location.organizationId);
   const commercialRaw = parseLocationCommercial(location.commercialJson);
@@ -108,24 +143,77 @@ function serializeLocation(
   ) as ReturnType<typeof resolveEffectiveLocationCommercial> | undefined;
 
   const isClient = isClientUser(user);
-  const score = isClient ? null : (location.scores?.[0]?.overallScore ?? null);
-  const vendorMediaCode = isClient ? null : (location.vendorMediaCode ?? null);
+  const isInternal = isInternalUser(user);
+  const score = location.scores?.[0]?.overallScore ?? null;
+  // Skyarc ID is always public; vendor IID + media owner for internal roles
+  // (showcase flag strips these later for client screen-shares).
+  const vendorMediaCode = isInternal ? (location.vendorMediaCode ?? null) : null;
   const skyarcSiteCode = publicSkyarcSiteCode(location.skyarcSiteCode, location.id);
+  const mediaOwner = isInternal
+    ? (location.organization?.name?.trim() || null)
+    : null;
   const name = siteNameForAudience(
-    { name: location.name, road: location.road, skyarcSiteCode, id: location.id },
+    {
+      name: location.name,
+      road: location.road,
+      junction: location.junction,
+      skyarcSiteCode: location.skyarcSiteCode,
+      id: location.id,
+    },
     isClient
   );
 
-  const inventoryTypes = [
-    ...new Set(
-      location.screens?.flatMap((s) => s.inventories?.map((i) => i.inventoryType) ?? []) ?? []
-    ),
-  ];
+  const flatInventories =
+    location.screens?.flatMap((screen) =>
+      (screen.inventories ?? []).map((inventory) => ({
+        ...inventory,
+        screenStatus: screen.inventoryStatus,
+      }))
+    ) ?? [];
+
+  const inventoryTypes = [...new Set(flatInventories.map((i) => i.inventoryType))];
+  const primaryInv =
+    flatInventories.find((i) => isDigitalInventoryType(i.inventoryType)) ??
+    flatInventories[0] ??
+    null;
+  const primarySpecs = primaryInv
+    ? parseInventorySpecs(primaryInv.staticSpecsJson)
+    : { widthFt: null, heightFt: null, lighting: null };
+  const primaryFace = primaryInv
+    ? {
+        inventoryId: "id" in primaryInv ? String((primaryInv as { id: string }).id) : null,
+        inventoryType: primaryInv.inventoryType,
+        widthFt: primarySpecs.widthFt,
+        heightFt: primarySpecs.heightFt,
+        sizeLabel:
+          primarySpecs.widthFt && primarySpecs.heightFt
+            ? `${primarySpecs.widthFt}×${primarySpecs.heightFt} ft`
+            : null,
+        slotCapacity: effectiveSlotCapacity(
+          primaryInv.inventoryType,
+          primaryInv.slotCapacity
+        ),
+        isDigital: isDigitalInventoryType(primaryInv.inventoryType),
+      }
+    : null;
+
+  const bookingStatus = locationBookingBadge({
+    startDate: flightWindow?.startDate,
+    endDate: flightWindow?.endDate,
+    inventories: flatInventories.map((inventory) => ({
+      status: inventory.status,
+      screenStatus: inventory.screenStatus,
+      inventoryType: inventory.inventoryType,
+      slotCapacity: inventory.slotCapacity,
+      availabilityWindows: inventory.availabilityWindows,
+    })),
+  });
 
   return {
     id: location.id,
     skyarcSiteCode,
     vendorMediaCode,
+    ...(mediaOwner ? { mediaOwner } : {}),
     name,
     latitude: location.latitude,
     longitude: location.longitude,
@@ -135,20 +223,25 @@ function serializeLocation(
     road: location.road,
     roadType: location.roadType,
     junction: location.junction,
+    city: location.city ?? null,
+    district: location.district ?? null,
+    state: location.state ?? null,
     orientationDeg: location.orientationDeg,
     mountingType: location.mountingType,
     mountingNotes: location.mountingNotes,
     surveyStatus: location.surveyStatus,
+    bookingStatus,
     archivedAt: toIso(location.archivedAt),
-    organizationId: location.organizationId,
+    organizationId: isClient ? null : location.organizationId,
     isOwned: owned,
     score,
     inventoryTypes,
+    ...(primaryFace ? { primaryFace } : {}),
     ...(commercial ? { commercial } : {}),
-    ...(view ? { commercialView: view } : {}),
     ...(canViewClientPricing(user) && skyarcCommercialView
       ? { skyarcCommercialView }
       : {}),
+    ...(view ? { commercialView: view } : {}),
     createdByUserId: location.createdByUserId,
     createdAt: location.createdAt.toISOString(),
     updatedAt: location.updatedAt.toISOString(),
@@ -185,29 +278,94 @@ async function skyarcCommercialViewForLocation(location: { skyarcCommercialJson:
   );
 }
 
+function listMarketCitiesPayload() {
+  return listMarketCities().map((c) => ({
+    id: c.id,
+    name: c.name,
+    district: c.district,
+    state: c.state,
+    stateCode: c.stateCode,
+    siteCodePrefix: c.siteCodePrefix,
+    center: c.center,
+    defaultZoom: c.defaultZoom,
+    corridors: c.corridors.map((x) => x.name),
+  }));
+}
+
+function splitCsvParam(value?: string): string[] {
+  if (!value?.trim()) return [];
+  return value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function geoFilterClauses(query: {
+  cities?: string;
+  districts?: string;
+  states?: string;
+  corridors?: string;
+}): Record<string, unknown>[] {
+  const filters: Record<string, unknown>[] = [];
+  const cities = splitCsvParam(query.cities);
+  const districts = splitCsvParam(query.districts);
+  const states = splitCsvParam(query.states);
+  const corridors = splitCsvParam(query.corridors);
+
+  if (cities.length > 0) {
+    filters.push({
+      OR: cities.map((c) => ({ city: { equals: c, mode: "insensitive" as const } })),
+    });
+  }
+  if (districts.length > 0) {
+    filters.push({
+      OR: districts.map((d) => ({ district: { equals: d, mode: "insensitive" as const } })),
+    });
+  }
+  if (states.length > 0) {
+    filters.push({
+      OR: states.map((s) => ({ state: { equals: s, mode: "insensitive" as const } })),
+    });
+  }
+  if (corridors.length > 0) {
+    filters.push({
+      OR: corridors.flatMap((road) => [
+        { road: { contains: road, mode: "insensitive" as const } },
+        { address: { contains: road, mode: "insensitive" as const } },
+        { junction: { contains: road, mode: "insensitive" as const } },
+      ]),
+    });
+  }
+  return filters;
+}
+
 export async function locationRoutes(fastify: FastifyInstance, env: Env) {
   fastify.get("/locations", { preHandler: [fastify.authenticate] }, async (request) => {
     if (!canReadLocations(request.user)) throw forbidden();
     const query = paginationQuerySchema.parse(request.query);
-    const includeLive = isInternalUser(request.user);
     const hasCustomFilters = Boolean(
-      query.q || query.status || query.type || query.scope || query.from || query.to
+      query.q ||
+        query.status ||
+        query.type ||
+        query.scope ||
+        query.from ||
+        query.to ||
+        query.cities ||
+        query.districts ||
+        query.states ||
+        query.corridors ||
+        (query.visibility && query.visibility !== "active")
     );
-    const cacheKey = locationListCacheKey(
-      request.user.role,
-      request.user.id,
-      query.page,
-      query.limit
-    );
-    // Live occupancy must stay fresh for concurrent sales pitching.
-    if (!hasCustomFilters && !includeLive) {
-      const cached = getCachedLocationResponse<{ data: unknown; meta: unknown }>(cacheKey);
-      if (cached) return cached;
-    }
+    // Live occupancy is always computed — never serve a stale list cache for pitching.
+    void hasCustomFilters;
 
     const skip = (query.page - 1) * query.limit;
-    const baseWhere = buildLocationListWhere(request.user, query.scope);
-    const filters: Record<string, unknown>[] = [];
+    const baseWhere = buildLocationListWhere(
+      request.user,
+      query.scope,
+      query.visibility ?? "active"
+    );
+    const filters: Record<string, unknown>[] = [...geoFilterClauses(query)];
 
     if (query.q) {
       filters.push({
@@ -216,6 +374,8 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
           { road: { contains: query.q, mode: "insensitive" as const } },
           { address: { contains: query.q, mode: "insensitive" as const } },
           { junction: { contains: query.q, mode: "insensitive" as const } },
+          { city: { contains: query.q, mode: "insensitive" as const } },
+          { skyarcSiteCode: { contains: query.q, mode: "insensitive" as const } },
         ],
       });
     }
@@ -276,6 +436,7 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
           d.setUTCDate(d.getUTCDate() + 30);
           return d;
         })();
+    const flightWindow = { startDate: flightFrom, endDate: flightTo };
 
     const platform = await loadPlatformConfig();
     const orgIds = [
@@ -291,7 +452,7 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
       orgRows.map((org) => [org.id, parseOrganizationCommercial(org.commercialJson)])
     );
 
-    const response = success(
+    return success(
       locations.map((l) => {
         const locationCommercial = parseLocationCommercial(l.commercialJson);
         const orgCommercial = l.organizationId
@@ -313,9 +474,9 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
           l,
           covers.get(l.id),
           commercialView,
-          skyarcCommercialView
+          skyarcCommercialView,
+          flightWindow
         );
-        if (!includeLive) return base;
 
         const inventories = l.screens.flatMap((s) =>
           (s.inventories ?? []).map((inv) => ({
@@ -341,10 +502,6 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
       }),
       listMeta(query.page, query.limit, total)
     );
-    if (!hasCustomFilters && !includeLive) {
-      setCachedLocationResponse(cacheKey, response);
-    }
-    return response;
   });
 
   fastify.post("/locations", { preHandler: [fastify.authenticate] }, async (request) => {
@@ -359,9 +516,17 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
 
     let generatedSkyarcCode = body.skyarcSiteCode;
     if (!generatedSkyarcCode) {
-      const count = await prisma.location.count();
-      generatedSkyarcCode = `SKY-RAJ-${String(count + 1).padStart(3, "0")}`;
+      const cityName = normalizeCityName(body.city) ?? getMarketCity().name;
+      const count = await prisma.location.count({
+        where: { city: { equals: cityName, mode: "insensitive" } },
+      });
+      generatedSkyarcCode = buildSkyarcSiteCode(cityName, count + 1);
     }
+
+    const city = normalizeCityName(body.city) ?? null;
+    const market = city ? getMarketCity(city) : null;
+    const district = body.district?.trim() || market?.district || null;
+    const state = body.state?.trim() || market?.state || null;
 
     const location = await prisma.location.upsert({
       where: { id },
@@ -378,6 +543,9 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
         road: body.road,
         roadType: body.roadType,
         junction: body.junction,
+        city,
+        district,
+        state,
         orientationDeg: body.orientationDeg,
         mountingType: body.mountingType,
         mountingNotes: body.mountingNotes,
@@ -397,6 +565,9 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
         road: body.road,
         roadType: body.roadType,
         junction: body.junction,
+        city: body.city !== undefined ? city : undefined,
+        district: body.district !== undefined ? district : undefined,
+        state: body.state !== undefined ? state : undefined,
         orientationDeg: body.orientationDeg,
         mountingType: body.mountingType,
         mountingNotes: body.mountingNotes,
@@ -408,6 +579,49 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
 
     invalidateLocationCaches(id);
     return success(serializeLocation(request.user, location));
+  });
+
+  fastify.get("/locations/geo-facets", { preHandler: [fastify.authenticate] }, async (request) => {
+    if (!canReadLocations(request.user)) throw forbidden();
+    const baseWhere = buildLocationListWhere(request.user, undefined);
+    const [cityRows, districtRows, stateRows, roadRows] = await Promise.all([
+      prisma.location.findMany({
+        where: { ...baseWhere, city: { not: null } },
+        select: { city: true },
+        distinct: ["city"],
+        orderBy: { city: "asc" },
+        take: 200,
+      }),
+      prisma.location.findMany({
+        where: { ...baseWhere, district: { not: null } },
+        select: { district: true },
+        distinct: ["district"],
+        orderBy: { district: "asc" },
+        take: 200,
+      }),
+      prisma.location.findMany({
+        where: { ...baseWhere, state: { not: null } },
+        select: { state: true },
+        distinct: ["state"],
+        orderBy: { state: "asc" },
+        take: 100,
+      }),
+      prisma.location.findMany({
+        where: { ...baseWhere, road: { not: null } },
+        select: { road: true },
+        distinct: ["road"],
+        orderBy: { road: "asc" },
+        take: 300,
+      }),
+    ]);
+
+    return success({
+      cities: cityRows.map((r) => r.city!).filter(Boolean),
+      districts: districtRows.map((r) => r.district!).filter(Boolean),
+      states: stateRows.map((r) => r.state!).filter(Boolean),
+      corridors: roadRows.map((r) => r.road!).filter(Boolean),
+      markets: listMarketCitiesPayload(),
+    });
   });
 
   fastify.get("/locations/availability", { preHandler: [fastify.authenticate] }, async (request) => {
@@ -539,28 +753,290 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
     );
   });
 
+  /**
+   * Live market signal for conversion UX:
+   * - viewersNow: other authenticated users exploring the site (heartbeat TTL)
+   * - inActivePlans: distinct DRAFT/PROPOSED media plans that already include a face here
+   */
+  fastify.post("/locations/site-interest", { preHandler: [fastify.authenticate] }, async (request) => {
+    if (!canReadLocations(request.user)) throw forbidden();
+    const body = siteInterestBodySchema.parse(request.body);
+
+    const accessible = await prisma.location.findMany({
+      where: { id: { in: body.locationIds }, archivedAt: null },
+      select: { id: true, organizationId: true, createdByUserId: true, archivedAt: true },
+    });
+    const allowedIds = accessible
+      .filter((loc) => canAccessLocation(request.user, loc))
+      .map((loc) => loc.id);
+
+    const viewers = countLocationViewersBatch(allowedIds, request.user.id);
+
+    const planRows =
+      allowedIds.length === 0
+        ? []
+        : await prisma.mediaPlanItem.findMany({
+            where: {
+              mediaPlan: { status: { in: ["DRAFT", "PROPOSED"] } },
+              inventory: { screen: { locationId: { in: allowedIds } } },
+            },
+            select: {
+              mediaPlanId: true,
+              inventory: { select: { screen: { select: { locationId: true } } } },
+            },
+          });
+
+    const plansByLocation = new Map<string, Set<string>>();
+    for (const row of planRows) {
+      const locationId = row.inventory.screen.locationId;
+      if (!plansByLocation.has(locationId)) plansByLocation.set(locationId, new Set());
+      plansByLocation.get(locationId)!.add(row.mediaPlanId);
+    }
+
+    const byLocationId: Record<string, { viewersNow: number; inActivePlans: number }> = {};
+    for (const id of body.locationIds) {
+      if (!allowedIds.includes(id)) {
+        byLocationId[id] = { viewersNow: 0, inActivePlans: 0 };
+        continue;
+      }
+      byLocationId[id] = {
+        viewersNow: viewers[id] ?? 0,
+        inActivePlans: plansByLocation.get(id)?.size ?? 0,
+      };
+    }
+
+    return success({
+      byLocationId,
+      computedAt: new Date().toISOString(),
+    });
+  });
+
+  fastify.post("/locations/:id/presence", { preHandler: [fastify.authenticate] }, async (request) => {
+    if (!canReadLocations(request.user)) throw forbidden();
+    const id = uuidSchema.parse((request.params as { id: string }).id);
+    locationPresenceBodySchema.parse(request.body ?? {});
+    const location = await prisma.location.findUnique({
+      where: { id },
+      select: { id: true, organizationId: true, createdByUserId: true, archivedAt: true },
+    });
+    if (!location) throw notFound("Location not found");
+    if (!canAccessLocation(request.user, location)) throw forbidden();
+    const { expiresIn } = touchLocationPresence(id, request.user.id);
+    return success({ ok: true, expiresIn });
+  });
+
+  /**
+   * Recent campaigns / media plans that included a face at this location —
+   * social proof for the location detail Overview.
+   */
+  fastify.get(
+    "/locations/:id/campaign-history",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      if (!canReadLocations(request.user)) throw forbidden();
+      const id = uuidSchema.parse((request.params as { id: string }).id);
+      const query = (request.query ?? {}) as { limit?: string };
+      const limit = Math.min(12, Math.max(1, Number(query.limit) || 6));
+
+      const location = await prisma.location.findUnique({
+        where: { id },
+        select: { id: true, organizationId: true, createdByUserId: true, archivedAt: true },
+      });
+      if (!location) throw notFound("Location not found");
+      if (!canAccessLocation(request.user, location)) throw forbidden();
+
+      const plans = await prisma.mediaPlan.findMany({
+        where: {
+          status: { in: ["APPROVED", "PROPOSED", "DRAFT"] },
+          items: {
+            some: {
+              inventory: { screen: { locationId: id } },
+            },
+          },
+          ...(isVendorUser(request.user)
+            ? {
+                OR: [
+                  { campaign: { createdByUserId: request.user.id } },
+                  {
+                    status: "DRAFT" as const,
+                    items: {
+                      some: {
+                        inventory: {
+                          screen: {
+                            location: {
+                              organizationId: request.user.organizationId ?? "__none__",
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                ],
+              }
+            : {}),
+        },
+        orderBy: { updatedAt: "desc" },
+        take: limit * 3,
+        include: {
+          campaign: {
+            select: {
+              id: true,
+              name: true,
+              startDate: true,
+              endDate: true,
+              advertiser: { select: { id: true, name: true } },
+            },
+          },
+        },
+      });
+
+      const seen = new Set<string>();
+      const campaigns: Array<{
+        campaignId: string;
+        campaignName: string;
+        advertiserName: string;
+        planId: string;
+        planName: string;
+        planStatus: string;
+        startDate: string | null;
+        endDate: string | null;
+        updatedAt: string;
+      }> = [];
+
+      for (const plan of plans) {
+        if (seen.has(plan.campaignId)) continue;
+        seen.add(plan.campaignId);
+        campaigns.push({
+          campaignId: plan.campaignId,
+          campaignName: plan.campaign.name,
+          advertiserName: plan.campaign.advertiser.name,
+          planId: plan.id,
+          planName: plan.name,
+          planStatus: plan.status,
+          startDate: plan.campaign.startDate?.toISOString() ?? null,
+          endDate: plan.campaign.endDate?.toISOString() ?? null,
+          updatedAt: plan.updatedAt.toISOString(),
+        });
+        if (campaigns.length >= limit) break;
+      }
+
+      return success({ campaigns, total: campaigns.length });
+    }
+  );
+
   fastify.get("/locations/:id", { preHandler: [fastify.authenticate] }, async (request) => {
     if (!canReadLocations(request.user)) throw forbidden();
     const id = uuidSchema.parse((request.params as { id: string }).id);
-    const cacheKey = locationDetailCacheKey(id, request.user.role);
+    const query = (request.query ?? {}) as { from?: string; to?: string };
+    const flightFrom = query.from
+      ? new Date(`${query.from}T00:00:00.000Z`)
+      : (() => {
+          const d = new Date();
+          d.setUTCHours(0, 0, 0, 0);
+          return d;
+        })();
+    const flightTo = query.to
+      ? new Date(`${query.to}T23:59:59.999Z`)
+      : (() => {
+          const d = new Date(flightFrom);
+          d.setUTCDate(d.getUTCDate() + 30);
+          d.setUTCHours(23, 59, 59, 999);
+          return d;
+        })();
+    const fromKey = flightFrom.toISOString().slice(0, 10);
+    const toKey = flightTo.toISOString().slice(0, 10);
+    const platform = await loadPlatformConfig();
+    const showVendorDetails =
+      !isInternalUser(request.user) || platform.showVendorDetailsOnLocationPage;
+    const cacheKey = locationDetailCacheKey(
+      id,
+      request.user.role,
+      fromKey,
+      toKey,
+      showVendorDetails
+    );
     const cached = getCachedLocationResponse<{ data: unknown; meta: unknown }>(cacheKey);
     if (cached) return cached;
 
-    const location = await prisma.location.findUnique({ where: { id } });
+    const location = await prisma.location.findUnique({
+      where: { id },
+      include: {
+        organization: { select: { name: true, type: true } },
+        screens: {
+          include: {
+            inventories: {
+              include: {
+                availabilityWindows: {
+                  where: { endDate: { gte: flightFrom } },
+                  select: {
+                    status: true,
+                    startDate: true,
+                    endDate: true,
+                    slotsConsumed: true,
+                    expiresAt: true,
+                    notes: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
     if (!location) throw notFound("Location not found");
     if (!canAccessLocation(request.user, location)) throw forbidden();
     const covers = await coverUrlsForLocations(env, [id]);
     const commercialView = await commercialViewForLocation(location);
     const skyarcCommercialView = await skyarcCommercialViewForLocation(location);
-    const response = success(
-      serializeLocation(
-        request.user,
-        location,
-        covers.get(id),
-        commercialView,
-        skyarcCommercialView
-      )
+    const inventories = location.screens.flatMap((s) =>
+      (s.inventories ?? []).map((inv) => ({
+        inventoryType: inv.inventoryType,
+        slotCapacity: inv.slotCapacity,
+        status: inv.status,
+        availabilityWindows: inv.availabilityWindows,
+      }))
     );
+    const liveInventory = summarizeLocationLiveInventory({
+      inventories,
+      startDate: flightFrom,
+      endDate: flightTo,
+    });
+    const base = serializeLocation(
+      request.user,
+      location,
+      covers.get(id),
+      commercialView,
+      skyarcCommercialView,
+      { startDate: flightFrom, endDate: flightTo }
+    );
+    const scrubbed = showVendorDetails
+      ? base
+      : (() => {
+          const {
+            mediaOwner: _owner,
+            commercialView: _cv,
+            commercial: _c,
+            ...rest
+          } = base as typeof base & {
+            mediaOwner?: string;
+            commercialView?: unknown;
+            commercial?: unknown;
+          };
+          return {
+            ...rest,
+            vendorMediaCode: null,
+            organizationId: base.isOwned ? base.organizationId : null,
+          };
+        })();
+    const response = success({
+      ...scrubbed,
+      showVendorDetails,
+      liveInventory,
+      flight: {
+        from: fromKey,
+        to: toKey,
+      },
+    });
     setCachedLocationResponse(cacheKey, response);
     return response;
   });
@@ -573,10 +1049,22 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
       throw forbidden();
     }
     const body = updateLocationBodySchema.parse(request.body);
+    const city =
+      body.city !== undefined ? normalizeCityName(body.city) : undefined;
+    const market = city ? getMarketCity(city) : null;
     const location = await prisma.location.update({
       where: { id },
       data: {
         ...body,
+        city,
+        district:
+          body.district !== undefined
+            ? body.district?.trim() || market?.district || null
+            : undefined,
+        state:
+          body.state !== undefined
+            ? body.state?.trim() || market?.state || null
+            : undefined,
         capturedAt: body.capturedAt ? new Date(body.capturedAt) : undefined,
         surveyStatus: body.surveyStatus,
       },
@@ -760,6 +1248,24 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
           where: { id: { in: ids } },
           data: { archivedAt: new Date() },
         });
+        // Free soft-holds; keep BOOKED flights for live/approved campaigns
+        const released = await releaseHoldsForHiddenLocations(prisma, ids);
+        const emptyDrafts = await prisma.mediaPlan.findMany({
+          where: { status: "DRAFT", items: { none: {} } },
+          select: { id: true, campaignId: true },
+        });
+        for (const plan of emptyDrafts) {
+          await prisma.mediaPlan.update({
+            where: { id: plan.id },
+            data: { status: "REJECTED" },
+          });
+        }
+        const campaignIds = [
+          ...new Set([...released.campaignIds, ...emptyDrafts.map((p) => p.campaignId)]),
+        ];
+        for (const campaignId of campaignIds) {
+          await syncCampaignLifecycle(prisma, campaignId);
+        }
       } else if (body.action === "UNARCHIVE") {
         await prisma.location.updateMany({
           where: { id: { in: ids } },

@@ -7,6 +7,7 @@ import {
   OrganizationType,
   Provenance,
   ScoreStatus,
+  ScoringFactor,
   SurveyStatus,
   UploadStatus,
   UserRole,
@@ -20,12 +21,19 @@ export const paginationQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(250).default(20),
   scope: z.enum(["mine", "discovery", "all"]).optional(),
+  /** Catalog visibility — active (default) excludes hidden/archived sites. */
+  visibility: z.enum(["active", "hidden", "all"]).optional().default("active"),
   q: z.string().optional(),
   status: z.string().optional(),
   type: z.string().optional(),
   /** Flight window for live inventory / digital slot occupancy (YYYY-MM-DD). */
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** Inclusive multi-select geo filters (comma-separated or repeated). */
+  cities: z.string().optional(),
+  districts: z.string().optional(),
+  states: z.string().optional(),
+  corridors: z.string().optional(),
 });
 
 export const errorDetailSchema = z.object({
@@ -166,6 +174,15 @@ export const bulkApplyLocationCommercialBodySchema = z.object({
   locationIds: z.array(uuidSchema).min(1).max(100),
 });
 
+export const siteInterestBodySchema = z.object({
+  locationIds: z.array(uuidSchema).min(1).max(100),
+});
+
+export const locationPresenceBodySchema = z.object({
+  /** Where the explorer is looking — list card vs detail. */
+  surface: z.enum(["list", "detail", "map"]).optional(),
+});
+
 export const updateSkyarcLocationCommercialBodySchema = z.object({
   clientRateAmount: z.number().positive().optional(),
   ratePeriod: z.enum(["daily", "weekly", "monthly"]).optional(),
@@ -176,6 +193,7 @@ export const updateSkyarcLocationCommercialBodySchema = z.object({
 export const platformConfigBodySchema = z.object({
   defaultSkyarcMarginPercent: marginPercentSchema.optional(),
   currency: z.string().min(3).max(3).optional(),
+  showVendorDetailsOnLocationPage: z.boolean().optional(),
 });
 
 export const locationSchema = z.object({
@@ -191,6 +209,9 @@ export const locationSchema = z.object({
   road: z.string().nullable(),
   roadType: z.string().nullable(),
   junction: z.string().nullable(),
+  city: z.string().nullable().optional(),
+  district: z.string().nullable().optional(),
+  state: z.string().nullable().optional(),
   orientationDeg: z.number().nullable(),
   mountingType: z.string().nullable(),
   mountingNotes: z.string().nullable(),
@@ -214,6 +235,9 @@ export const createLocationBodySchema = z.object({
   road: z.string().optional(),
   roadType: z.string().optional(),
   junction: z.string().optional(),
+  city: z.string().max(120).optional(),
+  district: z.string().max(120).optional(),
+  state: z.string().max(120).optional(),
   orientationDeg: z.number().optional(),
   mountingType: z.string().optional(),
   mountingNotes: z.string().optional(),
@@ -262,12 +286,25 @@ export const buildMediaPlanFromSelectionBodySchema = z
     inventoryIds: z.array(uuidSchema).max(50).optional(),
     locationIds: z.array(uuidSchema).max(50).optional(),
     holdInventory: z.boolean().optional().default(true),
+    /** DRAFT = vendor network request awaiting admin/planner approval */
+    status: z.enum(["DRAFT", "PROPOSED"]).optional().default("PROPOSED"),
   })
   .refine(
     (body) =>
       Boolean(body.inventoryIds?.length) || Boolean(body.locationIds?.length),
     { message: "Select at least one site", path: ["locationIds"] }
   );
+
+export const updateMediaPlanStatusBodySchema = z.object({
+  status: z.enum(["APPROVED", "REJECTED", "PROPOSED", "DRAFT"]),
+});
+
+/** Vendor responds to their owned sites within a site request. */
+export const respondSiteRequestBodySchema = z.object({
+  action: z.enum(["APPROVE", "REJECT"]),
+  /** When omitted, applies to all items owned by the vendor's organization. */
+  inventoryIds: z.array(uuidSchema).max(50).optional(),
+});
 
 export const swapMediaPlanItemBodySchema = z.object({
   inventoryId: uuidSchema,
@@ -420,6 +457,8 @@ export const createInventoryBodySchema = z.object({
   inventoryType: z.string().min(1).max(64).default(InventoryType.DIGITAL),
   notes: z.string().max(500).optional(),
   status: z.nativeEnum(InventoryStatus).default(InventoryStatus.AVAILABLE),
+  /** Concurrent digital loop capacity. Omit or 1 = product default (6) for digital. */
+  slotCapacity: z.number().int().min(1).max(48).optional(),
   staticSpecsJson: z.record(z.unknown()).optional(),
 });
 
@@ -470,6 +509,49 @@ export const locationScoreSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 
+export const scoringMethodologyFactorSchema = z.object({
+  basis: z.string().min(1).max(500),
+  dataSources: z.array(z.string().min(1).max(200)).max(12).default([]),
+});
+
+export const scoringMethodologySchema = z.object({
+  title: z.string().min(1).max(120),
+  summary: z.string().min(1).max(2000),
+  versionLabel: z.string().min(1).max(40),
+  trustNotes: z.array(z.string().min(1).max(300)).max(12).default([]),
+  factors: z.record(scoringMethodologyFactorSchema).optional(),
+});
+
+export const updateScoringConfigBodySchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  weights: z
+    .record(z.nativeEnum(ScoringFactor), z.number().min(0).max(100))
+    .optional(),
+  methodology: scoringMethodologySchema.optional(),
+});
+
+export const locationScoreFactorInputSchema = z.object({
+  factor: z.nativeEnum(ScoringFactor),
+  score: z.number().min(0).max(100),
+  confidence: z.number().min(0).max(1).optional().default(0.8),
+  evidence: z.array(z.string().min(1).max(400)).max(8).default([]),
+  /** Predefined reason ids from SCORING_REASON_PRESETS. */
+  reasonIds: z.array(z.string().min(1).max(80)).max(12).optional().default([]),
+  source: z.string().max(120).optional(),
+});
+
+export const updateLocationScoreInputsBodySchema = z.object({
+  factors: z.array(locationScoreFactorInputSchema).min(1).max(16),
+  /** Site-specific scenario — required for trustworthy customer-facing Index. */
+  scenario: z
+    .object({
+      scenarioTitle: z.string().max(160).optional().default(""),
+      scenarioSummary: z.string().max(2000).optional().default(""),
+      trustNotes: z.array(z.string().min(1).max(300)).max(12).optional().default([]),
+    })
+    .optional(),
+});
+
 export const aiAnalysisSchema = z.object({
   id: uuidSchema,
   operation: z.nativeEnum(AIOperation),
@@ -501,6 +583,7 @@ export const importInventoryItemSchema = z.object({
   longitude: z.number().min(-180).max(180),
   city: z.string().nullish().transform((v) => v ?? undefined),
   district: z.string().nullish().transform((v) => v ?? undefined),
+  state: z.string().nullish().transform((v) => v ?? undefined),
   area: z.string().nullish().transform((v) => v ?? undefined),
   locationDescription: z.string().nullish().transform((v) => v ?? undefined),
   mediaType: z.string().nullish().transform((v) => v ?? "STATIC_BILLBOARD"),
@@ -523,6 +606,25 @@ export const importInventoryBatchBodySchema = z.object({
 
 export type ImportInventoryItem = z.infer<typeof importInventoryItemSchema>;
 export type ImportInventoryBatchBody = z.infer<typeof importInventoryBatchBodySchema>;
+
+export const bookingQuoteBodySchema = z.object({
+  inventoryId: uuidSchema,
+  startDate: z.string().datetime(),
+  endDate: z.string().datetime(),
+  playsPerDay: z.number().int().min(1).max(100_000),
+  creativeDurationSec: z.number().int().min(1).max(300).default(10),
+  distributionMode: z
+    .enum(["AUTOMATIC", "ALL_DAY", "MORNING", "AFTERNOON", "EVENING", "CUSTOM"])
+    .default("AUTOMATIC"),
+  customTimeStartMinute: z.number().int().min(0).max(24 * 60).optional(),
+  customTimeEndMinute: z.number().int().min(0).max(24 * 60).optional(),
+  loopDurationSec: z.number().int().min(1).max(3600).optional(),
+  baseRateAmount: z.number().min(0).optional(),
+  ratePeriod: z.string().max(32).optional(),
+  gstPercent: z.number().min(0).max(40).optional(),
+});
+
+export type BookingQuoteBody = z.infer<typeof bookingQuoteBodySchema>;
 
 export const healthSchema = z.object({
   status: z.literal("ok"),

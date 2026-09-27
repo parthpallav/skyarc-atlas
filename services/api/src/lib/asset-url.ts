@@ -27,7 +27,9 @@ export async function resolveAssetUrl(
 
 export async function coverUrlsForLocations(
   env: Env,
-  locationIds: string[]
+  locationIds: string[],
+  /** When set, falls back to short-lived download URLs (needed for PDF image embed). */
+  storage?: StorageProvider
 ): Promise<Map<string, string>> {
   const result = new Map<string, string>();
   if (locationIds.length === 0) return result;
@@ -38,7 +40,7 @@ export async function coverUrlsForLocations(
       locationId: { in: locationIds },
       uploadStatus: "UPLOADED",
     },
-    select: { locationId: true, r2Key: true, view: true, contentType: true },
+    select: { locationId: true, r2Key: true, view: true, contentType: true, uploadStatus: true },
   });
 
   const byLocation = new Map<string, typeof assets>();
@@ -57,8 +59,13 @@ export async function coverUrlsForLocations(
     });
     const best = sorted[0];
     if (!best) continue;
-    const url = publicAssetUrl(env, best.r2Key);
-    if (url) result.set(locationId, url);
+    if (storage) {
+      const url = await resolveAssetUrl(env, storage, best.r2Key, best.uploadStatus);
+      if (url) result.set(locationId, url);
+    } else {
+      const url = publicAssetUrl(env, best.r2Key);
+      if (url) result.set(locationId, url);
+    }
   }
 
   return result;

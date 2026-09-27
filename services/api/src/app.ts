@@ -20,6 +20,7 @@ import { organizationRoutes } from "./modules/organizations/routes.js";
 import { platformRoutes } from "./modules/platform/routes.js";
 import { inventoryRoutes } from "./modules/inventory/routes.js";
 import { campaignRoutes, mediaPlanRoutes } from "./modules/media-plans/routes.js";
+import { bookingRoutes } from "./modules/booking/routes.js";
 import { startAnalysisRunner } from "./workers/analysis-runner.js";
 import { success } from "./lib/response.js";
 
@@ -57,6 +58,7 @@ export async function buildApp() {
       await inventoryRoutes(api);
       await campaignRoutes(api, ai);
       await mediaPlanRoutes(api, env);
+      await bookingRoutes(api);
     },
     { prefix: API_PREFIX }
   );

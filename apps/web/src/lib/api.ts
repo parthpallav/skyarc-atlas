@@ -125,14 +125,25 @@ export function createWebApiClient() {
 }
 
 /** Fetches every location page (API max limit is 100 per request). */
-export async function listAllLocations<T = unknown>(): Promise<T[]> {
+export async function listAllLocations<T = unknown>(
+  filters?: {
+    q?: string;
+    from?: string;
+    to?: string;
+    cities?: string[];
+    districts?: string[];
+    states?: string[];
+    corridors?: string[];
+    type?: string;
+  }
+): Promise<T[]> {
   const client = createWebApiClient();
   const all: T[] = [];
   const limit = 100;
   let page = 1;
 
   while (true) {
-    const result = await client.listLocations(page, limit);
+    const result = await client.listLocations(page, limit, undefined, filters);
     const batch = result.data as T[];
     all.push(...batch);
 

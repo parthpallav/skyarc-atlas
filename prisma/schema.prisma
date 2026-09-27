@@ -116,6 +116,21 @@ enum MediaPlanStatus {
   REJECTED
 }
 
+enum MediaPlanItemApproval {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Campaign operational lifecycle (distinct from media-plan status).
+enum CampaignLifecycleStatus {
+  DRAFT
+  PENDING_APPROVAL
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
 enum AvailabilityWindowStatus {
   AVAILABLE
   BLOCKED
@@ -191,6 +206,9 @@ model Location {
   road            String?
   roadType        String?
   junction        String?
+  city            String?
+  district        String?
+  state           String?
   orientationDeg  Float?
   mountingType    String?
   mountingNotes   String?
@@ -199,6 +217,8 @@ model Location {
   organizationId  String?      @db.Uuid
   commercialJson  Json         @default("{}")
   skyarcCommercialJson Json    @default("{}")
+  /** Site-specific Skyarc Index scenario, basis notes, optional weight overrides. */
+  scoringJson     Json         @default("{}")
   createdByUserId String       @db.Uuid
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -218,6 +238,9 @@ model Location {
   @@index([latitude, longitude])
   @@index([skyarcSiteCode])
   @@index([vendorMediaCode])
+  @@index([city])
+  @@index([district])
+  @@index([state])
 }
 
 model LocationSurvey {
@@ -313,12 +336,14 @@ model LocationAttribute {
 }
 
 model ScoringConfig {
-  id         String   @id @default(uuid()) @db.Uuid
-  name       String
-  isActive   Boolean  @default(false)
-  weightsJson Json
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String
+  isActive         Boolean  @default(false)
+  weightsJson      Json
+  /** Customer-facing methodology / trust copy for Skyarc Index. */
+  methodologyJson  Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   scores LocationScore[]
 }
@@ -401,20 +426,24 @@ model Advertiser {
 }
 
 model Campaign {
-  id              String    @id @default(uuid()) @db.Uuid
+  id              String                  @id @default(uuid()) @db.Uuid
   name            String
-  advertiserId    String    @db.Uuid
+  advertiserId    String                  @db.Uuid
   startDate       DateTime?
   endDate         DateTime?
-  createdByUserId String?   @db.Uuid
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  /// Operational status: PENDING_APPROVAL while site requests open; ACTIVE when all approved for flight.
+  lifecycleStatus CampaignLifecycleStatus @default(DRAFT)
+  createdByUserId String?                 @db.Uuid
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
 
   advertiser      Advertiser       @relation(fields: [advertiserId], references: [id])
   brief           CampaignBrief?
   mediaPlans      MediaPlan[]
   analyses        AIAnalysis[]
   recommendations Recommendation[]
+
+  @@index([lifecycleStatus, startDate, endDate])
 }
 
 model CampaignBrief {
@@ -499,15 +528,17 @@ model MediaPlan {
 }
 
 model MediaPlanItem {
-  id               String   @id @default(uuid()) @db.Uuid
-  mediaPlanId      String   @db.Uuid
-  inventoryId      String   @db.Uuid
-  budgetAllocated  Decimal  @db.Decimal(14, 2)
+  id               String                 @id @default(uuid()) @db.Uuid
+  mediaPlanId      String                 @db.Uuid
+  inventoryId      String                 @db.Uuid
+  budgetAllocated  Decimal                @db.Decimal(14, 2)
   explanationText  String?
   rank             Int?
-  alternativesJson Json     @default("[]")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  alternativesJson Json                   @default("[]")
+  /// Vendor / owner response for site requests (PENDING until acted on).
+  approvalStatus   MediaPlanItemApproval  @default(PENDING)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
 
   mediaPlan MediaPlan @relation(fields: [mediaPlanId], references: [id], onDelete: Cascade)
   inventory Inventory @relation(fields: [inventoryId], references: [id])

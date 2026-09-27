@@ -1,61 +1,73 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Search,
   X,
-  SlidersHorizontal,
   MapPin,
   Plus,
-  Layers,
   CheckSquare,
   Square,
-  ArrowUpDown,
-  Building2,
   ChevronLeft,
   ChevronRight,
+  CalendarDays,
+  EyeOff,
   Eye,
-  TrendingUp,
-  ShieldCheck,
-  Compass,
+  ArrowUpDown,
+  Filter,
+  Layers,
 } from "lucide-react";
+import { FileSpreadsheet } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { PageHeader } from "@/components/page-header";
 import { LocationImage } from "@/components/location-image";
-import { formatInventoryType } from "@skyarc/shared";
+import {
+  formatInventoryType,
+  inventoryTypeBucket,
+  listMarketCities,
+  corridorsForCity,
+  type InventoryTypeBucket,
+} from "@skyarc/shared";
 import { formatInr } from "@/lib/format";
 import { InventoryImportModal } from "@/components/inventory-import-modal";
-import { FileSpreadsheet } from "lucide-react";
+import { CampaignSiteDestination } from "@/components/campaign-site-destination";
 import { LocationGridSkeleton } from "@/components/ui/skeleton";
 import { SlotIndicators, liveStatusBadge } from "@/components/slot-indicators";
+import {
+  SiteDemandSignals,
+  type SiteInterest,
+} from "@/components/site-demand-signals";
 
 interface Location {
   id: string;
   skyarcSiteCode?: string | null;
-  vendorMediaCode?: string | null;
   name: string;
-  latitude: number;
-  longitude: number;
-  surveyStatus: string;
-  address?: string | null;
   road?: string | null;
   junction?: string | null;
+  address?: string | null;
+  city?: string | null;
+  district?: string | null;
+  state?: string | null;
   coverImageUrl?: string;
-  score?: number | null;
   inventoryTypes?: string[];
-  commercialView?: {
-    marginPercent: number | null;
-    defaultRateAmount: number | null;
-  };
+  bookingStatus?: "AVAILABLE" | "UNAVAILABLE" | "ON_HOLD" | null;
+  createdAt?: string;
+  primaryFace?: {
+    inventoryType: string;
+    widthFt: number | null;
+    heightFt: number | null;
+    sizeLabel: string | null;
+    slotCapacity: number;
+    isDigital: boolean;
+  } | null;
+  commercialView?: { defaultRateAmount: number | null };
   skyarcCommercialView?: {
     clientRateAmount: number | null;
     ratePeriod: string;
-    currency: string;
   };
-  isOwned?: boolean;
   liveInventory?: {
     status: "AVAILABLE" | "ON_HOLD" | "UNAVAILABLE" | "PARTIAL";
     isDigital: boolean;
@@ -65,104 +77,337 @@ interface Location {
     indicators: Array<"available" | "booked">;
     earliestVacancyDate?: string | null;
   } | null;
-  flight?: { from: string; to: string };
+  archivedAt?: string | null;
 }
 
-const INVENTORY_TYPE_OPTIONS = [
-  { value: "ALL", label: "All Formats" },
-  { value: "DIGITAL_BILLBOARD", label: "Digital Billboard" },
-  { value: "STATIC_BILLBOARD", label: "Static Billboard" },
-  { value: "UNIPOLE", label: "Unipole" },
-  { value: "GANTRY", label: "Gantry" },
-  { value: "BUS_SHELTER", label: "Bus Shelter" },
-  { value: "KIOSK", label: "Kiosk" },
-  { value: "MALL_MEDIA", label: "Mall Media" },
+/** Corridor chips — union of market presets + live road values. */
+const CORRIDOR_PRESETS = listMarketCities().flatMap((c) => c.corridors.map((x) => x.name));
+
+type AvailFilter = "ALL" | "BOOKABLE" | "PARTIAL" | "HELD" | "FULL";
+type SortKey = "name" | "price_asc" | "price_desc" | "newest";
+type TypeFilter = "ALL" | InventoryTypeBucket;
+
+const TYPE_FILTERS: Array<{ value: TypeFilter; label: string }> = [
+  { value: "ALL", label: "All formats" },
+  { value: "digital", label: "Digital" },
+  { value: "hoarding", label: "Static" },
+  { value: "kiosk", label: "Kiosks" },
+  { value: "other", label: "Conceptual" },
 ];
 
-const RAJKOT_CORRIDOR_OPTIONS = [
-  { value: "ALL", label: "All Roads & Corridors" },
-  { value: "kalawad road", label: "Kalawad Road" },
-  { value: "150 feet ring road", label: "150 Feet Ring Road" },
-  { value: "amin marg", label: "Amin Marg" },
-  { value: "yagnik road", label: "Yagnik Road" },
-  { value: "race course", label: "Race Course Ring Road" },
-  { value: "gondal road", label: "Gondal Road" },
-  { value: "university road", label: "University Road" },
-  { value: "madhapar", label: "Madhapar Chowkadi" },
-  { value: "mavdi", label: "Mavdi Circle" },
-  { value: "80 feet road", label: "80 Feet Road" },
+const AVAIL_FILTERS: Array<{
+  value: AvailFilter;
+  label: string;
+  hint: string;
+  dot: string;
+}> = [
+  {
+    value: "ALL",
+    label: "All",
+    hint: "Every site in the catalog",
+    dot: "bg-slate-400",
+  },
+  {
+    value: "BOOKABLE",
+    label: "Open",
+    hint: "Fully free — ready to add to your plan",
+    dot: "bg-emerald-500",
+  },
+  {
+    value: "PARTIAL",
+    label: "Partial",
+    hint: "Digital only — some ad places still free",
+    dot: "bg-sky-500",
+  },
+  {
+    value: "HELD",
+    label: "On hold",
+    hint: "Temporarily reserved by another plan",
+    dot: "bg-amber-500",
+  },
+  {
+    value: "FULL",
+    label: "Booked",
+    hint: "No open place for your campaign dates",
+    dot: "bg-rose-500",
+  },
 ];
 
-const PRICE_RANGE_OPTIONS = [
-  { value: "ALL", label: "All Budgets" },
-  { value: "UNDER_25K", label: "Under ₹25,000 /mo" },
-  { value: "25K_50K", label: "₹25,000 – ₹50,000 /mo" },
-  { value: "50K_100K", label: "₹50,000 – ₹1,00,000 /mo" },
-  { value: "ABOVE_100K", label: "₹1,00,000+ /mo" },
+const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
+  { value: "name", label: "Name A–Z" },
+  { value: "price_asc", label: "Price ↑" },
+  { value: "price_desc", label: "Price ↓" },
+  { value: "newest", label: "Newest" },
 ];
 
-function statusColor(status: string) {
-  if (status === "SUBMITTED") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (status === "IN_PROGRESS") return "bg-amber-50 text-amber-700 border-amber-200";
-  return "bg-slate-100 text-slate-600 border-slate-200";
+function isoDateLocal(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-// Visual highlights for customer perspective instead of raw numbers
-function getCustomerVisualHighlights(loc: Location): { label: string } {
-  const roadLower = (loc.road || loc.address || "").toLowerCase();
-  if (roadLower.includes("kalawad") || roadLower.includes("yagnik") || roadLower.includes("amin")) {
-    return { label: "Prime high-street corridor" };
+function defaultFlight() {
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  const to = new Date(from);
+  to.setDate(to.getDate() + 30);
+  return { from: isoDateLocal(from), to: isoDateLocal(to) };
+}
+
+function effectiveStatus(loc: Location): "AVAILABLE" | "ON_HOLD" | "UNAVAILABLE" | "PARTIAL" {
+  if (loc.liveInventory?.status) return loc.liveInventory.status;
+  if (loc.bookingStatus === "UNAVAILABLE") return "UNAVAILABLE";
+  if (loc.bookingStatus === "ON_HOLD") return "ON_HOLD";
+  return "AVAILABLE";
+}
+
+function isFullyUnavailable(loc: Location) {
+  return effectiveStatus(loc) === "UNAVAILABLE";
+}
+
+function locationBucket(loc: Location): InventoryTypeBucket {
+  const types = [
+    loc.primaryFace?.inventoryType,
+    ...(loc.inventoryTypes ?? []),
+  ].filter(Boolean) as string[];
+  if (types.some((t) => inventoryTypeBucket(t) === "digital")) return "digital";
+  if (types.some((t) => inventoryTypeBucket(t) === "hoarding")) return "hoarding";
+  if (types.some((t) => inventoryTypeBucket(t) === "kiosk")) return "kiosk";
+  return inventoryTypeBucket(types[0]);
+}
+
+function formatFlightLabel(from: string, to: string) {
+  try {
+    const fmt = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" });
+    return `${fmt.format(new Date(`${from}T12:00:00`))} – ${fmt.format(new Date(`${to}T12:00:00`))}`;
+  } catch {
+    return `${from} → ${to}`;
   }
-  if (roadLower.includes("150") || roadLower.includes("ring") || roadLower.includes("gondal")) {
-    return { label: "Heavy commuter arterial" };
-  }
-  if (roadLower.includes("race course") || roadLower.includes("university")) {
-    return { label: "High youth & elite footfall" };
-  }
-  return { label: "High visibility junction" };
 }
 
 export default function LocationsPage() {
-  const { isVendor, isReadOnly, canViewClientPricing, isClient, isInternal } = usePermissions();
+  const { isVendor, isReadOnly, isClient, isInternal } = usePermissions();
+  const audience = isClient ? "client" : isVendor ? "vendor" : "internal";
   const queryClient = useQueryClient();
+  const defaults = useMemo(() => defaultFlight(), []);
 
   const [scope, setScope] = useState<"mine" | "discovery">("mine");
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [typeFilter, setTypeFilter] = useState("ALL");
-  const [roadFilter, setRoadFilter] = useState("ALL");
-  const [priceFilter, setPriceFilter] = useState("ALL");
-  const [sortBy, setSortBy] = useState<"score" | "name" | "price_asc" | "price_desc" | "newest">("score");
+  const [roadFilters, setRoadFilters] = useState<Set<string>>(new Set());
+  const [cityFilters, setCityFilters] = useState<Set<string>>(new Set());
+  const [stateFilters, setStateFilters] = useState<Set<string>>(new Set());
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
+  const [availFilter, setAvailFilter] = useState<AvailFilter>("ALL");
+  const [sortBy, setSortBy] = useState<SortKey>("name");
+  const [flightFrom, setFlightFrom] = useState(defaults.from);
+  const [flightTo, setFlightTo] = useState(defaults.to);
   const [filtersOpen, setFiltersOpen] = useState(false);
-
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState<number>(25);
-
+  const [pageSize, setPageSize] = useState(24);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkMessage, setBulkMessage] = useState("");
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [destinationOpen, setDestinationOpen] = useState(false);
+  const [visibility, setVisibility] = useState<"active" | "hidden">("active");
 
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["locations", scope, searchTerm, statusFilter, typeFilter],
+  const { data: geoFacets } = useQuery({
+    queryKey: ["location-geo-facets"],
     queryFn: async () => {
       const client = createWebApiClient();
-      const result = await client.listLocations(
-        1,
-        250,
-        isVendor ? scope : undefined,
-        {
-          q: searchTerm.trim() || undefined,
-          status: statusFilter !== "ALL" ? statusFilter : undefined,
-          type: typeFilter !== "ALL" ? typeFilter : undefined,
-        }
-      );
+      if (typeof client.getLocationGeoFacets !== "function") {
+        return {
+          cities: listMarketCities().map((c) => c.name),
+          districts: listMarketCities().map((c) => c.district),
+          states: [...new Set(listMarketCities().map((c) => c.state))],
+          corridors: CORRIDOR_PRESETS,
+          markets: listMarketCities(),
+        };
+      }
+      try {
+        const result = await client.getLocationGeoFacets();
+        return result.data;
+      } catch {
+        return {
+          cities: listMarketCities().map((c) => c.name),
+          districts: [...new Set(listMarketCities().map((c) => c.district))],
+          states: [...new Set(listMarketCities().map((c) => c.state))],
+          corridors: CORRIDOR_PRESETS,
+          markets: listMarketCities(),
+        };
+      }
+    },
+    staleTime: 60_000,
+  });
+
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: [
+      "locations",
+      scope,
+      visibility,
+      searchTerm,
+      flightFrom,
+      flightTo,
+      [...cityFilters].sort().join(","),
+      [...stateFilters].sort().join(","),
+      [...roadFilters].sort().join(","),
+    ],
+    queryFn: async () => {
+      const client = createWebApiClient();
+      const result = await client.listLocations(1, 250, isVendor ? scope : undefined, {
+        q: searchTerm.trim() || undefined,
+        from: flightFrom,
+        to: flightTo,
+        cities: cityFilters.size ? [...cityFilters] : undefined,
+        states: stateFilters.size ? [...stateFilters] : undefined,
+        corridors: roadFilters.size ? [...roadFilters] : undefined,
+        visibility,
+      });
       return result.data as Location[];
     },
     retry: 2,
-    // Keep live occupancy fresh for concurrent sales pitching.
-    refetchInterval: isInternal ? 30_000 : false,
-    staleTime: isInternal ? 10_000 : 30_000,
+    refetchInterval: 30_000,
+    staleTime: 10_000,
   });
+
+  const canBulkApply = isVendor && !isReadOnly && scope === "mine";
+  const canBulkGovern = (!isReadOnly && isInternal) || canBulkApply;
+  const showHiddenCatalog = canBulkGovern && (isInternal || scope === "mine");
+  const viewingHidden = visibility === "hidden";
+
+  const marketCities = geoFacets?.markets?.length
+    ? geoFacets.markets
+    : listMarketCities();
+
+  const cityOptions = useMemo(() => {
+    const fromApi = new Set(geoFacets?.cities ?? []);
+    for (const m of marketCities) fromApi.add(m.name);
+    return [...fromApi].sort((a, b) => a.localeCompare(b));
+  }, [geoFacets, marketCities]);
+
+  const stateOptions = useMemo(() => {
+    const fromApi = new Set(geoFacets?.states ?? []);
+    for (const m of marketCities) fromApi.add(m.state);
+    return [...fromApi].sort((a, b) => a.localeCompare(b));
+  }, [geoFacets, marketCities]);
+
+  const linkedRoads = useMemo(() => {
+    const fromData = new Set<string>();
+    for (const loc of data ?? []) {
+      const road = (loc.road ?? "").trim();
+      if (road) fromData.add(road);
+    }
+    for (const c of geoFacets?.corridors ?? []) fromData.add(c);
+    const cityScoped =
+      cityFilters.size === 1
+        ? corridorsForCity([...cityFilters][0])
+        : CORRIDOR_PRESETS;
+    const linked: string[] = [];
+    for (const preset of cityScoped) {
+      const hit = [...fromData].find((r) => r.toLowerCase().includes(preset.toLowerCase()));
+      if (hit) linked.push(preset);
+      else linked.push(preset);
+    }
+    for (const road of [...fromData].sort((a, b) => a.localeCompare(b))) {
+      const already = linked.some((p) => road.toLowerCase().includes(p.toLowerCase()));
+      if (!already) linked.push(road);
+    }
+    return linked.slice(0, 20);
+  }, [data, geoFacets, cityFilters]);
+
+  const filteredLocations = (data ?? []).filter((loc) => {
+    if (typeFilter !== "ALL" && locationBucket(loc) !== typeFilter) return false;
+    // Geo filters are applied server-side when API supports them; keep client fallback.
+    if (cityFilters.size > 0) {
+      const city = (loc.city ?? "").toLowerCase();
+      if (!city || ![...cityFilters].some((c) => city === c.toLowerCase())) return false;
+    }
+    if (stateFilters.size > 0) {
+      const s = (loc.state ?? "").toLowerCase();
+      if (!s || ![...stateFilters].some((x) => s === x.toLowerCase())) return false;
+    }
+    if (roadFilters.size > 0) {
+      const hay = `${loc.road || ""} ${loc.address || ""} ${loc.junction || ""}`.toLowerCase();
+      const match = [...roadFilters].some((road) => hay.includes(road.toLowerCase()));
+      if (!match) return false;
+    }
+    const status = effectiveStatus(loc);
+    if (availFilter === "BOOKABLE") return status === "AVAILABLE";
+    if (availFilter === "PARTIAL") return status === "PARTIAL";
+    if (availFilter === "HELD") return status === "ON_HOLD";
+    if (availFilter === "FULL") return status === "UNAVAILABLE";
+    return true;
+  });
+
+  function toggleSet(setter: Dispatch<SetStateAction<Set<string>>>, value: string) {
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+    setCurrentPage(1);
+  }
+
+  const sortedLocations = [...filteredLocations].sort((a, b) => {
+    if (sortBy === "name") return a.name.localeCompare(b.name);
+    if (sortBy === "price_asc") {
+      const pa = a.skyarcCommercialView?.clientRateAmount ?? a.commercialView?.defaultRateAmount ?? 0;
+      const pb = b.skyarcCommercialView?.clientRateAmount ?? b.commercialView?.defaultRateAmount ?? 0;
+      return pa - pb;
+    }
+    if (sortBy === "price_desc") {
+      const pa = a.skyarcCommercialView?.clientRateAmount ?? a.commercialView?.defaultRateAmount ?? 0;
+      const pb = b.skyarcCommercialView?.clientRateAmount ?? b.commercialView?.defaultRateAmount ?? 0;
+      return pb - pa;
+    }
+    const ta = a.createdAt ? Date.parse(a.createdAt) : 0;
+    const tb = b.createdAt ? Date.parse(b.createdAt) : 0;
+    return tb - ta;
+  });
+
+  const totalItems = sortedLocations.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const validCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (validCurrentPage - 1) * pageSize;
+  const paginatedLocations = sortedLocations.slice(startIndex, startIndex + pageSize);
+  const pageIds = paginatedLocations.map((l) => l.id);
+
+  const { data: interestPayload } = useQuery({
+    queryKey: ["site-interest", pageIds.join(",")],
+    queryFn: async () => {
+      if (pageIds.length === 0) return { byLocationId: {} as Record<string, SiteInterest> };
+      const client = createWebApiClient();
+      if (typeof client.getSiteInterest !== "function") {
+        return { byLocationId: {} as Record<string, SiteInterest> };
+      }
+      try {
+        const result = await client.getSiteInterest(pageIds);
+        return result.data;
+      } catch {
+        return { byLocationId: {} as Record<string, SiteInterest> };
+      }
+    },
+    enabled: pageIds.length > 0,
+    refetchInterval: 12_000,
+    staleTime: 8_000,
+    retry: false,
+  });
+
+  // Heartbeat visible + selected sites so peers see real "exploring now" activity
+  useEffect(() => {
+    if (pageIds.length === 0 && selected.size === 0) return;
+    const client = createWebApiClient();
+    if (typeof client.touchLocationPresence !== "function") return;
+    const ids = Array.from(new Set([...pageIds.slice(0, 12), ...selected]));
+    const beat = () => {
+      void Promise.allSettled(ids.map((id) => client.touchLocationPresence(id, "list")));
+    };
+    beat();
+    const timer = window.setInterval(beat, 20_000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- heartbeat keyed by visible + selected ids
+  }, [pageIds.join(","), Array.from(selected).join(",")]);
 
   const bulkMutation = useMutation({
     mutationFn: async () => {
@@ -176,16 +421,19 @@ export default function LocationsPage() {
     },
   });
 
-  const canBulkApply = isVendor && !isReadOnly && scope === "mine";
-  const canBulkGovern = (!isReadOnly && isInternal) || canBulkApply;
-
   const governMutation = useMutation({
     mutationFn: async (action: "ARCHIVE" | "UNARCHIVE" | "AVAILABLE" | "UNAVAILABLE") => {
       const client = createWebApiClient();
       return client.bulkLocationActions(Array.from(selected), action);
     },
     onSuccess: async (result) => {
-      setBulkMessage(`${result.data.action} applied to ${result.data.updated} site(s).`);
+      const labels: Record<string, string> = {
+        AVAILABLE: "Marked available",
+        UNAVAILABLE: "Marked unavailable",
+        ARCHIVE: "Hidden from catalog",
+        UNARCHIVE: "Restored to catalog",
+      };
+      setBulkMessage(`${labels[result.data.action] ?? result.data.action} · ${result.data.updated} site(s)`);
       setSelected(new Set());
       await queryClient.invalidateQueries({ queryKey: ["locations"] });
     },
@@ -198,392 +446,524 @@ export default function LocationsPage() {
       else next.add(id);
       return next;
     });
+    void createWebApiClient()
+      .touchLocationPresence?.(id, "list")
+      ?.catch(() => undefined);
   };
 
-  const toggleAll = (locationsToToggle: Location[]) => {
-    if (!locationsToToggle.length) return;
-    if (selected.size === locationsToToggle.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(locationsToToggle.map((l) => l.id)));
-    }
+  const toggleRoad = (road: string) => {
+    setRoadFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(road)) next.delete(road);
+      else next.add(road);
+      return next;
+    });
+    setCurrentPage(1);
   };
 
-  // Filter pipeline
-  const filteredLocations = (data ?? []).filter((loc) => {
-    // Road filter
-    if (roadFilter !== "ALL") {
-      const locRoad = `${loc.road || ""} ${loc.address || ""} ${loc.junction || ""}`.toLowerCase();
-      if (!locRoad.includes(roadFilter.toLowerCase())) return false;
-    }
+  const bookableCount = (data ?? []).filter((l) => {
+    const s = effectiveStatus(l);
+    return s === "AVAILABLE" || s === "PARTIAL";
+  }).length;
 
-    // Price range filter
-    if (priceFilter !== "ALL") {
-      const effectivePrice = isClient
-        ? loc.skyarcCommercialView?.clientRateAmount ?? 0
-        : loc.skyarcCommercialView?.clientRateAmount ?? loc.commercialView?.defaultRateAmount ?? 0;
+  const destinationMode =
+    isClient ? ("plan" as const) : ("request" as const);
+  const canSendToCampaign =
+    selected.size > 0 && (isClient || isInternal || (isVendor && scope === "discovery"));
 
-      if (priceFilter === "UNDER_25K" && (effectivePrice > 25000 || effectivePrice === 0)) return false;
-      if (priceFilter === "25K_50K" && (effectivePrice < 25000 || effectivePrice > 50000)) return false;
-      if (priceFilter === "50K_100K" && (effectivePrice < 50000 || effectivePrice > 100000)) return false;
-      if (priceFilter === "ABOVE_100K" && effectivePrice < 100000) return false;
-    }
-
-    return true;
-  });
-
-  // Client-side sorting
-  const sortedLocations = [...filteredLocations].sort((a, b) => {
-    if (sortBy === "score") {
-      const scoreA = a.score ?? -1;
-      const scoreB = b.score ?? -1;
-      return scoreB - scoreA;
-    }
-    if (sortBy === "name") {
-      return a.name.localeCompare(b.name);
-    }
-    if (sortBy === "price_asc") {
-      const priceA = a.skyarcCommercialView?.clientRateAmount ?? a.commercialView?.defaultRateAmount ?? 0;
-      const priceB = b.skyarcCommercialView?.clientRateAmount ?? b.commercialView?.defaultRateAmount ?? 0;
-      return priceA - priceB;
-    }
-    if (sortBy === "price_desc") {
-      const priceA = a.skyarcCommercialView?.clientRateAmount ?? a.commercialView?.defaultRateAmount ?? 0;
-      const priceB = b.skyarcCommercialView?.clientRateAmount ?? b.commercialView?.defaultRateAmount ?? 0;
-      return priceB - priceA;
-    }
-    return 0; // Default newest from backend
-  });
-
-  // Pagination calculation
-  const totalItems = sortedLocations.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  const validCurrentPage = Math.min(currentPage, totalPages);
-  const startIndex = (validCurrentPage - 1) * pageSize;
-  const paginatedLocations = sortedLocations.slice(startIndex, startIndex + pageSize);
-
-  const hasActiveFilters =
-    Boolean(searchTerm) || statusFilter !== "ALL" || typeFilter !== "ALL" || roadFilter !== "ALL" || priceFilter !== "ALL";
+  const pageTitle = isVendor
+    ? scope === "mine"
+      ? "My Inventory"
+      : "Network Discovery"
+    : isClient
+      ? "Choose sites"
+      : "Locations";
 
   return (
-    <div className="space-y-4 pb-12">
+    <div className="space-y-3 pb-24 sm:pb-10">
       <PageHeader
-        title={isVendor ? (scope === "mine" ? "My Inventory" : "Network Discovery") : "Locations"}
+        title={pageTitle}
         description={
-          isVendor
-            ? `${data?.length ?? 0} sites visible · ${
-                scope === "mine" ? "Manage rate cards and site specs" : "Browse network inventory"
-              }`
-            : `${data?.length ?? 0} billboard sites catalogued across Rajkot`
+          viewingHidden
+            ? `${(data ?? []).length} hidden · restore to return them to pitching`
+            : `${bookableCount} bookable · ${formatFlightLabel(flightFrom, flightTo)}`
         }
         action={
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            {!isReadOnly && (
+          <div className="flex items-center gap-1.5">
+            {!isReadOnly && !isClient && (
               <>
-                <Link
-                  href="/locations/new"
-                  className="btn-secondary gap-1.5 text-xs py-2 px-2.5 sm:px-3 shadow-xs"
-                >
+                <Link href="/locations/new" className="btn-secondary gap-1.5 text-xs py-2 px-2.5">
                   <Plus className="w-4 h-4 text-primary" />
-                  <span className="sm:hidden">Add</span>
-                  <span className="hidden sm:inline">Add Site</span>
+                  <span className="hidden sm:inline">Add</span>
                 </Link>
                 <button
                   type="button"
                   onClick={() => setIsImportModalOpen(true)}
-                  className="btn-secondary gap-1.5 text-xs py-2 px-2.5 sm:px-3 shadow-xs border-emerald-200 hover:border-emerald-300 text-emerald-800 bg-emerald-50/50 hover:bg-emerald-50"
+                  className="btn-secondary gap-1.5 text-xs py-2 px-2.5 hidden sm:inline-flex"
                 >
                   <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                  <span className="hidden sm:inline">Import Excel</span>
+                  Import
                 </button>
               </>
             )}
-            <Link href="/map" className="btn-primary gap-1.5 text-xs py-2 px-2.5 sm:px-3 shadow-sm">
+            <Link href="/map" className="btn-primary gap-1.5 text-xs py-2 px-2.5">
               <MapPin className="w-4 h-4" />
-              <span className="sm:inline">Map</span>
+              Map
             </Link>
           </div>
         }
       />
 
-      {/* Vendor Scope Tabs */}
       {isVendor && (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-all ${
-              scope === "mine"
-                ? "bg-primary text-white border-primary shadow-sm"
-                : "bg-white border-violet-200 text-slate-700 hover:bg-violet-50"
-            }`}
-            onClick={() => {
-              setScope("mine");
-              setSelected(new Set());
-              setCurrentPage(1);
-            }}
-          >
-            My sites (Owned)
-          </button>
-          <button
-            type="button"
-            className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-all ${
-              scope === "discovery"
-                ? "bg-primary text-white border-primary shadow-sm"
-                : "bg-white border-violet-200 text-slate-700 hover:bg-violet-50"
-            }`}
-            onClick={() => {
-              setScope("discovery");
-              setSelected(new Set());
-              setCurrentPage(1);
-            }}
-          >
-            Discover network
-          </button>
+        <div className="inline-flex rounded-lg border border-violet-200 bg-white p-0.5 text-xs font-semibold">
+          {(
+            [
+              ["mine", "My sites"],
+              ["discovery", "Network"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={`rounded-md px-3 py-1.5 transition-colors ${
+                scope === value ? "bg-primary text-white" : "text-slate-600 hover:bg-violet-50"
+              }`}
+              onClick={() => {
+                setScope(value);
+                setVisibility("active");
+                setSelected(new Set());
+                setCurrentPage(1);
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       )}
 
-      {/* Compact Multi-filter Toolbar */}
-      <div className="card-surface p-2 sm:p-3 space-y-2">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 min-w-0">
-            <Search className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+      {showHiddenCatalog ? (
+        <div className="inline-flex rounded-lg border border-violet-200 bg-white p-0.5 text-xs font-semibold">
+          {(
+            [
+              ["active", "Catalog", Eye],
+              ["hidden", "Hidden", EyeOff],
+            ] as const
+          ).map(([value, label, Icon]) => (
+            <button
+              key={value}
+              type="button"
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${
+                visibility === value ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-violet-50"
+              }`}
+              onClick={() => {
+                setVisibility(value);
+                setSelected(new Set());
+                setCurrentPage(1);
+              }}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Compact control strip */}
+      <div className="sticky top-0 z-20 rounded-xl border border-violet-100 bg-white/95 shadow-sm backdrop-blur">
+        <div className="flex flex-wrap items-center gap-2 px-2.5 py-2 sm:px-3">
+          <div className="relative min-w-0 flex-1 basis-[12rem]">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
             <input
-              type="text"
+              type="search"
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-              placeholder="Search site, road, area…"
-              className="w-full pl-9 pr-8 py-2 sm:py-1.5 rounded-lg border border-violet-200 bg-white text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30"
+              placeholder="Search name, road, Skyarc ID…"
+              className="w-full rounded-lg border border-violet-200 bg-white py-2 pl-8 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
             />
-            {searchTerm && (
+            {searchTerm ? (
               <button
                 type="button"
-                onClick={() => {
-                  setSearchTerm("");
-                  setCurrentPage(1);
-                }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-slate-900"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted"
+                onClick={() => setSearchTerm("")}
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="h-3.5 w-3.5" />
               </button>
-            )}
+            ) : null}
           </div>
+
+          <label className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-white px-2 py-1.5 text-xs text-slate-600">
+            <CalendarDays className="h-3.5 w-3.5 text-primary shrink-0" />
+            <input
+              type="date"
+              value={flightFrom}
+              onChange={(e) => {
+                setFlightFrom(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="max-w-[7.5rem] bg-transparent text-xs text-slate-900"
+            />
+            <span className="text-muted">–</span>
+            <input
+              type="date"
+              value={flightTo}
+              min={flightFrom}
+              onChange={(e) => {
+                setFlightTo(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="max-w-[7.5rem] bg-transparent text-xs text-slate-900"
+            />
+          </label>
+
           <button
             type="button"
-            onClick={() => setFiltersOpen((open) => !open)}
-            className={`md:hidden shrink-0 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold ${
-              filtersOpen || hasActiveFilters
+            onClick={() => setFiltersOpen((o) => !o)}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold ${
+              filtersOpen ||
+              typeFilter !== "ALL" ||
+              roadFilters.size > 0 ||
+              cityFilters.size > 0 ||
+              stateFilters.size > 0
                 ? "border-primary bg-violet-50 text-primary"
                 : "border-violet-200 bg-white text-slate-700"
             }`}
           >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            Filters
-            {hasActiveFilters ? (
-              <span className="min-w-[1.1rem] rounded-full bg-primary text-white text-[10px] px-1 text-center">
-                {[typeFilter, roadFilter, priceFilter].filter((value) => value !== "ALL").length +
-                  (searchTerm ? 1 : 0)}
+            <Filter className="h-3.5 w-3.5" />
+            More
+            {(typeFilter !== "ALL" ? 1 : 0) +
+              roadFilters.size +
+              cityFilters.size +
+              stateFilters.size >
+            0 ? (
+              <span className="rounded-full bg-primary px-1.5 text-[10px] text-white">
+                {(typeFilter !== "ALL" ? 1 : 0) +
+                  roadFilters.size +
+                  cityFilters.size +
+                  stateFilters.size}
               </span>
             ) : null}
           </button>
+
+          <label className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-2 py-1.5 text-xs text-slate-600">
+            <ArrowUpDown className="h-3.5 w-3.5 text-muted" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortKey)}
+              className="bg-transparent text-xs font-semibold text-slate-800"
+              aria-label="Sort"
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
-        <div className={`${filtersOpen ? "grid" : "hidden"} md:grid grid-cols-2 md:grid-cols-12 gap-2 items-center`}>
-          {/* Road / Corridor Filter */}
-          <div className="md:col-span-4">
-            <select
-              value={roadFilter}
-              onChange={(e) => {
-                setRoadFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full py-2 sm:py-1.5 px-2.5 rounded-lg border border-violet-200 bg-white text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              {RAJKOT_CORRIDOR_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Media Format Filter */}
-          <div className="md:col-span-4">
-            <select
-              value={typeFilter}
-              onChange={(e) => {
-                setTypeFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full py-2 sm:py-1.5 px-2.5 rounded-lg border border-violet-200 bg-white text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              {INVENTORY_TYPE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Budget Range Filter */}
-          <div className="col-span-2 md:col-span-4">
-            <select
-              value={priceFilter}
-              onChange={(e) => {
-                setPriceFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full py-2 sm:py-1.5 px-2.5 rounded-lg border border-violet-200 bg-white text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              {PRICE_RANGE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Secondary Row: Sort & Active Indicators */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 sm:pt-2 border-t border-violet-100 text-xs">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 text-slate-600 font-medium">
-              <span className="font-bold text-slate-900">{totalItems}</span> sites
-            </div>
-
-            {hasActiveFilters && (
+        {/* Booking status — always visible, plain language + color dots */}
+        <div className="border-t border-violet-100 px-2.5 py-2 sm:px-3">
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <p className="text-[11px] font-semibold text-slate-700">
+              Booking status
+              <span className="ml-1.5 font-normal text-muted">for your dates</span>
+            </p>
+            {availFilter !== "ALL" ? (
               <button
                 type="button"
+                className="text-[11px] font-semibold text-primary hover:underline"
                 onClick={() => {
-                  setSearchTerm("");
-                  setStatusFilter("ALL");
-                  setTypeFilter("ALL");
-                  setRoadFilter("ALL");
-                  setPriceFilter("ALL");
+                  setAvailFilter("ALL");
                   setCurrentPage(1);
                 }}
-                className="text-primary font-semibold hover:underline flex items-center gap-1"
               >
-                <X className="w-3.5 h-3.5" /> Clear
+                Show all
               </button>
-            )}
+            ) : null}
           </div>
-
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="flex items-center gap-1.5 text-muted min-w-0">
-              <ArrowUpDown className="w-3.5 h-3.5 shrink-0" />
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="max-w-[9.5rem] sm:max-w-none py-1 px-2 rounded-md border border-violet-200 bg-white text-xs text-slate-900 font-medium focus:outline-none"
-              >
-                {!isClient && <option value="score">Highest score</option>}
-                <option value="name">Name A–Z</option>
-                <option value="price_asc">Price: Low–High</option>
-                <option value="price_desc">Price: High–Low</option>
-                <option value="newest">Newest</option>
-              </select>
-            </div>
-
-            <div className="hidden sm:flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[11px]">
-              {[10, 25, 50, 100].map((sz) => (
+          <div
+            className="flex gap-1 overflow-x-auto pb-0.5"
+            role="group"
+            aria-label="Filter by booking status"
+          >
+            {AVAIL_FILTERS.map((opt) => {
+              const on = availFilter === opt.value;
+              return (
                 <button
-                  key={sz}
+                  key={opt.value}
                   type="button"
+                  title={opt.hint}
                   onClick={() => {
-                    setPageSize(sz);
+                    setAvailFilter(opt.value);
                     setCurrentPage(1);
                   }}
-                  className={`px-2 py-0.5 rounded-md font-semibold transition-colors ${
-                    pageSize === sz
-                      ? "bg-white text-primary shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    on
+                      ? "border-primary bg-violet-50 text-primary"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-violet-200"
                   }`}
                 >
-                  {sz}
+                  <span className={`h-2 w-2 rounded-full ${opt.dot}`} aria-hidden />
+                  {opt.label}
                 </button>
-              ))}
-            </div>
+              );
+            })}
+          </div>
+          <p className="mt-1.5 text-[11px] text-muted">
+            {AVAIL_FILTERS.find((f) => f.value === availFilter)?.hint}
+          </p>
+        </div>
 
-            {(canBulkGovern || isClient) && (
-              <div className="flex items-center gap-2 sm:pl-2 sm:border-l border-slate-200">
+        {filtersOpen && (
+          <div className="space-y-2.5 border-t border-violet-100 px-3 py-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Market & format
+              </p>
+              {(typeFilter !== "ALL" ||
+                roadFilters.size > 0 ||
+                cityFilters.size > 0 ||
+                stateFilters.size > 0) && (
                 <button
                   type="button"
-                  onClick={() => toggleAll(paginatedLocations)}
-                  className="text-slate-700 font-medium hover:text-primary flex items-center gap-1"
+                  className="text-[11px] font-semibold text-primary hover:underline"
+                  onClick={() => {
+                    setTypeFilter("ALL");
+                    setRoadFilters(new Set());
+                    setCityFilters(new Set());
+                    setStateFilters(new Set());
+                    setCurrentPage(1);
+                  }}
                 >
-                  {selected.size > 0 && selected.size === paginatedLocations.length ? (
-                    <CheckSquare className="w-3.5 h-3.5 text-primary" />
-                  ) : (
-                    <Square className="w-3.5 h-3.5 text-slate-400" />
-                  )}
-                  <span className="hidden sm:inline">Select</span> ({selected.size})
+                  Clear
                 </button>
+              )}
+            </div>
 
-                {canBulkApply && (
+            <div>
+              <p className="mb-1 text-[11px] font-medium text-slate-600">State</p>
+              <div className="flex flex-wrap gap-1.5">
+                {stateOptions.map((s) => {
+                  const on = stateFilters.has(s);
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => toggleSet(setStateFilters, s)}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        on
+                          ? "border-primary bg-violet-50 text-primary"
+                          : "border-slate-200 bg-white text-slate-600"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1 text-[11px] font-medium text-slate-600">City</p>
+              <div className="flex flex-wrap gap-1.5">
+                {cityOptions.map((city) => {
+                  const on = cityFilters.has(city);
+                  return (
+                    <button
+                      key={city}
+                      type="button"
+                      onClick={() => toggleSet(setCityFilters, city)}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        on
+                          ? "border-primary bg-violet-50 text-primary"
+                          : "border-slate-200 bg-white text-slate-600"
+                      }`}
+                    >
+                      {city}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1 text-[11px] font-medium text-slate-600">Format</p>
+              <div className="flex flex-wrap gap-1.5">
+                {TYPE_FILTERS.map((opt) => (
                   <button
+                    key={opt.value}
                     type="button"
-                    className="btn-secondary text-xs px-2.5 py-1 hidden sm:inline-flex"
-                    disabled={selected.size === 0 || bulkMutation.isPending}
-                    onClick={() => bulkMutation.mutate()}
-                  >
-                    {bulkMutation.isPending ? "Applying…" : "Apply Org Commercials"}
-                  </button>
-                )}
-
-                {canBulkGovern && (
-                  <div className="hidden sm:flex items-center gap-2">
-                    <button
-                      type="button"
-                      className="btn-secondary text-xs px-2.5 py-1"
-                      disabled={selected.size === 0 || governMutation.isPending}
-                      onClick={() => governMutation.mutate("ARCHIVE")}
-                    >
-                      Archive
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary text-xs px-2.5 py-1"
-                      disabled={selected.size === 0 || governMutation.isPending}
-                      onClick={() => governMutation.mutate("AVAILABLE")}
-                    >
-                      Available
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary text-xs px-2.5 py-1"
-                      disabled={selected.size === 0 || governMutation.isPending}
-                      onClick={() => governMutation.mutate("UNAVAILABLE")}
-                    >
-                      Unavailable
-                    </button>
-                  </div>
-                )}
-
-                {isClient && (
-                  <Link
-                    href={
-                      selected.size > 0
-                        ? `/campaigns/new?sites=${Array.from(selected).join(",")}`
-                        : "/campaigns/new"
-                    }
-                    className={`btn-primary text-xs px-2.5 py-1 ${
-                      selected.size === 0 ? "pointer-events-none opacity-50" : ""
+                    onClick={() => {
+                      setTypeFilter(opt.value);
+                      setCurrentPage(1);
+                    }}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                      typeFilter === opt.value
+                        ? "border-primary bg-violet-50 text-primary"
+                        : "border-slate-200 bg-white text-slate-600"
                     }`}
                   >
-                    Hold
-                  </Link>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1 text-[11px] font-medium text-slate-600">Corridors</p>
+              <div className="flex flex-wrap gap-1.5">
+                {linkedRoads.length === 0 ? (
+                  <span className="text-xs text-muted">Roads appear once sites load</span>
+                ) : (
+                  linkedRoads.map((road) => {
+                    const on = roadFilters.has(road);
+                    return (
+                      <button
+                        key={road}
+                        type="button"
+                        onClick={() => toggleRoad(road)}
+                        className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                          on
+                            ? "border-primary bg-violet-50 text-primary"
+                            : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        {road}
+                      </button>
+                    );
+                  })
                 )}
               </div>
-            )}
+            </div>
           </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between gap-2 px-0.5">
+        <p className="text-xs text-slate-600">
+          <strong className="text-slate-900">{totalItems}</strong>
+          {totalItems === 1 ? " site" : " sites"}
+          {typeFilter !== "ALL" ? (
+            <span className="text-muted">
+              {" "}
+              · {TYPE_FILTERS.find((t) => t.value === typeFilter)?.label}
+            </span>
+          ) : null}
+          {roadFilters.size > 0 ? (
+            <span className="text-muted">
+              {" "}
+              · {roadFilters.size} corridor{roadFilters.size === 1 ? "" : "s"}
+            </span>
+          ) : null}
+        </p>
+        <div className="hidden items-center gap-3 text-[10px] text-muted sm:flex">
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Open
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-sky-500" />
+            Partial
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-amber-500" />
+            Hold
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-rose-500" />
+            Booked
+          </span>
         </div>
       </div>
 
+      {selected.size > 0 && (
+        <div className="sticky top-[3.25rem] z-20 flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-white/95 px-3 py-2 shadow-md backdrop-blur">
+          <span className="text-xs font-semibold text-slate-800">{selected.size} selected</span>
+          {(isClient || isInternal || (isVendor && scope === "discovery")) && !viewingHidden && (
+            <button
+              type="button"
+              className="btn-primary text-xs py-2 px-3"
+              onClick={() => setDestinationOpen(true)}
+            >
+              {isClient ? "Add to campaign" : "Send request"}
+            </button>
+          )}
+          {canBulkGovern && (
+            <>
+              {!viewingHidden ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs py-1.5 px-2.5"
+                    disabled={governMutation.isPending}
+                    onClick={() => governMutation.mutate("AVAILABLE")}
+                  >
+                    Mark available
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs py-1.5 px-2.5"
+                    disabled={governMutation.isPending}
+                    onClick={() => governMutation.mutate("UNAVAILABLE")}
+                  >
+                    Mark unavailable
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-800"
+                    disabled={governMutation.isPending}
+                    onClick={() => {
+                      if (window.confirm(`Hide ${selected.size} site(s) from the catalog?`)) {
+                        governMutation.mutate("ARCHIVE");
+                      }
+                    }}
+                  >
+                    <EyeOff className="w-3.5 h-3.5" />
+                    Hide
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800"
+                  disabled={governMutation.isPending}
+                  onClick={() => {
+                    if (window.confirm(`Restore ${selected.size} site(s) to the catalog?`)) {
+                      governMutation.mutate("UNARCHIVE");
+                    }
+                  }}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  Unhide
+                </button>
+              )}
+            </>
+          )}
+          {canBulkApply && (
+            <button
+              type="button"
+              className="btn-secondary text-xs py-1.5 px-2.5"
+              disabled={bulkMutation.isPending}
+              onClick={() => bulkMutation.mutate()}
+            >
+              Apply org rates
+            </button>
+          )}
+          <button
+            type="button"
+            className="ml-auto text-xs font-medium text-muted hover:text-slate-900"
+            onClick={() => setSelected(new Set())}
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {bulkMessage && (
-        <p className="text-sm px-4 py-2.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
           {bulkMessage}
         </p>
       )}
@@ -591,273 +971,285 @@ export default function LocationsPage() {
       {isLoading && <LocationGridSkeleton count={6} />}
 
       {error && (
-        <p className="text-red-700 text-sm p-4 bg-red-50 border border-red-200 rounded-xl">
+        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           Failed to load locations.{" "}
-          <button type="button" onClick={() => refetch()} className="underline font-medium">
+          <button type="button" onClick={() => refetch()} className="font-medium underline">
             Retry
           </button>
         </p>
       )}
 
       {!isLoading && !error && paginatedLocations.length === 0 && (
-        <div className="card-surface p-12 text-center">
-          <MapPin className="w-10 h-10 text-primary mx-auto mb-3 opacity-75" />
-          <p className="text-slate-900 font-bold text-base mb-1">No locations found</p>
-          <p className="text-muted text-sm max-w-sm mx-auto mb-4">
-            {hasActiveFilters
-              ? "No billboard sites match your filter combination. Try adjusting roads or budget."
-              : "No locations available in this view."}
-          </p>
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchTerm("");
-                setStatusFilter("ALL");
-                setTypeFilter("ALL");
-                setRoadFilter("ALL");
-                setPriceFilter("ALL");
-                setCurrentPage(1);
-              }}
-              className="btn-secondary"
-            >
-              Reset filters
-            </button>
+        <div className="card-surface p-10 text-center">
+          {viewingHidden ? (
+            <EyeOff className="mx-auto mb-2 h-8 w-8 text-slate-400 opacity-70" />
+          ) : (
+            <MapPin className="mx-auto mb-2 h-8 w-8 text-primary opacity-70" />
           )}
+          <p className="font-semibold text-slate-900">
+            {viewingHidden ? "No hidden sites" : "No sites match"}
+          </p>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
+            {viewingHidden
+              ? "Hidden sites stay out of pitching and requests. Select Catalog to browse live inventory."
+              : "Loosen format, corridor, or availability — or shift campaign dates."}
+          </p>
         </div>
       )}
 
       {!isLoading && !error && paginatedLocations.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {paginatedLocations.map((loc) => {
             const isSelected = selected.has(loc.id);
-            const formats = loc.inventoryTypes?.length
-              ? loc.inventoryTypes
-              : ["STATIC_BILLBOARD"];
-            const visualHighlight = getCustomerVisualHighlights(loc);
+            const face = loc.primaryFace;
+            const formatLabel = formatInventoryType(
+              face?.inventoryType ?? loc.inventoryTypes?.[0] ?? "STATIC_BILLBOARD"
+            );
             const live = loc.liveInventory;
-            const booking = live ? liveStatusBadge(live.status) : null;
-            const greyscale = live?.status === "UNAVAILABLE";
+            const status = effectiveStatus(loc);
+            const badge = liveStatusBadge(status);
+            const full = isFullyUnavailable(loc);
+            const rate =
+              loc.skyarcCommercialView?.clientRateAmount ??
+              (isVendor ? loc.commercialView?.defaultRateAmount : null);
+            const slotCapacity = live?.capacity ?? face?.slotCapacity ?? null;
+            const slotUsed = live?.used ?? 0;
+            const slotOpen = slotCapacity != null ? Math.max(0, slotCapacity - slotUsed) : null;
+            const isDigital = Boolean(live?.isDigital || face?.isDigital);
+            const forRequestPick =
+              !viewingHidden &&
+              (isClient || isInternal || (isVendor && scope === "discovery"));
+            const showSelect = forRequestPick || canBulkGovern;
+            // Request picks: only bookable. Bulk govern on own inventory can include any.
+            const allowPick = showSelect && (forRequestPick ? !full : true);
+            const detailHref = `/locations/${loc.id}?from=${flightFrom}&to=${flightTo}`;
+            const interest = interestPayload?.byLocationId?.[loc.id];
 
             return (
-              <div
+              <article
                 key={loc.id}
-                className={`card-surface overflow-hidden flex flex-col justify-between transition-all hover:border-primary/40 hover:shadow-md ${
-                  isSelected ? "ring-2 ring-primary" : ""
-                } ${greyscale ? "opacity-75" : ""}`}
+                className={`group card-surface flex flex-col overflow-hidden transition-all hover:border-primary/40 hover:shadow-md ${
+                  isSelected ? "ring-2 ring-primary border-primary/40" : ""
+                } ${full || viewingHidden ? "opacity-60" : ""}`}
               >
-                <div>
-                  {/* Location Cover Image */}
-                  <div
-                    className={`relative h-36 sm:h-44 bg-slate-100 overflow-hidden ${
-                      greyscale ? "grayscale" : ""
-                    }`}
-                  >
-                    <LocationImage
-                      src={loc.coverImageUrl}
-                      alt={loc.name}
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/10" />
-
-                    {/* Checkbox for Bulk Actions (if vendor) */}
-                    {(canBulkGovern || isClient) && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggle(loc.id);
-                        }}
-                        className="absolute top-2.5 left-2.5 p-1 rounded bg-black/40 text-white backdrop-blur-sm"
-                      >
-                        {isSelected ? (
-                          <CheckSquare className="w-4 h-4 text-primary" />
-                        ) : (
-                          <Square className="w-4 h-4 text-white/80" />
-                        )}
-                      </button>
-                    )}
-
-                    {/* Top Right: SkyArc Site Code + live booking (sales) or survey status */}
-                    <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-black/70 text-white backdrop-blur-md border border-white/20 font-mono">
-                        {loc.skyarcSiteCode ?? `SKY-${loc.id.slice(0, 4).toUpperCase()}`}
-                      </span>
-
-                      {booking ? (
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-md border backdrop-blur-md ${booking.className}`}
-                        >
-                          {booking.label}
-                        </span>
-                      ) : !isClient ? (
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-md border backdrop-blur-md ${statusColor(
-                            loc.surveyStatus
-                          )}`}
-                        >
-                          {loc.surveyStatus}
-                        </span>
-                      ) : null}
-                    </div>
-
-                    {/* Bottom Right: Internal Score (SuperAdmin/Ops Only) OR Visual Highlight Tag (Customer Facing) */}
-                    <div className="absolute bottom-2.5 right-2.5">
-                      {!isClient && loc.score != null ? (
-                        <div className="bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/20 flex items-center gap-1.5">
-                          <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
-                          <span className="text-white font-bold text-xs">
-                            Score: {Math.round(loc.score)}
-                          </span>
-                        </div>
+                <div
+                  className={`relative aspect-[16/9] bg-slate-100 overflow-hidden ${
+                    full || viewingHidden ? "grayscale" : ""
+                  }`}
+                >
+                  <LocationImage
+                    src={loc.coverImageUrl}
+                    alt={loc.name}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                  />
+                  {viewingHidden ? (
+                    <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white/95 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm">
+                      <EyeOff className="h-3 w-3" />
+                      Hidden
+                    </span>
+                  ) : null}
+                  {allowPick && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggle(loc.id);
+                      }}
+                      className="absolute left-2 top-2 rounded-md border border-white/80 bg-white/95 p-1.5 text-slate-700 shadow-sm"
+                      aria-label={isSelected ? "Deselect site" : "Select site"}
+                    >
+                      {isSelected ? (
+                        <CheckSquare className="h-4 w-4 text-primary" />
                       ) : (
-                        <div className="bg-primary/90 backdrop-blur-md px-2 py-0.5 rounded-lg border border-white/20 flex items-center gap-1 text-white text-[11px] font-semibold">
-                          <MapPin className="w-3 h-3" />
-                          <span>{visualHighlight.label}</span>
-                        </div>
+                        <Square className="h-4 w-4 text-slate-400" />
                       )}
-                    </div>
+                    </button>
+                  )}
+                </div>
 
-                    {/* Bottom Left: one primary format only */}
-                    <div className="absolute bottom-2.5 left-2.5 flex flex-wrap gap-1 max-w-[60%]">
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-black/60 text-white backdrop-blur-sm border border-white/10">
-                        {formatInventoryType(formats[0]!)}
-                        {formats.length > 1 ? ` +${formats.length - 1}` : ""}
-                      </span>
-                    </div>
+                <div className="flex flex-1 flex-col gap-2.5 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="truncate font-mono text-[11px] font-bold text-primary">
+                      {loc.skyarcSiteCode ?? `SKY-${loc.id.slice(0, 4).toUpperCase()}`}
+                    </span>
+                    <span
+                      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}
+                      title={badge.hint}
+                    >
+                      {badge.label}
+                    </span>
                   </div>
 
-                  {/* Location Content Info */}
-                  <div className="p-4 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <Link
-                        href={`/locations/${loc.id}`}
-                        className={`font-bold text-slate-900 text-sm hover:text-primary transition-colors block line-clamp-1 ${
-                          isClient ? "font-mono" : ""
-                        }`}
-                      >
-                        {isClient
-                          ? loc.skyarcSiteCode ?? `SKY-${loc.id.slice(0, 4).toUpperCase()}`
-                          : loc.name}
-                      </Link>
-
-                      {/* Internal Vendor Media Code (Visible only to internal roles/vendors, NOT clients) */}
-                      {!isClient && loc.vendorMediaCode && (
-                        <span className="text-[10px] font-mono text-muted bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
-                          {loc.vendorMediaCode}
-                        </span>
-                      )}
-                    </div>
-
-                    <p className="text-xs text-muted flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                      <span className="truncate">
-                        {loc.road ?? loc.junction ?? loc.address ?? "Rajkot Corridor"}
-                      </span>
+                  <div>
+                    <Link
+                      href={detailHref}
+                      className="block text-[15px] font-semibold leading-snug text-slate-900 hover:text-primary line-clamp-2"
+                    >
+                      {loc.name}
+                    </Link>
+                    <p className="mt-0.5 truncate text-xs text-muted">
+                      {loc.road ?? loc.junction ?? loc.address ?? loc.city ?? "Site"}
                     </p>
+                  </div>
 
-                    {live?.isDigital ? (
-                      <SlotIndicators
-                        indicators={live.indicators}
-                        label={
-                          live.status === "UNAVAILABLE"
-                            ? live.earliestVacancyDate
-                              ? `Full · next open ${live.earliestVacancyDate}`
-                              : "Fully booked"
-                            : `${live.remaining} of ${live.capacity} slots open`
-                        }
-                      />
-                    ) : live ? (
-                      <p className="text-[11px] text-slate-500">
-                        {live.status === "UNAVAILABLE"
-                          ? live.earliestVacancyDate
-                            ? `Booked · earliest ${live.earliestVacancyDate}`
-                            : "Unavailable for these dates"
-                          : live.status === "ON_HOLD"
-                            ? "On hold — do not re-promise"
-                            : "Available for exclusive booking"}
+                  <SiteDemandSignals interest={interest} audience={audience} />
+
+                  <dl className="grid grid-cols-2 gap-2 rounded-lg bg-violet-50/70 px-2.5 py-2 text-xs">
+                    <div>
+                      <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                        Format
+                      </dt>
+                      <dd className="mt-0.5 font-medium text-slate-800 line-clamp-1">{formatLabel}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                        Size
+                      </dt>
+                      <dd className="mt-0.5 font-medium tabular-nums text-slate-800">
+                        {face?.sizeLabel ?? "On request"}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div className="rounded-lg border border-violet-100 px-2.5 py-2">
+                    {isDigital && slotCapacity != null ? (
+                      <>
+                        <div className="mb-1 flex items-baseline justify-between gap-2">
+                          <p className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                            <Layers className="h-3 w-3" />
+                            Ad places
+                          </p>
+                          <p className="text-xs font-bold tabular-nums text-slate-900">
+                            {slotOpen}/{slotCapacity} free
+                          </p>
+                        </div>
+                        <SlotIndicators
+                          indicators={live?.indicators ?? []}
+                          capacity={slotCapacity}
+                          used={slotUsed}
+                        />
+                      </>
+                    ) : (
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                          Booking
+                        </p>
+                        <p className="text-xs font-medium text-slate-800">
+                          {full ? "Exclusive booked" : "1 exclusive face"}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-auto flex items-center justify-between gap-2 border-t border-violet-100 pt-2.5">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                        Rate
                       </p>
-                    ) : null}
-
-                    {/* Commercial / Customer Pricing View */}
-                    <div className="pt-2 border-t border-violet-100 flex items-center justify-between text-xs">
-                      {loc.skyarcCommercialView?.clientRateAmount ? (
-                        <div>
-                          <span className="text-[10px] text-muted uppercase font-semibold block">
-                            Client Rate
-                          </span>
-                          <span className="font-bold text-slate-900">
-                            {formatInr(loc.skyarcCommercialView.clientRateAmount)}
-                            <span className="text-muted font-normal text-[10px]">
-                              /{loc.skyarcCommercialView.ratePeriod?.toLowerCase() ?? "month"}
+                      <p className="text-sm font-bold tabular-nums text-slate-900">
+                        {rate != null ? (
+                          <>
+                            {formatInr(rate)}
+                            <span className="text-[11px] font-normal text-muted">
+                              /{loc.skyarcCommercialView?.ratePeriod?.toLowerCase() ?? "mo"}
                             </span>
-                          </span>
-                        </div>
-                      ) : !isClient && loc.commercialView?.defaultRateAmount ? (
-                        <div>
-                          <span className="text-[10px] text-muted uppercase font-semibold block">
-                            Vendor Rate
-                          </span>
-                          <span className="font-bold text-slate-900">
-                            {formatInr(loc.commercialView.defaultRateAmount)}
-                            <span className="text-muted font-normal text-[10px]">/mo</span>
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-muted text-[11px]">Pricing on request</span>
-                      )}
-
-                      <Link
-                        href={`/locations/${loc.id}`}
-                        className="font-semibold text-primary hover:underline text-xs"
-                      >
-                        View Details →
+                          </>
+                        ) : (
+                          <span className="text-xs font-normal text-muted">On request</span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Link href={detailHref} className="btn-secondary text-xs py-1.5 px-2.5">
+                        Details
                       </Link>
+                      {allowPick && (
+                        <button
+                          type="button"
+                          onClick={() => toggle(loc.id)}
+                          className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                            isSelected
+                              ? "border-primary bg-primary text-white"
+                              : "border-primary/40 bg-violet-50 text-primary hover:bg-violet-100"
+                          }`}
+                        >
+                          {isSelected ? "Selected" : isClient ? "Add" : "Select"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
-              </div>
+              </article>
             );
           })}
         </div>
       )}
 
-      {/* Pagination Footer Controls */}
       {!isLoading && !error && totalPages > 1 && (
-        <div className="flex items-center justify-between border-t border-slate-200 pt-4 px-1">
-          <p className="text-xs text-muted">
-            Showing <strong className="text-slate-900">{startIndex + 1}</strong> to{" "}
-            <strong className="text-slate-900">
-              {Math.min(startIndex + pageSize, totalItems)}
-            </strong>{" "}
-            of <strong className="text-slate-900">{totalItems}</strong> locations
-          </p>
-
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <div className="flex items-center gap-1 text-[11px] text-muted">
+            {[12, 24, 48].map((sz) => (
+              <button
+                key={sz}
+                type="button"
+                onClick={() => {
+                  setPageSize(sz);
+                  setCurrentPage(1);
+                }}
+                className={`rounded-md px-2 py-1 font-semibold ${
+                  pageSize === sz ? "bg-violet-50 text-primary" : "hover:bg-slate-50"
+                }`}
+              >
+                {sz}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               disabled={validCurrentPage === 1}
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="rounded-lg border border-slate-200 p-2 disabled:opacity-40"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="h-4 w-4" />
             </button>
-
-            <span className="text-xs font-semibold px-3 py-1 bg-violet-50 text-primary rounded-lg border border-violet-100">
-              Page {validCurrentPage} of {totalPages}
+            <span className="min-w-[4.5rem] text-center text-xs font-semibold">
+              {validCurrentPage} / {totalPages}
             </span>
-
             <button
               type="button"
               disabled={validCurrentPage === totalPages}
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="rounded-lg border border-slate-200 p-2 disabled:opacity-40"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>
       )}
+
+      {canSendToCampaign && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-violet-100 bg-white/95 p-3 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] sm:hidden">
+          <button
+            type="button"
+            className="btn-primary w-full py-3 text-sm"
+            onClick={() => setDestinationOpen(true)}
+          >
+            {isClient
+              ? `Add ${selected.size} site${selected.size === 1 ? "" : "s"} to campaign`
+              : `Send request · ${selected.size} site${selected.size === 1 ? "" : "s"}`}
+          </button>
+        </div>
+      )}
+
+      <CampaignSiteDestination
+        open={destinationOpen && selected.size > 0}
+        onClose={() => setDestinationOpen(false)}
+        locationIds={Array.from(selected)}
+        from={flightFrom}
+        to={flightTo}
+        mode={destinationMode}
+      />
 
       <InventoryImportModal
         isOpen={isImportModalOpen}

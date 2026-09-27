@@ -19,12 +19,30 @@ interface InventoryRow {
   inventoryType?: string;
   status: string;
   notes?: string | null;
+  slotCapacity?: number;
+  staticSpecsJson?: {
+    widthFt?: number;
+    heightFt?: number;
+    class?: string;
+    subtype?: string;
+    production?: {
+      resolutionW?: number;
+      resolutionH?: number;
+      staticFormats?: string[];
+      motionFormats?: string[];
+      maxFileSizeMb?: number;
+      loopDurationSec?: number | null;
+      slotDurationSec?: number | null;
+    } | null;
+  } | null;
   latestRate?: { amount: number; period: string; currency: string } | null;
 }
 
 interface LocationInventoryPanelProps {
   locationId: string;
   canWrite: boolean;
+  /** When false, hide vendor rates (showcase mode). */
+  showVendorRates?: boolean;
 }
 
 const INVENTORY_TYPE_OPTIONS = [
@@ -44,7 +62,11 @@ const INVENTORY_TYPE_OPTIONS = [
   { value: "CUSTOM", label: "Custom / Other format…" },
 ];
 
-export function LocationInventoryPanel({ locationId, canWrite }: LocationInventoryPanelProps) {
+export function LocationInventoryPanel({
+  locationId,
+  canWrite,
+  showVendorRates = true,
+}: LocationInventoryPanelProps) {
   const queryClient = useQueryClient();
   const { isReadOnly } = usePermissions();
   const [screenLabel, setScreenLabel] = useState("");
@@ -54,12 +76,18 @@ export function LocationInventoryPanel({ locationId, canWrite }: LocationInvento
   const [customType, setCustomType] = useState("");
   const [rateAmount, setRateAmount] = useState("");
   const [ratePeriod, setRatePeriod] = useState("monthly");
+  const [widthFt, setWidthFt] = useState("");
+  const [heightFt, setHeightFt] = useState("");
+  const [slotCapacity, setSlotCapacity] = useState("6");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editProductCode, setEditProductCode] = useState("");
   const [editInventoryType, setEditInventoryType] = useState("DIGITAL_BILLBOARD");
   const [editCustomType, setEditCustomType] = useState("");
   const [editRateAmount, setEditRateAmount] = useState("");
   const [editStatus, setEditStatus] = useState("AVAILABLE");
+  const [editWidthFt, setEditWidthFt] = useState("");
+  const [editHeightFt, setEditHeightFt] = useState("");
+  const [editSlotCapacity, setEditSlotCapacity] = useState("6");
 
   const writable = canWrite && !isReadOnly;
 
@@ -73,7 +101,7 @@ export function LocationInventoryPanel({ locationId, canWrite }: LocationInvento
   });
 
   const { data: inventoriesByScreen } = useQuery({
-    queryKey: ["screen-inventories", expandedScreen],
+    queryKey: ["screen-inventories", expandedScreen, showVendorRates],
     queryFn: async () => {
       if (!expandedScreen) return [] as InventoryRow[];
       const client = createWebApiClient();
@@ -111,6 +139,17 @@ export function LocationInventoryPanel({ locationId, canWrite }: LocationInvento
         productCode: productCode.trim(),
         inventoryType: resolvedType,
         status: "AVAILABLE",
+        ...(resolvedType.toUpperCase().includes("DIGITAL") && slotCapacity
+          ? { slotCapacity: Number(slotCapacity) }
+          : {}),
+        ...(widthFt || heightFt
+          ? {
+              staticSpecsJson: {
+                ...(widthFt ? { widthFt: Number(widthFt) } : {}),
+                ...(heightFt ? { heightFt: Number(heightFt) } : {}),
+              },
+            }
+          : {}),
       });
       if (rateAmount) {
         const created = inv.data as { id: string };
@@ -125,6 +164,9 @@ export function LocationInventoryPanel({ locationId, canWrite }: LocationInvento
       setProductCode("");
       setCustomType("");
       setRateAmount("");
+      setWidthFt("");
+      setHeightFt("");
+      setSlotCapacity("6");
       await invalidateInventory();
     },
   });
@@ -141,6 +183,13 @@ export function LocationInventoryPanel({ locationId, canWrite }: LocationInvento
         productCode: editProductCode.trim(),
         inventoryType: resolvedType,
         status: editStatus,
+        ...(resolvedType.toUpperCase().includes("DIGITAL") && editSlotCapacity
+          ? { slotCapacity: Number(editSlotCapacity) }
+          : {}),
+        staticSpecsJson: {
+          ...(editWidthFt ? { widthFt: Number(editWidthFt) } : {}),
+          ...(editHeightFt ? { heightFt: Number(editHeightFt) } : {}),
+        },
       });
       if (editRateAmount) {
         await client.createRateCard(inventoryId, {
@@ -178,6 +227,10 @@ export function LocationInventoryPanel({ locationId, canWrite }: LocationInvento
       setEditCustomType(existingType);
     }
     setEditRateAmount(inv.latestRate ? String(inv.latestRate.amount) : "");
+    const specs = inv.staticSpecsJson ?? {};
+    setEditWidthFt(specs.widthFt != null ? String(specs.widthFt) : "");
+    setEditHeightFt(specs.heightFt != null ? String(specs.heightFt) : "");
+    setEditSlotCapacity(String(inv.slotCapacity && inv.slotCapacity > 1 ? inv.slotCapacity : 6));
   };
 
   if (!writable && !(screens?.length ?? 0)) {
@@ -185,11 +238,18 @@ export function LocationInventoryPanel({ locationId, canWrite }: LocationInvento
   }
 
   return (
-    <section className="card-surface p-5 sm:p-6 mb-4">
+    <section id="inventory-config" className="card-surface scroll-mt-24 p-5 sm:p-6 mb-4">
       <h2 className="font-semibold text-slate-900 mb-1">Screens &amp; inventory</h2>
-      <p className="text-sm text-muted mb-4">
-        Manage media units, formats (billboards, kiosks, standees, transit, TVs, custom), and vendor rates.
+      <p className="text-sm text-muted mb-3">
+        Manage faces, formats, vendor rates — and for digital faces, how many brands share the loop.
       </p>
+      <div className="mb-4 rounded-lg border border-violet-100 bg-violet-50/70 px-3 py-2.5 text-xs text-slate-700">
+        <p className="font-semibold text-slate-900">Ad places (digital slots)</p>
+        <p className="mt-0.5 text-muted">
+          Edit a digital product and set <strong className="font-semibold text-slate-800">Ad places on loop</strong>{" "}
+          (2–48). Default is 6. Static faces are always 1 exclusive booking.
+        </p>
+      </div>
 
       {isLoading && <p className="text-sm text-muted">Loading screens…</p>}
 
@@ -266,6 +326,41 @@ export function LocationInventoryPanel({ locationId, canWrite }: LocationInvento
                               className="w-full rounded border border-violet-200 px-2 py-1.5 text-sm"
                             />
                           </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <input
+                              type="number"
+                              placeholder="Width (ft)"
+                              value={editWidthFt}
+                              onChange={(e) => setEditWidthFt(e.target.value)}
+                              className="w-full rounded border border-violet-200 px-2 py-1.5 text-sm"
+                            />
+                            <input
+                              type="number"
+                              placeholder="Height (ft)"
+                              value={editHeightFt}
+                              onChange={(e) => setEditHeightFt(e.target.value)}
+                              className="w-full rounded border border-violet-200 px-2 py-1.5 text-sm"
+                            />
+                            {editInventoryType.toUpperCase().includes("DIGITAL") ||
+                            editCustomType.toUpperCase().includes("DIGITAL") ? (
+                              <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted">
+                                  Ad places on loop
+                                </span>
+                                <input
+                                  type="number"
+                                  min={2}
+                                  max={48}
+                                  title="How many brands share this digital loop (2–48)"
+                                  value={editSlotCapacity}
+                                  onChange={(e) => setEditSlotCapacity(e.target.value)}
+                                  className="w-full rounded border border-violet-200 px-2 py-1.5 text-sm"
+                                />
+                              </label>
+                            ) : (
+                              <div />
+                            )}
+                          </div>
                           <div className="flex gap-2">
                             <button
                               type="button"
@@ -293,7 +388,34 @@ export function LocationInventoryPanel({ locationId, canWrite }: LocationInvento
                                 {" "}
                                 · {formatInventoryType(inv.inventoryType)} · {inv.status}
                               </span>
-                              {inv.latestRate && (
+                              <p className="text-xs text-muted mt-1">
+                                {inv.staticSpecsJson?.widthFt && inv.staticSpecsJson?.heightFt
+                                  ? `${inv.staticSpecsJson.widthFt}×${inv.staticSpecsJson.heightFt} ft`
+                                  : "Size not set"}
+                                {inv.inventoryType &&
+                                (inv.inventoryType.toUpperCase().includes("DIGITAL") ||
+                                  inv.inventoryType.toUpperCase().includes("KIOSK"))
+                                  ? ` · ${inv.slotCapacity && inv.slotCapacity > 1 ? inv.slotCapacity : 6} ad places on loop`
+                                  : ""}
+                              </p>
+                              {inv.staticSpecsJson?.production &&
+                              "resolutionW" in inv.staticSpecsJson.production &&
+                              inv.staticSpecsJson.production.resolutionW ? (
+                                <p className="mt-1 text-xs text-slate-600">
+                                  Specs: {inv.staticSpecsJson.production.resolutionW}×
+                                  {inv.staticSpecsJson.production.resolutionH}px
+                                  {inv.staticSpecsJson.production.staticFormats?.length
+                                    ? ` · ${inv.staticSpecsJson.production.staticFormats.join("/")}`
+                                    : ""}
+                                  {inv.staticSpecsJson.production.motionFormats?.length
+                                    ? ` · ${inv.staticSpecsJson.production.motionFormats.join("/")}`
+                                    : ""}
+                                  {inv.staticSpecsJson.production.maxFileSizeMb
+                                    ? ` · max ${inv.staticSpecsJson.production.maxFileSizeMb}MB`
+                                    : ""}
+                                </p>
+                              ) : null}
+                              {showVendorRates && inv.latestRate && (
                                 <p className="text-xs text-muted mt-1">
                                   Vendor rate: {inv.latestRate.currency}{" "}
                                   {inv.latestRate.amount.toLocaleString()} /{" "}
@@ -371,6 +493,40 @@ export function LocationInventoryPanel({ locationId, canWrite }: LocationInvento
                       >
                         Add product
                       </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <input
+                        type="number"
+                        placeholder="Width (ft)"
+                        value={widthFt}
+                        onChange={(e) => setWidthFt(e.target.value)}
+                        className="rounded-lg border border-violet-200 px-3 py-2 text-sm"
+                      />
+                      <input
+                        type="number"
+                        placeholder="Height (ft)"
+                        value={heightFt}
+                        onChange={(e) => setHeightFt(e.target.value)}
+                        className="rounded-lg border border-violet-200 px-3 py-2 text-sm"
+                      />
+                      {inventoryType.toUpperCase().includes("DIGITAL") ? (
+                        <label className="block">
+                          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted">
+                            Ad places on loop (2–48)
+                          </span>
+                          <input
+                            type="number"
+                            min={2}
+                            max={48}
+                            title="How many brands share this digital loop"
+                            value={slotCapacity}
+                            onChange={(e) => setSlotCapacity(e.target.value)}
+                            className="w-full rounded-lg border border-violet-200 px-3 py-2 text-sm"
+                          />
+                        </label>
+                      ) : (
+                        <div />
+                      )}
                     </div>
                     {inventoryType === "CUSTOM" && (
                       <input
