@@ -200,6 +200,8 @@ model Location {
   name            String
   latitude        Float
   longitude       Float
+  /** PostGIS point maintained by trigger from lat/lng — not queried via Prisma Client. */
+  geom            Unsupported("geography(Point,4326)")?
   accuracyM       Float?
   capturedAt      DateTime?
   address         String?

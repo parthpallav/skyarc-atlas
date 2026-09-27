@@ -730,13 +730,14 @@ export default function LocationDetailPage() {
                     ) : null}
                   </dl>
                   {isNetworkSite ? (
-                    <Link
-                      href={requestHref}
+                    <button
+                      type="button"
                       className="btn-primary mt-5 inline-flex gap-2 text-sm"
+                      onClick={() => setDestinationOpen(true)}
                     >
                       <Send className="h-4 w-4" />
                       Request now
-                    </Link>
+                    </button>
                   ) : null}
                 </div>
 
