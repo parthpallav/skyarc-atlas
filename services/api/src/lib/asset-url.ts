@@ -70,3 +70,51 @@ export async function coverUrlsForLocations(
 
   return result;
 }
+
+/** Up to `limit` image URLs per location for pitch / PDF photo strips. */
+export async function pitchPhotoUrlsForLocations(
+  env: Env,
+  locationIds: string[],
+  storage?: StorageProvider,
+  limit = 3
+): Promise<Map<string, string[]>> {
+  const result = new Map<string, string[]>();
+  if (locationIds.length === 0) return result;
+
+  const { prisma } = await import("./prisma.js");
+  const assets = await prisma.locationAsset.findMany({
+    where: {
+      locationId: { in: locationIds },
+      uploadStatus: "UPLOADED",
+    },
+    select: { locationId: true, r2Key: true, view: true, contentType: true, uploadStatus: true },
+  });
+
+  const byLocation = new Map<string, typeof assets>();
+  for (const asset of assets) {
+    const list = byLocation.get(asset.locationId) ?? [];
+    list.push(asset);
+    byLocation.set(asset.locationId, list);
+  }
+
+  for (const [locationId, list] of byLocation) {
+    const sorted = [...list]
+      .filter((a) => isImageContentType(a.contentType))
+      .sort((a, b) => photoViewSortKey(a.view) - photoViewSortKey(b.view))
+      .slice(0, Math.max(1, limit));
+
+    const urls: string[] = [];
+    for (const asset of sorted) {
+      if (storage) {
+        const url = await resolveAssetUrl(env, storage, asset.r2Key, asset.uploadStatus);
+        if (url) urls.push(url);
+      } else {
+        const url = publicAssetUrl(env, asset.r2Key);
+        if (url) urls.push(url);
+      }
+    }
+    if (urls.length) result.set(locationId, urls);
+  }
+
+  return result;
+}

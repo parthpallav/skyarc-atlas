@@ -33,8 +33,18 @@ describe("buildMediaPlanPdf", () => {
           size: "40×20 ft",
           lighting: "FRONT_LIT",
           creativeBrief: "Landscape 40×20 ft · Front-lit",
-          clientRate: 75_000,
+          clientRate: 90_000,
+          listRate: 90_000,
+          planRate: 75_000,
           budgetAllocated: 75_000,
+          skyarcIndex: 88,
+          factorScores: {
+            visibility: 90,
+            audience_fit: 70,
+            approach_exposure: 80,
+            brand_suitability: 99,
+            location_quality: 75,
+          },
           coverImageBuffer: jpeg,
         },
         {
@@ -47,7 +57,10 @@ describe("buildMediaPlanPdf", () => {
           lighting: "BACK_LIT",
           creativeBrief: null,
           clientRate: 75_000,
+          listRate: 75_000,
+          planRate: 75_000,
           budgetAllocated: 75_000,
+          skyarcIndex: 72,
           coverImageBuffer: jpeg,
         },
       ],
@@ -58,10 +71,9 @@ describe("buildMediaPlanPdf", () => {
     // Noto Sans is registered so ₹ renders (Helvetica cannot)
     expect(asLatin).toMatch(/NotoSans|PlanSans/);
     expect(asLatin).toContain("Prime Ring Road");
-    expect(asLatin).toContain("Skyarc Atlas");
-    expect(asLatin).not.toMatch(/\bDRAFT\b|\bPENDING\b|vendorRate|impliedMargin/i);
-    // Cover + 2 site pages
+    // Cover + summary + 2 site pages (Canva-faithful layout)
     const pageCount = (asLatin.match(/\/Type\s*\/Page[^s]/g) ?? []).length;
-    expect(pageCount).toBeGreaterThanOrEqual(3);
+    expect(pageCount).toBeGreaterThanOrEqual(4);
+    expect(asLatin).not.toMatch(/\bDRAFT\b|\bPENDING\b|vendorRate|impliedMargin/i);
   });
 });

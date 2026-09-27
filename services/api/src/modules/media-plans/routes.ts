@@ -38,10 +38,12 @@ import {
 import {
   buildPlanSummary,
   buildSiteInsights,
+  resolveFactorScores,
 } from "../../lib/media-planning/insights.js";
 import { buildSiteDemandView, type SiteDemandView } from "../../lib/media-planning/demand.js";
+import { artworkGuidanceForType } from "../../lib/media-planning/pdf-proposal.js";
 import { countLocationViewersBatch } from "../../lib/cache/presence-cache.js";
-import { coverUrlsForLocations } from "../../lib/asset-url.js";
+import { coverUrlsForLocations, pitchPhotoUrlsForLocations } from "../../lib/asset-url.js";
 import { createStorageProvider } from "../../lib/storage/index.js";
 import { prisma } from "../../lib/prisma.js";
 import { success, listMeta } from "../../lib/response.js";
@@ -217,6 +219,16 @@ function serializeMediaPlan(
       insights.highlights[0] ||
       null;
 
+    const factorScores = resolveFactorScores(
+      attrs,
+      scoreRow?.componentsJson,
+      location.road
+    );
+    const dualScreen =
+      Number(specs.widthFt ?? 0) > 0 &&
+      Number(specs.heightFt ?? 0) >= 20 &&
+      (item.inventory.inventoryType ?? "").toUpperCase().includes("DIGITAL");
+
     return {
       id: item.id,
       mediaPlanId: item.mediaPlanId,
@@ -226,9 +238,15 @@ function serializeMediaPlan(
       lighting,
       widthFt: specs.widthFt,
       heightFt: specs.heightFt,
+      dualScreen,
       creativeBrief: buildSiteCreativeSpec({
         inventoryType: item.inventory.inventoryType,
         lighting,
+        widthFt: specs.widthFt,
+        heightFt: specs.heightFt,
+      }),
+      artworkGuidance: artworkGuidanceForType(item.inventory.inventoryType, {
+        dualScreen,
         widthFt: specs.widthFt,
         heightFt: specs.heightFt,
       }),
@@ -239,6 +257,7 @@ function serializeMediaPlan(
         overallScore: insights.overallScore,
         overallConfidence: insights.overallConfidence,
       },
+      factorScores,
       demand,
       rank: item.rank,
       approvalStatus:
@@ -1182,11 +1201,11 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
           ? (briefJson as import("../../lib/ai/campaign-brief-parse.js").ParsedCampaignBrief)
           : null;
 
-      // Prefer downloadable cover URLs (public CDN or short-lived signed) so PDF can embed photos
+      // Prefer downloadable photo URLs (public CDN or short-lived signed) so PDF can embed strips
       const locationIds = serialized.items
         .map((item) => item.location?.id)
         .filter((id): id is string => Boolean(id));
-      const pdfCovers = await coverUrlsForLocations(env, locationIds, storage);
+      const pdfPhotos = await pitchPhotoUrlsForLocations(env, locationIds, storage, 3);
 
       const { buildMediaPlanPdf } = await import("../../lib/media-planning/export-pdf.js");
       const pdfBudget =
@@ -1204,6 +1223,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
         endDate: campaign.endDate,
         generatedAt: new Date(),
         totalBudget: pdfBudget,
+        city: brief?.geographicFocus?.[0] ?? null,
         brief,
         items: serialized.items.map((item) => {
           const locId = item.location?.id;
@@ -1211,6 +1231,19 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
           const skyarcIndex = (item as { skyarcIndex?: { overallScore?: number } }).skyarcIndex;
           const whyThisSite =
             (item as { whyThisSite?: string | null }).whyThisSite ?? item.explanationText ?? null;
+          const listRate = item.pricing?.clientRate ?? null;
+          const planRate =
+            item.budgetAllocated > 0 ? item.budgetAllocated : listRate;
+          const dualScreen = Boolean((item as { dualScreen?: boolean }).dualScreen);
+          const sizeLines =
+            dualScreen && item.widthFt && item.heightFt
+              ? [
+                  `${item.widthFt} Ft X ${Math.round(item.heightFt / 2)} Ft Upper`,
+                  `${item.widthFt} Ft X ${Math.round(item.heightFt / 2)} Ft Lower`,
+                ]
+              : item.widthFt && item.heightFt
+                ? [`${item.widthFt} Ft X ${item.heightFt} Ft`]
+                : null;
           return {
             rank: item.rank,
             productCode: item.location?.skyarcSiteCode ?? "—",
@@ -1219,14 +1252,26 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
             road: item.location?.road ?? null,
             size:
               item.widthFt && item.heightFt ? `${item.widthFt}×${item.heightFt} ft` : null,
+            sizeLines,
             lighting: item.lighting ?? null,
+            dualScreen,
             creativeBrief: item.creativeBrief ?? null,
+            artworkGuidance:
+              (item as { artworkGuidance?: string | null }).artworkGuidance ?? null,
             // Customer-safe only — never vendorRate / margin
-            clientRate: item.pricing?.clientRate ?? null,
+            clientRate: listRate,
+            listRate,
+            planRate,
             budgetAllocated: item.budgetAllocated,
+            photoUrls:
+              (locId ? pdfPhotos.get(locId) : null) ??
+              (item.location?.coverImageUrl ? [item.location.coverImageUrl] : null),
             coverImageUrl:
-              (locId ? pdfCovers.get(locId) : null) ?? item.location?.coverImageUrl ?? null,
+              (locId ? pdfPhotos.get(locId)?.[0] : null) ??
+              item.location?.coverImageUrl ??
+              null,
             skyarcIndex: skyarcIndex?.overallScore ?? item.insights?.overallScore ?? null,
+            factorScores: (item as { factorScores?: Record<string, number> }).factorScores ?? null,
             whyThisSite,
             demandLine: demand?.summaryLine ?? null,
           };
