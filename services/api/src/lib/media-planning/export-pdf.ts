@@ -36,6 +36,8 @@ export interface MediaPlanPdfLineItem {
   photoUrls?: string[] | null;
   photoBuffers?: Array<Buffer | null> | null;
   skyarcIndex?: number | null;
+  /** PREMIUM stamp — location marked premium, not Index band. */
+  isPremium?: boolean;
   factorScores?: Record<string, number> | null;
   whyThisSite?: string | null;
   demandLine?: string | null;
@@ -100,12 +102,30 @@ function resolveFont(file: string): string | null {
   return null;
 }
 
-function resolveLogoPath(): string | null {
+/** Full lockup (mark + SKYARC + FIND YOUR SPOTLIGHT) for white PDF cover. */
+function resolveCoverLogoPath(): string | null {
   const candidates = [
-    path.resolve(__dirname, "../../../assets/brand/skyarc-logo-dark.png"),
-    path.resolve(process.cwd(), "services/api/assets/brand/skyarc-logo-dark.png"),
-    path.resolve(process.cwd(), "assets/brand/skyarc-logo-dark.png"),
-    path.resolve(process.cwd(), "apps/web/public/brand/skyarc-logo-dark.png"),
+    path.resolve(__dirname, "../../../assets/brand/skyarc-logo-cover.png"),
+    path.resolve(process.cwd(), "services/api/assets/brand/skyarc-logo-cover.png"),
+    path.resolve(process.cwd(), "assets/brand/skyarc-logo-cover.png"),
+    path.resolve(process.cwd(), "apps/web/public/brand/skyarc-logo-light.png"),
+  ];
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c)) return c;
+    } catch {
+      /* skip */
+    }
+  }
+  return null;
+}
+
+/** Distressed PREMIUM stamp asset (already tilted in artwork). */
+function resolvePremiumBadgePath(): string | null {
+  const candidates = [
+    path.resolve(__dirname, "../../../assets/brand/premium-badge.png"),
+    path.resolve(process.cwd(), "services/api/assets/brand/premium-badge.png"),
+    path.resolve(process.cwd(), "assets/brand/premium-badge.png"),
   ];
   for (const c of candidates) {
     try {
@@ -221,43 +241,43 @@ function drawCover(doc: PDFKit.PDFDocument, fonts: Fonts, input: MediaPlanPdfInp
   const h = doc.page.height;
   doc.rect(0, 0, w, 28).fill(COLORS.purple);
 
-  const logo = resolveLogoPath();
-  const centerY = h * 0.32;
+  // Center official Skyarc lockup — scale by WIDTH only so aspect ratio never stretches.
+  const logo = resolveCoverLogoPath();
+  const logoW = 300;
+  const logoAspect = 1084 / 388; // skyarc-logo-cover.png native ratio
+  const logoH = logoW / logoAspect;
+  const logoX = (w - logoW) / 2;
+  const logoY = h * 0.28;
   if (logo) {
     try {
-      doc.image(logo, w / 2 - 90, centerY - 36, { width: 180, height: 54, fit: [180, 54] });
+      doc.image(logo, logoX, logoY, { width: logoW });
     } catch {
       doc
         .font(fonts.bold)
         .fontSize(28)
         .fillColor(COLORS.ink)
-        .text("SKYARC", 0, centerY - 20, { width: w, align: "center" });
+        .text("SKYARC", 0, logoY + 24, { width: w, align: "center" });
     }
   } else {
     doc
       .font(fonts.bold)
       .fontSize(28)
       .fillColor(COLORS.ink)
-      .text("SKYARC", 0, centerY - 20, { width: w, align: "center" });
+      .text("SKYARC", 0, logoY + 24, { width: w, align: "center" });
   }
 
-  doc
-    .font(fonts.regular)
-    .fontSize(10)
-    .fillColor(COLORS.purple)
-    .text("FIND YOUR SPOTLIGHT.", 0, centerY + 28, { width: w, align: "center" });
-
+  const belowLogo = logoY + logoH + 28;
   doc
     .font(fonts.regular)
     .fontSize(16)
     .fillColor(COLORS.ink)
-    .text("Media Plan Proposal", 0, centerY + 70, { width: w, align: "center" });
+    .text("Media Plan Proposal", 0, belowLogo, { width: w, align: "center" });
 
   doc
     .font(fonts.bold)
     .fontSize(18)
     .fillColor(COLORS.ink)
-    .text(campaignDisplayName(input), MARGIN_X, centerY + 110, {
+    .text(campaignDisplayName(input), MARGIN_X, belowLogo + 40, {
       width: w - MARGIN_X * 2,
       align: "center",
     });
@@ -266,7 +286,7 @@ function drawCover(doc: PDFKit.PDFDocument, fonts: Fonts, input: MediaPlanPdfInp
     .font(fonts.regular)
     .fontSize(11)
     .fillColor(COLORS.muted)
-    .text(stamp, 0, centerY + 160, { width: w, align: "center" });
+    .text(stamp, 0, belowLogo + 90, { width: w, align: "center" });
 }
 
 function roundedCard(
@@ -474,6 +494,58 @@ function drawSummary(
   }
 }
 
+
+/** PREMIUM stamp from brand asset (proportions preserved; artwork already tilted). */
+function drawPremiumBadge(doc: PDFKit.PDFDocument, _fonts: Fonts, x: number, y: number) {
+  const badgePath = resolvePremiumBadgePath();
+  // Template size relative to photo strip (~92–110pt wide)
+  const bw = 110;
+  const bh = 44;
+  if (badgePath) {
+    try {
+      doc.image(badgePath, x - bw / 2, y - bh / 2, {
+        fit: [bw, bh],
+        align: "center",
+        valign: "center",
+      });
+      return;
+    } catch {
+      /* fall through to vector sticker */
+    }
+  }
+  // Fallback vector sticker if asset missing
+  doc.save();
+  doc.translate(x, y);
+  doc.rotate(-14);
+  doc.roundedRect(-bw / 2, -bh / 2, bw, bh * 0.6, 5).fill(COLORS.purple);
+  doc
+    .roundedRect(-bw / 2 + 2.5, -bh / 2 + 2.5, bw - 5, bh * 0.6 - 5, 3.5)
+    .lineWidth(1.75)
+    .strokeColor(COLORS.white)
+    .stroke();
+  doc
+    .font(_fonts.bold)
+    .fontSize(10)
+    .fillColor(COLORS.white)
+    .text("PREMIUM", -bw / 2, -5, { width: bw, align: "center" });
+  doc.restore();
+}
+
+function drawCheckmark(doc: PDFKit.PDFDocument, x: number, y: number, size = 12) {
+  doc.save();
+  doc
+    .lineWidth(2.2)
+    .lineCap("round")
+    .lineJoin("round")
+    .strokeColor(COLORS.emerald);
+  doc
+    .moveTo(x, y + size * 0.45)
+    .lineTo(x + size * 0.35, y + size * 0.85)
+    .lineTo(x + size, y)
+    .stroke();
+  doc.restore();
+}
+
 function drawSitePage(
   doc: PDFKit.PDFDocument,
   fonts: Fonts,
@@ -484,13 +556,15 @@ function drawSitePage(
   const display = campaignDisplayName(input);
   drawPurpleHeader(doc, fonts, display, stamp);
 
-  let y = 84;
+  let y = 78;
   const contentW = doc.page.width - MARGIN_X * 2;
   const photos = (item.photoBuffers ?? []).filter((b): b is Buffer => Boolean(b));
   const photoCount = Math.max(1, Math.min(3, photos.length || 1));
-  const gap = 10;
-  const photoH = 200;
+  const gap = 12;
+  // Match Canva template: tall photo strip, ~28% of page height
+  const photoH = Math.min(268, doc.page.height * 0.265);
   const photoW = (contentW - gap * (photoCount - 1)) / photoCount;
+  const photoTop = y;
 
   for (let i = 0; i < photoCount; i++) {
     const x = MARGIN_X + i * (photoW + gap);
@@ -516,26 +590,22 @@ function drawSitePage(
   }
 
   const badge = proposalBadgeForIndex(item.skyarcIndex);
-  if (badge?.premium) {
-    doc.save();
-    doc.translate(MARGIN_X + 28, y + photoH - 28);
-    doc.rotate(-12);
-    doc.roundedRect(-6, -10, 78, 22, 4).fill(COLORS.purple);
-    doc.font(fonts.bold).fontSize(9).fillColor(COLORS.white).text("PREMIUM", 4, -4);
-    doc.restore();
+  if (item.isPremium === true) {
+    // Overlap bottom-left of first photo (template sticker placement)
+    drawPremiumBadge(doc, fonts, MARGIN_X + 42, photoTop + photoH - 18);
   }
 
-  y += photoH + 18;
+  y += photoH + 16;
 
   doc.font(fonts.regular).fontSize(10).fillColor(COLORS.purple).text(item.productCode, MARGIN_X, y);
-  y = doc.y + 4;
+  y = doc.y + 6;
   const title = item.road
     ? `${item.locationName}${item.locationName.includes(item.road) ? "" : ` — ${item.road}`}`
     : item.locationName;
-  doc.font(fonts.bold).fontSize(16).fillColor(COLORS.ink).text(title, MARGIN_X, y, {
+  doc.font(fonts.bold).fontSize(18).fillColor(COLORS.ink).text(title, MARGIN_X, y, {
     width: contentW,
   });
-  y = doc.y + 14;
+  y = doc.y + 16;
 
   const rates = resolveProposalRates({
     listRate: item.listRate ?? item.clientRate,
@@ -555,7 +625,7 @@ function drawSitePage(
         : ["—"];
 
   const specW = (contentW - gap * 3) / 4;
-  const specH = 78;
+  const specH = 84;
   const specs: Array<{ label: string; draw: (x: number, top: number) => void }> = [
     {
       label: "Media Type",
@@ -565,13 +635,13 @@ function drawSitePage(
         });
         if (dual) {
           doc
-            .roundedRect(x + 10, top + 48, 72, 16, 8)
+            .roundedRect(x + 10, top + 48, 78, 16, 8)
             .fill(COLORS.purpleMuted);
           doc
-            .font(fonts.regular)
+            .font(fonts.bold)
             .fontSize(8)
             .fillColor(COLORS.purple)
-            .text("Dual Screen", x + 16, top + 51);
+            .text("Dual Screen", x + 10, top + 51, { width: 78, align: "center" });
         }
       },
     },
@@ -659,51 +729,52 @@ function drawSitePage(
   y += specH + 22;
 
   const bars = mapFactorBarsForPdf(item.factorScores);
-  const barAreaW = contentW * 0.62;
-  const rankingX = MARGIN_X + barAreaW + 24;
+  const barAreaW = contentW * 0.58;
+  const rankingX = MARGIN_X + barAreaW + 16;
+  const rankingW = contentW - barAreaW - 16;
   let by = y;
   for (const bar of bars) {
-    doc.font(fonts.regular).fontSize(9).fillColor(COLORS.ink).text(bar.label, MARGIN_X, by, {
-      width: 80,
+    doc.font(fonts.regular).fontSize(10).fillColor(COLORS.ink).text(bar.label, MARGIN_X, by, {
+      width: 86,
     });
-    const trackX = MARGIN_X + 88;
-    const trackW = barAreaW - 130;
-    doc.roundedRect(trackX, by + 3, trackW, 8, 4).fill(COLORS.emeraldTrack);
+    const trackX = MARGIN_X + 92;
+    const trackW = barAreaW - 148;
+    doc.roundedRect(trackX, by + 4, trackW, 9, 4.5).fill(COLORS.emeraldTrack);
     const fillW = Math.max(2, (trackW * bar.score) / 100);
-    doc.roundedRect(trackX, by + 3, fillW, 8, 4).fill(COLORS.emerald);
+    doc.roundedRect(trackX, by + 4, fillW, 9, 4.5).fill(COLORS.emerald);
+    // ASCII "%" — reliable with Noto subset (avoid fancy glyphs)
+    const pct = `${Math.round(bar.score)}%`;
     doc
-      .font(fonts.bold)
-      .fontSize(9)
-      .fillColor(COLORS.ink)
-      .text(`${bar.score}%`, trackX + trackW + 8, by, { width: 40 });
-    by += 22;
+      .font(fonts.regular)
+      .fontSize(10)
+      .fillColor(COLORS.muted)
+      .text(pct, trackX + trackW + 8, by, { width: 42 });
+    by += 24;
   }
 
   if (item.skyarcIndex != null && Number.isFinite(item.skyarcIndex)) {
     const overall = Math.round(item.skyarcIndex);
     doc
       .font(fonts.regular)
-      .fontSize(9)
+      .fontSize(10)
       .fillColor(COLORS.muted)
-      .text("Overall Ranking", rankingX, y, { width: 140, align: "center" });
+      .text("Overall Ranking", rankingX, y, { width: rankingW, align: "center" });
     doc
       .font(fonts.bold)
-      .fontSize(36)
+      .fontSize(42)
       .fillColor(COLORS.purple)
-      .text(`${overall}%`, rankingX, y + 18, { width: 140, align: "center" });
+      .text(`${overall}%`, rankingX, y + 20, { width: rankingW, align: "center" });
     if (badge) {
+      const labelY = y + 78;
       doc
         .font(fonts.bold)
-        .fontSize(12)
+        .fontSize(13)
         .fillColor(COLORS.ink)
-        .text(badge.label, rankingX, y + 66, { width: 140, align: "center" });
-      if (badge.premium) {
-        doc
-          .font(fonts.regular)
-          .fontSize(14)
-          .fillColor(COLORS.emerald)
-          .text("✓", rankingX + 100, y + 64);
-      }
+        .text(badge.label, rankingX, labelY, { width: rankingW - 18, align: "center" });
+      // Drawn checkmark (font glyphs like ✓ often missing in embedded subsets)
+      const labelWidth = doc.widthOfString(badge.label);
+      const checkX = rankingX + rankingW / 2 + labelWidth / 2 + 4;
+      drawCheckmark(doc, checkX, labelY + 2, 11);
     }
   }
 

@@ -853,6 +853,7 @@ export class ApiClient {
       ratePeriod?: string;
       currency?: string;
       notes?: string;
+      premium?: boolean;
     }
   ) {
     return this.request<unknown>(`/locations/${locationId}/skyarc-commercial`, {
@@ -1000,6 +1001,10 @@ export class ApiClient {
       cardRateAmount?: number;
       discountedRateAmount?: number;
       ratePeriod?: string;
+      premium?: boolean;
+      vendorMediaCode?: string;
+      skyarcSiteCode?: string;
+      state?: string;
     }>;
   }) {
     return this.request<{

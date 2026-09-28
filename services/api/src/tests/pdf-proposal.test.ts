@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   artworkGuidanceForType,
+  artworkGuidanceFromSpecs,
   averageIndex,
   mapFactorBarsForPdf,
   proposalBadgeForIndex,
@@ -8,11 +9,11 @@ import {
 } from "../lib/media-planning/pdf-proposal.js";
 
 describe("proposalBadgeForIndex", () => {
-  it("bands Must Buy / Strong Buy / Recommended / Consider", () => {
-    expect(proposalBadgeForIndex(90)).toEqual({ label: "Must Buy", premium: true });
-    expect(proposalBadgeForIndex(80)).toEqual({ label: "Strong Buy", premium: false });
-    expect(proposalBadgeForIndex(60)).toEqual({ label: "Recommended", premium: false });
-    expect(proposalBadgeForIndex(40)).toEqual({ label: "Consider", premium: false });
+  it("bands Must Buy / Strong Buy / Recommended / Consider without premium stamp", () => {
+    expect(proposalBadgeForIndex(90)).toEqual({ label: "Must Buy" });
+    expect(proposalBadgeForIndex(80)).toEqual({ label: "Strong Buy" });
+    expect(proposalBadgeForIndex(60)).toEqual({ label: "Recommended" });
+    expect(proposalBadgeForIndex(40)).toEqual({ label: "Consider" });
     expect(proposalBadgeForIndex(null)).toBeNull();
   });
 });
@@ -54,6 +55,42 @@ describe("artworkGuidanceForType", () => {
 
   it("falls back for unknown static", () => {
     const text = artworkGuidanceForType("STATIC_HOARDING", { widthFt: 40, heightFt: 20 });
+    expect(text).toContain("CMYK");
+    expect(text).toContain("40 Ft X 20 Ft");
+  });
+});
+
+describe("artworkGuidanceFromSpecs", () => {
+  it("uses stored digital production fields", () => {
+    const text = artworkGuidanceFromSpecs(
+      {
+        class: "DIGITAL",
+        production: {
+          resolutionW: 1920,
+          resolutionH: 1080,
+          staticFormats: ["jpg"],
+          motionFormats: ["mp4"],
+          colorMode: "RGB",
+          dpi: 72,
+          maxFileSizeMb: 10,
+          frameRates: [30],
+          maxBitrateMbps: 10,
+          codec: "H.264",
+        },
+      },
+      "DIGITAL_BILLBOARD"
+    );
+    expect(text).toContain("1920 px");
+    expect(text).toContain("MP4");
+    expect(text).toContain("10 MB");
+  });
+
+  it("uses static size defaults when production missing", () => {
+    const text = artworkGuidanceFromSpecs(
+      { class: "STATIC", widthFt: 40, heightFt: 20 },
+      "STATIC_BILLBOARD",
+      { widthFt: 40, heightFt: 20 }
+    );
     expect(text).toContain("CMYK");
     expect(text).toContain("40 Ft X 20 Ft");
   });

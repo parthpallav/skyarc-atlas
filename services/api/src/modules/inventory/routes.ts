@@ -16,6 +16,7 @@ import {
   maybeVendorRate,
   buildSkyarcSiteCode,
   getMarketCity,
+  parseSkyarcLocationCommercial,
 } from "@skyarc/shared";
 import argon2 from "argon2";
 import { prisma } from "../../lib/prisma.js";
@@ -455,7 +456,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
                 },
               ],
             },
-            select: { id: true, organizationId: true, skyarcSiteCode: true },
+            select: { id: true, organizationId: true, skyarcSiteCode: true, skyarcCommercialJson: true },
           });
         }
 
@@ -465,12 +466,19 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
               name: item.name,
               ...(targetOrgId ? { organizationId: targetOrgId } : {}),
             },
-            select: { id: true, organizationId: true, skyarcSiteCode: true },
+            select: { id: true, organizationId: true, skyarcSiteCode: true, skyarcCommercialJson: true },
           });
         }
 
         const sqftVal = item.sqft ?? (item.widthFt && item.heightFt ? item.widthFt * item.heightFt : 200);
         const rateAmount = item.cardRateAmount ?? item.discountedRateAmount ?? Math.max(15000, Math.round(sqftVal * 80));
+        const existingSkyarc = existingLoc
+          ? parseSkyarcLocationCommercial(existingLoc.skyarcCommercialJson)
+          : {};
+        const nextSkyarcCommercial = {
+          ...existingSkyarc,
+          ...(item.premium != null ? { premium: item.premium } : {}),
+        };
 
         if (existingLoc) {
           await prisma.location.update({
@@ -486,6 +494,9 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
                 ratePeriod: item.ratePeriod ?? "monthly",
                 currency: "INR",
               },
+              ...(item.premium != null
+                ? { skyarcCommercialJson: nextSkyarcCommercial as Prisma.InputJsonValue }
+                : {}),
             },
           });
 
@@ -602,6 +613,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
                 clientRateAmount: Math.round(rateAmount * 1.25),
                 ratePeriod: item.ratePeriod ?? "monthly",
                 currency: "INR",
+                ...(item.premium != null ? { premium: item.premium } : {}),
               },
               attributes: {
                 create: [

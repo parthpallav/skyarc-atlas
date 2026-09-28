@@ -41,7 +41,7 @@ import {
   resolveFactorScores,
 } from "../../lib/media-planning/insights.js";
 import { buildSiteDemandView, type SiteDemandView } from "../../lib/media-planning/demand.js";
-import { artworkGuidanceForType } from "../../lib/media-planning/pdf-proposal.js";
+import { artworkGuidanceFromSpecs } from "../../lib/media-planning/pdf-proposal.js";
 import { countLocationViewersBatch } from "../../lib/cache/presence-cache.js";
 import { coverUrlsForLocations, pitchPhotoUrlsForLocations } from "../../lib/asset-url.js";
 import { createStorageProvider } from "../../lib/storage/index.js";
@@ -138,6 +138,7 @@ function serializeMediaPlan(
             road: string | null;
             skyarcSiteCode?: string | null;
             organizationId: string | null;
+            skyarcCommercialJson?: unknown;
             attributes?: Array<{ key: string; valueJson: unknown }>;
             scores?: Array<{
               overallScore: number;
@@ -245,11 +246,12 @@ function serializeMediaPlan(
         widthFt: specs.widthFt,
         heightFt: specs.heightFt,
       }),
-      artworkGuidance: artworkGuidanceForType(item.inventory.inventoryType, {
+      artworkGuidance: artworkGuidanceFromSpecs(item.inventory.staticSpecsJson, item.inventory.inventoryType, {
         dualScreen,
         widthFt: specs.widthFt,
         heightFt: specs.heightFt,
       }),
+      isPremium: parseSkyarcLocationCommercial(location.skyarcCommercialJson).premium === true,
       budgetAllocated: Number(item.budgetAllocated),
       explanationText: whyThisSite,
       whyThisSite,
@@ -357,6 +359,7 @@ const mediaPlanInclude = {
                   road: true,
                   skyarcSiteCode: true,
                   organizationId: true,
+                  skyarcCommercialJson: true,
                   attributes: true,
                   scores: { orderBy: { computedAt: "desc" as const }, take: 1 },
                 },
@@ -1258,6 +1261,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
             creativeBrief: item.creativeBrief ?? null,
             artworkGuidance:
               (item as { artworkGuidance?: string | null }).artworkGuidance ?? null,
+            isPremium: Boolean((item as { isPremium?: boolean }).isPremium),
             // Customer-safe only — never vendorRate / margin
             clientRate: listRate,
             listRate,

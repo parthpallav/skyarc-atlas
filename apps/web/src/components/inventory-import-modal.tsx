@@ -11,8 +11,10 @@ import {
   Layers,
   ArrowRight,
   Building2,
+  Download,
 } from "lucide-react";
 import { parseInventoryExcel, type ParsedInventoryItem, type ExcelParseResult } from "@/lib/excel-importer";
+import { downloadSkyarcInventoryTemplate } from "@/lib/skyarc-inventory-template";
 import { createWebApiClient } from "@/lib/api";
 import { formatInr } from "@/lib/format";
 import { formatInventoryType } from "@skyarc/shared";
@@ -129,17 +131,27 @@ export function InventoryImportModal({
                 Import Vendor Inventory via Excel
               </h2>
               <p className="text-xs text-muted">
-                Supports standard availability & rate card sheets (Webpulse, Veda, Brandalyst formats)
+                Supports Skyarc template plus common vendor sheets (Webpulse, Veda, Brandalyst)
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void downloadSkyarcInventoryTemplate()}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-primary/80 px-2.5 py-1.5 rounded-lg hover:bg-violet-50 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download Skyarc template
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Body */}
@@ -190,31 +202,73 @@ export function InventoryImportModal({
             <>
               {/* File Dropzone */}
               {!parseResult ? (
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-violet-200 hover:border-primary bg-violet-50/30 hover:bg-violet-50/70 rounded-2xl p-10 text-center cursor-pointer transition-all space-y-3"
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    className="hidden"
-                    onChange={handleFileSelected}
-                  />
-                  <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto shadow-sm">
-                    <Upload className="w-7 h-7" />
+                <div className="space-y-4">
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-violet-200 hover:border-primary bg-violet-50/30 hover:bg-violet-50/70 rounded-2xl p-10 text-center cursor-pointer transition-all space-y-3"
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      className="hidden"
+                      onChange={handleFileSelected}
+                    />
+                    <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto shadow-sm">
+                      <Upload className="w-7 h-7" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-900 text-base">
+                        {isParsing ? "Analyzing spreadsheet…" : "Click or drag your inventory Excel sheet here"}
+                      </p>
+                      <p className="text-xs text-muted mt-1">
+                        Supports .xlsx / .xls — Skyarc template or common vendor rate cards
+                      </p>
+                    </div>
+                    <div className="inline-flex items-center gap-1.5 text-xs text-primary font-semibold bg-white border border-violet-100 px-3 py-1.5 rounded-full shadow-xs">
+                      <Layers className="w-3.5 h-3.5" />
+                      Auto-maps city, corridor, IIDs, SQFT & rate cards
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-bold text-slate-900 text-base">
-                      {isParsing ? "Analyzing spreadsheet…" : "Click or drag your inventory Excel sheet here"}
-                    </p>
-                    <p className="text-xs text-muted mt-1">
-                      Supports .xlsx / .xls format with media types, sizes, lighting, and card rates
-                    </p>
-                  </div>
-                  <div className="inline-flex items-center gap-1.5 text-xs text-primary font-semibold bg-white border border-violet-100 px-3 py-1.5 rounded-full shadow-xs">
-                    <Layers className="w-3.5 h-3.5" />
-                    Auto-maps city, corridor, IIDs, SQFT & rate cards
+                  <p className="text-center text-xs text-muted">
+                    Don&apos;t have a matching sheet?{" "}
+                    <button
+                      type="button"
+                      onClick={() => void downloadSkyarcInventoryTemplate()}
+                      className="text-primary font-semibold underline underline-offset-2 hover:text-primary/80"
+                    >
+                      Download the Skyarc template
+                    </button>
+                    , fill your locations, and upload it here.
+                  </p>
+                </div>
+              ) : parseResult.format === "unsupported" ? (
+                <div className="space-y-4">
+                  <div className="p-6 rounded-2xl border border-amber-200 bg-amber-50/80 text-center space-y-4">
+                    <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+                      <AlertCircle className="w-6 h-6" />
+                    </div>
+                    <div className="space-y-2 max-w-lg mx-auto">
+                      <h3 className="text-base font-bold text-slate-900">Unsupported spreadsheet layout</h3>
+                      {parseResult.errors.map((err, idx) => (
+                        <p key={idx} className="text-sm text-slate-700">
+                          {err}
+                        </p>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => void downloadSkyarcInventoryTemplate()}
+                        className="btn-primary text-xs gap-2 py-2 px-4"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download Skyarc template
+                      </button>
+                      <button type="button" onClick={handleReset} className="btn-secondary text-xs">
+                        Try another file
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -226,6 +280,12 @@ export function InventoryImportModal({
                       <span className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
                         <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
                         {file?.name}
+                      </span>
+                      <span className="text-[11px] text-muted mt-0.5 block">
+                        Format:{" "}
+                        {parseResult.format === "skyarc_template"
+                          ? "Skyarc template"
+                          : "Vendor legacy sheet"}
                       </span>
                     </div>
 
@@ -306,6 +366,7 @@ export function InventoryImportModal({
                             <th className="p-2.5">Size / SQFT</th>
                             <th className="p-2.5">Lighting</th>
                             <th className="p-2.5">Card Rate (Monthly)</th>
+                            <th className="p-2.5">Premium</th>
                             <th className="p-2.5">Coordinates</th>
                           </tr>
                         </thead>
@@ -343,6 +404,9 @@ export function InventoryImportModal({
                               <td className="p-2.5 font-bold text-slate-900">
                                 {item.cardRateAmount ? formatInr(item.cardRateAmount) : "—"}
                               </td>
+                              <td className="p-2.5 text-slate-600">
+                                {item.premium === true ? "Yes" : item.premium === false ? "No" : "—"}
+                              </td>
                               <td className="p-2.5 text-[10px] text-muted font-mono">
                                 {item.latitude}, {item.longitude}
                               </td>
@@ -378,7 +442,12 @@ export function InventoryImportModal({
             </button>
             <button
               type="button"
-              disabled={!parseResult || items.length === 0 || importMutation.isPending}
+              disabled={
+                !parseResult ||
+                parseResult.format === "unsupported" ||
+                items.length === 0 ||
+                importMutation.isPending
+              }
               onClick={() => importMutation.mutate(items)}
               className="btn-primary text-xs gap-2 py-2 px-5 disabled:opacity-50"
             >

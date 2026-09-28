@@ -21,7 +21,7 @@ Hard rule (unchanged): **PDF is always customer-safe** — never vendor nets, ma
 | Rates in PDF | Customer only: **Actual** (list, struck when higher) + **Discounted** (plan rate), as in sample |
 | Artwork guidance | Defaults **per inventory type** (format catalog / settings) |
 | Score bars | PDF-only remap of Index factors → sample labels; Overall = Index; badge from bands |
-| Photos | Up to **3** location photos; **PREMIUM** when Index ≥ **85** |
+| Photos | Up to **3** location photos; **PREMIUM** only when site is marked premium |
 | Effective reach | Plan **average Index** (rounded) in summary headline |
 | Stack | Rewrite `export-pdf.ts` (+ DTO builder in media-plans routes) |
 
@@ -59,7 +59,7 @@ Page size target: match sample aspect closely (custom size ~810×1012.5 pt **or*
 
 - Same purple header  
 - Up to **3** equal photo tiles (cover + next location assets); fewer than 3 → only render available (no empty frames that look broken; layout absorbs width)  
-- Tilted **PREMIUM** badge on first photo when Index ≥ 85  
+- Tilted **PREMIUM** badge on first photo when site is marked premium (`skyarcCommercialJson.premium`)  
 - Product/Skyarc code (purple) + location title  
 - Four grey cards: Media Type (+ dual-screen pill when applicable) · Size (upper/lower strips when dual) · Lighting · Investment (Actual struck red + Discounted)  
 - Five green factor bars with PDF labels (below) + **Overall Ranking** % and badge text  
@@ -94,7 +94,7 @@ Schema/API: ensure list rate and plan rate are both available on plan-item PDF D
   - ≥ 75 → **Strong Buy**  
   - ≥ 55 → **Recommended**  
   - else → **Consider**  
-- PREMIUM sticker: Index ≥ 85 only.
+- PREMIUM sticker: premium-marked sites only (not Index ≥ 85). Index bands still drive Must Buy / Strong Buy text.
 
 ### Photos
 
@@ -102,15 +102,14 @@ Schema/API: ensure list rate and plan rate are both available on plan-item PDF D
 - Cap 3; parallel fetch like today.  
 - Missing images: skip tile; do not invent stock art.
 
-### Artwork guidance (per inventory type)
+### Artwork guidance (from stored location/form specs)
 
-Store a small map (config/shared constant or Admin settings JSON later) keyed by inventory/format type, e.g.:
+Prefer `Inventory.staticSpecsJson.production` written from the inventory form:
 
-- Digital Billboard / LED → dual-screen MP4/H.264 specs as in sample  
-- Static / Hoarding → print DPI / size / color mode  
-- BQS / Kiosk → format-specific defaults  
+- Digital → resolution, formats, codec, DPI, bitrate from stored production (else digital defaults)
+- Static → size + CMYK print defaults (never digital copy on static faces)
 
-PDF prints the string for the site’s format; if unknown type → generic “Follow Skyarc creative specs for this format.”
+Fallback only when production is missing: type-class defaults (static vs digital).
 
 ### Summary fields
 
@@ -147,7 +146,7 @@ PDF prints the string for the site’s format; if unknown type → generic “Fo
 1. Export produces Cover + Summary + one page per site, visually recognizable as the sample.  
 2. Investment / table / site Investment use customer Actual+Discounted rules only.  
 3. Bars + Overall Ranking driven by real Index data with locked label map.  
-4. Artwork line comes from inventory-type defaults.  
+4. Artwork line comes from stored production specs (static/digital fallbacks).  
 5. No new VPS process or browser dependency.  
 6. PDF remains safe to email to a brand.
 

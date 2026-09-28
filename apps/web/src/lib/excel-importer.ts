@@ -1,5 +1,12 @@
 import ExcelJS from "exceljs";
 import { getMarketCity } from "@skyarc/shared";
+import {
+  detectInventoryExcelFormat,
+  parsePremiumFlag,
+  SKYARC_TEMPLATE_EXPECTED_COLUMNS,
+  SKYARC_TEMPLATE_UNSUPPORTED_MESSAGE,
+  type InventoryExcelFormat,
+} from "./skyarc-inventory-template";
 
 export interface ParsedInventoryItem {
   name: string;
@@ -23,42 +30,45 @@ export interface ParsedInventoryItem {
   cardRateAmount?: number;
   discountedRateAmount?: number;
   ratePeriod: string;
+  /** When set from Skyarc template Premium column — stored on location skyarcCommercialJson.premium */
+  premium?: boolean;
 }
 
 export interface ExcelParseResult {
   vendorOrgName?: string;
   items: ParsedInventoryItem[];
   errors: string[];
+  format: InventoryExcelFormat;
 }
 
 // Landmark fallbacks for common Gujarat corridors (seed / import datasets)
 const AREA_LANDMARK_COORDS: Record<string, { lat: number; lng: number }> = {
-  "150ft ring road": { lat: 22.2850, lng: 70.7680 },
-  "150 feet ring road": { lat: 22.2850, lng: 70.7680 },
+  "150ft ring road": { lat: 22.285, lng: 70.768 },
+  "150 feet ring road": { lat: 22.285, lng: 70.768 },
   "80 feet road": { lat: 22.2808, lng: 70.8062 },
   "80ft road": { lat: 22.2808, lng: 70.8062 },
-  "amin marg": { lat: 22.2910, lng: 70.7855 },
-  "astron chowk": { lat: 22.2960, lng: 70.7920 },
-  "astron under bridge": { lat: 22.2960, lng: 70.7920 },
-  "gsrtc, bus port": { lat: 22.3080, lng: 70.8020 },
-  "gsrtc": { lat: 22.3080, lng: 70.8020 },
-  "bus port": { lat: 22.3080, lng: 70.8020 },
-  "busport": { lat: 22.3080, lng: 70.8020 },
-  "bedi": { lat: 22.3420, lng: 70.8120 },
-  "kalawad road": { lat: 22.2740, lng: 70.7580 },
+  "amin marg": { lat: 22.291, lng: 70.7855 },
+  "astron chowk": { lat: 22.296, lng: 70.792 },
+  "astron under bridge": { lat: 22.296, lng: 70.792 },
+  "gsrtc, bus port": { lat: 22.308, lng: 70.802 },
+  gsrtc: { lat: 22.308, lng: 70.802 },
+  "bus port": { lat: 22.308, lng: 70.802 },
+  busport: { lat: 22.308, lng: 70.802 },
+  bedi: { lat: 22.342, lng: 70.812 },
+  "kalawad road": { lat: 22.274, lng: 70.758 },
   "nana mauva road": { lat: 22.2835, lng: 70.7895 },
   "nana mauva": { lat: 22.2835, lng: 70.7895 },
   "raiya road": { lat: 22.2985, lng: 70.7853 },
-  "yagnik road": { lat: 22.2950, lng: 70.7950 },
-  "race course": { lat: 22.3010, lng: 70.7980 },
-  "mavdi circle": { lat: 22.2610, lng: 70.7874 },
-  "mavdi": { lat: 22.2610, lng: 70.7874 },
-  "gondal road": { lat: 22.2710, lng: 70.8040 },
+  "yagnik road": { lat: 22.295, lng: 70.795 },
+  "race course": { lat: 22.301, lng: 70.798 },
+  "mavdi circle": { lat: 22.261, lng: 70.7874 },
+  mavdi: { lat: 22.261, lng: 70.7874 },
+  "gondal road": { lat: 22.271, lng: 70.804 },
   "gondal circle": { lat: 22.2516, lng: 70.7901 },
   "madhapar circle": { lat: 22.3314, lng: 70.7657 },
-  "madhapar": { lat: 22.3314, lng: 70.7657 },
-  "kothariya": { lat: 22.2450, lng: 70.8250 },
-  "university road": { lat: 22.2920, lng: 70.7650 },
+  madhapar: { lat: 22.3314, lng: 70.7657 },
+  kothariya: { lat: 22.245, lng: 70.825 },
+  "university road": { lat: 22.292, lng: 70.765 },
 };
 
 function normalizeMediaType(typeStr?: string | null): string {
@@ -66,11 +76,13 @@ function normalizeMediaType(typeStr?: string | null): string {
   const t = typeStr.toLowerCase().trim();
   if (t.includes("gantry")) return "GANTRY";
   if (t.includes("unipole")) return "UNIPOLE";
-  if (t.includes("digital") || t.includes("led") || t.includes("screen") || t.includes("dooh")) return "DIGITAL_BILLBOARD";
+  if (t.includes("digital") || t.includes("led") || t.includes("screen") || t.includes("dooh"))
+    return "DIGITAL_BILLBOARD";
   if (t.includes("kiosk") || t.includes("totem")) return "KIOSK";
   if (t.includes("bus") || t.includes("bqs") || t.includes("shelter")) return "BUS_SHELTER";
   if (t.includes("mall") || t.includes("atrium")) return "MALL_MEDIA";
-  if (t.includes("hoarding") || t.includes("static") || t.includes("billboard")) return "STATIC_BILLBOARD";
+  if (t.includes("hoarding") || t.includes("static") || t.includes("billboard"))
+    return "STATIC_BILLBOARD";
   return "STATIC_BILLBOARD";
 }
 
@@ -104,14 +116,13 @@ function parseNumber(val: unknown): number | undefined {
   if (typeof val === "number" && !Number.isNaN(val)) return val;
   const str = extractCellValue(val);
   if (!str) return undefined;
-  // Clean currency symbols and commas
   const cleaned = str.replace(/[^0-9.-]+/g, "");
   const num = parseFloat(cleaned);
   return Number.isNaN(num) ? undefined : num;
 }
 
 function parseDimensions(sizeStr: string): { width?: number; height?: number } {
-  const parts = sizeStr.toLowerCase().split(/[x*]/);
+  const parts = sizeStr.toLowerCase().split(/[x*×]/);
   if (parts.length === 2) {
     const w = parseNumber(parts[0]);
     const h = parseNumber(parts[1]);
@@ -120,29 +131,79 @@ function parseDimensions(sizeStr: string): { width?: number; height?: number } {
   return {};
 }
 
+function mapHeaderColumns(row: unknown[]): Record<string, number> {
+  const colIndexMap: Record<string, number> = {};
+  row.forEach((colName, cIdx) => {
+    const norm = extractCellValue(colName).toLowerCase();
+    if (norm === "sr" || norm === "sr." || norm === "s.no" || norm === "sr no") colIndexMap.sr = cIdx;
+    else if (norm === "site name" || norm === "name" || norm === "site") colIndexMap.siteName = cIdx;
+    else if (norm === "media type" || norm === "type" || norm === "media") colIndexMap.mediaType = cIdx;
+    else if (
+      norm === "iid" ||
+      norm === "inventory id" ||
+      norm === "id" ||
+      norm === "site id" ||
+      norm === "media code" ||
+      norm === "vendor code" ||
+      norm === "vendor media code" ||
+      norm === "hoarding no"
+    )
+      colIndexMap.vendorMediaCode = cIdx;
+    else if (norm === "district") colIndexMap.district = cIdx;
+    else if (norm === "city") colIndexMap.city = cIdx;
+    else if (norm === "state") colIndexMap.state = cIdx;
+    else if (norm === "area" || norm === "area / corridor") colIndexMap.area = cIdx;
+    else if (
+      norm === "location" ||
+      norm === "location description" ||
+      norm === "site description" ||
+      norm === "site location"
+    )
+      colIndexMap.location = cIdx;
+    else if (norm === "lat" || norm === "latitude") colIndexMap.latitude = cIdx;
+    else if (norm === "long" || norm === "longitude" || norm === "lng") colIndexMap.longitude = cIdx;
+    else if (norm === "w" || norm === "width" || norm === "width (ft)" || norm === "w(ft)")
+      colIndexMap.width = cIdx;
+    else if (norm === "h" || norm === "height" || norm === "height (ft)" || norm === "h(ft)")
+      colIndexMap.height = cIdx;
+    else if (norm.startsWith("size") || norm.startsWith("dimension")) colIndexMap.size = cIdx;
+    else if (norm === "sqft" || norm === "sq.ft" || norm === "total sqft" || norm === "area (sqft)")
+      colIndexMap.sqft = cIdx;
+    else if (norm === "light" || norm === "lighting" || norm === "illumination")
+      colIndexMap.lighting = cIdx;
+    else if (norm === "available from" || norm === "availability") colIndexMap.availableFrom = cIdx;
+    else if (norm.includes("card rate")) colIndexMap.cardRate = cIdx;
+    else if (norm.includes("discounted")) colIndexMap.discountedRate = cIdx;
+    else if (norm.startsWith("premium")) colIndexMap.premium = cIdx;
+  });
+  return colIndexMap;
+}
+
 export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<ExcelParseResult> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(fileBuffer);
 
   const worksheet = workbook.worksheets[0];
   if (!worksheet) {
-    return { items: [], errors: ["Excel file does not contain any sheets."] };
+    return {
+      items: [],
+      errors: ["Excel file does not contain any sheets."],
+      format: "unsupported",
+    };
   }
 
   const rawData: unknown[][] = [];
   worksheet.eachRow({ includeEmpty: false }, (row) => {
     const values = row.values as unknown[];
-    // exceljs row.values is 1-indexed, index 0 is undefined
     const cleanValues = Array.isArray(values) ? values.slice(1) : [];
     rawData.push(cleanValues);
   });
 
   if (rawData.length === 0) {
-    return { items: [], errors: ["Sheet is empty."] };
+    return { items: [], errors: ["Sheet is empty."], format: "unsupported" };
   }
 
   let vendorOrgName: string | undefined;
-  // Detect company name in header rows (usually rows 0-5)
   for (let r = 0; r < Math.min(6, rawData.length); r++) {
     const row = rawData[r] || [];
     const firstCell = extractCellValue(row[0]);
@@ -153,6 +214,8 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
       !firstCell.toLowerCase().startsWith("available") &&
       !firstCell.toLowerCase().startsWith("to,") &&
       !firstCell.toLowerCase().startsWith("sr") &&
+      !firstCell.toLowerCase().includes("skyarc atlas inventory") &&
+      !firstCell.toLowerCase().startsWith("fill one row") &&
       firstCell.length > 3
     ) {
       vendorOrgName = firstCell;
@@ -160,59 +223,44 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
     }
   }
 
-  // Find header row by matching signature column labels
   let headerRowIndex = -1;
-  const colIndexMap: Record<string, number> = {};
+  let colIndexMap: Record<string, number> = {};
 
   for (let r = 0; r < Math.min(25, rawData.length); r++) {
     const row = rawData[r] || [];
     const rowStr = row.map((cell) => extractCellValue(cell).toLowerCase());
 
     if (
-      rowStr.some((c) => c === "media type" || c === "sqft" || c === "card rate" || c.includes("card rate") || c === "iid")
+      rowStr.some(
+        (c) =>
+          c === "media type" ||
+          c === "sqft" ||
+          c === "card rate" ||
+          c.includes("card rate") ||
+          c === "iid" ||
+          c === "site name" ||
+          c === "vendor media code" ||
+          c.startsWith("premium")
+      )
     ) {
       headerRowIndex = r;
-      row.forEach((colName, cIdx) => {
-        const norm = extractCellValue(colName).toLowerCase();
-        if (norm === "sr" || norm === "sr." || norm === "s.no" || norm === "sr no") colIndexMap.sr = cIdx;
-        else if (norm === "media type" || norm === "type" || norm === "media") colIndexMap.mediaType = cIdx;
-        else if (
-          norm === "iid" ||
-          norm === "inventory id" ||
-          norm === "id" ||
-          norm === "site id" ||
-          norm === "media code" ||
-          norm === "vendor code" ||
-          norm === "vendor media code" ||
-          norm === "hoarding no"
-        )
-          colIndexMap.vendorMediaCode = cIdx;
-        else if (norm === "district") colIndexMap.district = cIdx;
-        else if (norm === "city") colIndexMap.city = cIdx;
-        else if (norm === "state") colIndexMap.state = cIdx;
-        else if (norm === "area") colIndexMap.area = cIdx;
-        else if (norm === "location" || norm === "location description" || norm === "site description" || norm === "site location") colIndexMap.location = cIdx;
-        else if (norm === "lat" || norm === "latitude") colIndexMap.latitude = cIdx;
-        else if (norm === "long" || norm === "longitude" || norm === "lng") colIndexMap.longitude = cIdx;
-        else if (norm === "w" || norm === "width" || norm === "width (ft)" || norm === "w(ft)") colIndexMap.width = cIdx;
-        else if (norm === "h" || norm === "height" || norm === "height (ft)" || norm === "h(ft)") colIndexMap.height = cIdx;
-        else if (norm.startsWith("size") || norm.startsWith("dimension")) colIndexMap.size = cIdx;
-        else if (norm === "sqft" || norm === "sq.ft" || norm === "total sqft" || norm === "area (sqft)") colIndexMap.sqft = cIdx;
-        else if (norm === "light" || norm === "lighting" || norm === "illumination") colIndexMap.lighting = cIdx;
-        else if (norm === "available from" || norm === "availability") colIndexMap.availableFrom = cIdx;
-        else if (norm.includes("card rate")) colIndexMap.cardRate = cIdx;
-        else if (norm.includes("discounted")) colIndexMap.discountedRate = cIdx;
-      });
+      colIndexMap = mapHeaderColumns(row);
       break;
     }
   }
 
-  if (headerRowIndex === -1) {
+  const titleCell = extractCellValue(rawData[0]?.[0]);
+  const headerCells =
+    headerRowIndex >= 0
+      ? (rawData[headerRowIndex] || []).map((c) => extractCellValue(c))
+      : [];
+  const format = detectInventoryExcelFormat({ titleCell, headerCells });
+
+  if (format === "unsupported" || headerRowIndex === -1) {
     return {
       items: [],
-      errors: [
-        "Could not detect valid inventory table headers (expected columns like 'Media Type', 'IID', 'Area', 'Location', 'SQFT', 'Card Rate').",
-      ],
+      errors: [SKYARC_TEMPLATE_UNSUPPORTED_MESSAGE, SKYARC_TEMPLATE_EXPECTED_COLUMNS],
+      format: "unsupported",
     };
   }
 
@@ -226,13 +274,14 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
     const rawCode =
       colIndexMap.vendorMediaCode != null
         ? extractCellValue(row[colIndexMap.vendorMediaCode])
-        : colIndexMap.iid != null
-        ? extractCellValue(row[colIndexMap.iid])
         : undefined;
     const vendorMediaCode = rawCode || undefined;
-    const mediaTypeRaw = colIndexMap.mediaType != null ? extractCellValue(row[colIndexMap.mediaType]) : undefined;
+    const mediaTypeRaw =
+      colIndexMap.mediaType != null ? extractCellValue(row[colIndexMap.mediaType]) : undefined;
     const area = colIndexMap.area != null ? extractCellValue(row[colIndexMap.area]) : "";
     const locDesc = colIndexMap.location != null ? extractCellValue(row[colIndexMap.location]) : "";
+    const explicitName =
+      colIndexMap.siteName != null ? extractCellValue(row[colIndexMap.siteName]) : "";
     const defaultMarket = getMarketCity();
     const city =
       colIndexMap.city != null ? extractCellValue(row[colIndexMap.city]) : defaultMarket.name;
@@ -243,11 +292,9 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
     const state =
       colIndexMap.state != null ? extractCellValue(row[colIndexMap.state]) : defaultMarket.state;
 
-    // Latitude & Longitude
     let lat = colIndexMap.latitude != null ? parseNumber(row[colIndexMap.latitude]) : undefined;
     let lng = colIndexMap.longitude != null ? parseNumber(row[colIndexMap.longitude]) : undefined;
 
-    // Fallback coordinates from Area/Location matching
     if (lat == null || lng == null) {
       const combinedText = `${area} ${locDesc}`.toLowerCase().trim();
       const match = Object.entries(AREA_LANDMARK_COORDS).find(([k]) => combinedText.includes(k));
@@ -272,20 +319,39 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
       heightFt = heightFt || parsedDim.height;
     }
 
-    const sqft = colIndexMap.sqft != null ? parseNumber(row[colIndexMap.sqft]) : (widthFt && heightFt ? widthFt * heightFt : 200);
-    const lightRaw = colIndexMap.lighting != null ? extractCellValue(row[colIndexMap.lighting]) : undefined;
-    const availableFrom = colIndexMap.availableFrom != null ? extractCellValue(row[colIndexMap.availableFrom]) : undefined;
-    const cardRate = colIndexMap.cardRate != null ? parseNumber(row[colIndexMap.cardRate]) : undefined;
-    const discountedRate = colIndexMap.discountedRate != null ? parseNumber(row[colIndexMap.discountedRate]) : undefined;
+    const sqft =
+      colIndexMap.sqft != null
+        ? parseNumber(row[colIndexMap.sqft])
+        : widthFt && heightFt
+          ? widthFt * heightFt
+          : 200;
+    const lightRaw =
+      colIndexMap.lighting != null ? extractCellValue(row[colIndexMap.lighting]) : undefined;
+    const availableFrom =
+      colIndexMap.availableFrom != null
+        ? extractCellValue(row[colIndexMap.availableFrom])
+        : undefined;
+    const cardRate =
+      colIndexMap.cardRate != null ? parseNumber(row[colIndexMap.cardRate]) : undefined;
+    const discountedRate =
+      colIndexMap.discountedRate != null
+        ? parseNumber(row[colIndexMap.discountedRate])
+        : undefined;
+    const premium =
+      colIndexMap.premium != null
+        ? parsePremiumFlag(extractCellValue(row[colIndexMap.premium]))
+        : undefined;
 
-    const siteName = vendorMediaCode
-      ? `${vendorMediaCode} - ${area || locDesc || "Billboard Site"}`
-      : `${area || locDesc || `${city} Site`} #${r}`;
+    const siteName =
+      explicitName ||
+      (vendorMediaCode
+        ? `${vendorMediaCode} - ${area || locDesc || "Billboard Site"}`
+        : `${area || locDesc || `${city} Site`} #${r}`);
 
     items.push({
       name: siteName,
       vendorMediaCode,
-      iid: vendorMediaCode, // backward compat
+      iid: vendorMediaCode,
       latitude: Number(lat.toFixed(6)),
       longitude: Number(lng.toFixed(6)),
       city,
@@ -302,12 +368,18 @@ export async function parseInventoryExcel(fileBuffer: ArrayBuffer): Promise<Exce
       cardRateAmount: cardRate,
       discountedRateAmount: discountedRate,
       ratePeriod: "monthly",
+      ...(premium != null ? { premium } : {}),
     });
   }
 
+  if (items.length === 0) {
+    errors.push("No inventory rows found under the header. Add at least one site row and try again.");
+  }
+
   return {
-    vendorOrgName,
+    vendorOrgName: format === "skyarc_template" ? undefined : vendorOrgName,
     items,
     errors,
+    format,
   };
 }

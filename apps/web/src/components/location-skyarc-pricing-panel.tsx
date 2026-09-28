@@ -9,6 +9,7 @@ interface SkyarcCommercialView {
   ratePeriod: string | null;
   currency: string;
   notes: string | null;
+  premium?: boolean;
 }
 
 interface LocationSkyarcPricingPanelProps {
@@ -26,6 +27,7 @@ export function LocationSkyarcPricingPanel({
   const [clientRateAmount, setClientRateAmount] = useState("");
   const [ratePeriod, setRatePeriod] = useState("monthly");
   const [notes, setNotes] = useState("");
+  const [premium, setPremium] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -37,6 +39,7 @@ export function LocationSkyarcPricingPanel({
     );
     setRatePeriod(skyarcCommercialView.ratePeriod ?? "monthly");
     setNotes(skyarcCommercialView.notes ?? "");
+    setPremium(skyarcCommercialView.premium === true);
   }, [skyarcCommercialView]);
 
   const saveMutation = useMutation({
@@ -47,6 +50,7 @@ export function LocationSkyarcPricingPanel({
         ratePeriod,
         currency: skyarcCommercialView?.currency ?? "INR",
         notes: notes.trim() || undefined,
+        premium,
       });
     },
     onSuccess: async () => {
@@ -75,6 +79,12 @@ export function LocationSkyarcPricingPanel({
               {skyarcCommercialView.clientRateAmount != null
                 ? `${skyarcCommercialView.currency} ${skyarcCommercialView.clientRateAmount.toLocaleString()} / ${skyarcCommercialView.ratePeriod ?? "monthly"}`
                 : "Pricing on request"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted">Premium site</dt>
+            <dd className="font-medium text-slate-900 mt-1">
+              {skyarcCommercialView.premium ? "Yes — PREMIUM badge on PDF" : "No"}
             </dd>
           </div>
         </dl>
@@ -114,6 +124,20 @@ export function LocationSkyarcPricingPanel({
               </select>
             </label>
           </div>
+          <label className="flex items-start gap-2 text-sm rounded-lg border border-violet-200 bg-white px-3 py-2.5">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={premium}
+              onChange={(e) => setPremium(e.target.checked)}
+            />
+            <span>
+              <span className="font-medium text-slate-900">Mark as premium site</span>
+              <span className="block text-xs text-muted mt-0.5">
+                Shows the PREMIUM badge on media-plan PDF site pages (independent of Index score).
+              </span>
+            </span>
+          </label>
           <label className="block text-sm">
             <span className="text-muted font-medium">Internal notes</span>
             <textarea

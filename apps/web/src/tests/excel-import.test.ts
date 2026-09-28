@@ -102,3 +102,27 @@ describe("Smart Excel Inventory Importer", () => {
     });
   }
 });
+
+  it("parses Skyarc inventory template including premium flag", async () => {
+    const { buildSkyarcInventoryTemplateBuffer } = await import("../lib/skyarc-inventory-template");
+    const buffer = await buildSkyarcInventoryTemplateBuffer();
+    const result = await parseInventoryExcel(buffer);
+    expect(result.format).toBe("skyarc_template");
+    expect(result.errors).toEqual([]);
+    expect(result.items.length).toBeGreaterThanOrEqual(1);
+    expect(result.items[0]?.premium).toBe(true);
+    expect(result.items[0]?.vendorMediaCode).toBe("G-0029");
+  });
+
+  it("returns unsupported with clear errors for random sheets", async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Random");
+    sheet.addRow(["Hello", "World"]);
+    sheet.addRow([1, 2]);
+    const buffer = await workbook.xlsx.writeBuffer();
+    const result = await parseInventoryExcel(buffer as ArrayBuffer);
+    expect(result.format).toBe("unsupported");
+    expect(result.items).toEqual([]);
+    expect(result.errors[0]).toMatch(/doesn.t match a supported layout/i);
+  });
+

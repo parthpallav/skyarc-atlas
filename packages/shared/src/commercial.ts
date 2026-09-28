@@ -29,6 +29,8 @@ export interface SkyarcLocationCommercial {
   ratePeriod?: string;
   currency?: string;
   notes?: string;
+  /** When true, media-plan PDF shows PREMIUM badge (not Index-driven). */
+  premium?: boolean;
 }
 
 export interface EffectiveSkyarcLocationCommercial {
@@ -36,6 +38,7 @@ export interface EffectiveSkyarcLocationCommercial {
   ratePeriod: string | null;
   currency: string;
   notes: string | null;
+  premium: boolean;
 }
 
 export interface EffectiveLocationCommercial {
@@ -142,6 +145,9 @@ export function parseSkyarcLocationCommercial(value: unknown): SkyarcLocationCom
   if (typeof raw.notes === "string") {
     commercial.notes = raw.notes;
   }
+  if (typeof raw.premium === "boolean") {
+    commercial.premium = raw.premium;
+  }
   return commercial;
 }
 
@@ -154,6 +160,7 @@ export function resolveEffectiveSkyarcLocationCommercial(
     ratePeriod: skyarcCommercial.ratePeriod ?? null,
     currency: skyarcCommercial.currency ?? platform.currency,
     notes: skyarcCommercial.notes ?? null,
+    premium: skyarcCommercial.premium === true,
   };
 }
 

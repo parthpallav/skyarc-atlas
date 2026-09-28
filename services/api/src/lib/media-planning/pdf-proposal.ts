@@ -1,4 +1,11 @@
-import { formatInventoryType, isDigitalInventoryType } from "@skyarc/shared";
+import {
+  formatInventoryType,
+  isDigitalInventoryType,
+  parseInventorySpecsJson,
+  type DigitalProductionSpecs,
+  type InventorySpecsJson,
+  type StaticProductionSpecs,
+} from "@skyarc/shared";
 
 /** PDF-only labels mapped from Atlas Index factor attr keys. */
 export const PDF_FACTOR_BAR_MAP = [
@@ -11,16 +18,16 @@ export const PDF_FACTOR_BAR_MAP = [
 
 export type ProposalBadge = {
   label: string;
-  premium: boolean;
 };
 
+/** Index band label only — PREMIUM stamp is driven by location.premium, not Index. */
 export function proposalBadgeForIndex(overall: number | null | undefined): ProposalBadge | null {
   if (overall == null || !Number.isFinite(overall)) return null;
   const score = Math.round(overall);
-  if (score >= 85) return { label: "Must Buy", premium: true };
-  if (score >= 75) return { label: "Strong Buy", premium: false };
-  if (score >= 55) return { label: "Recommended", premium: false };
-  return { label: "Consider", premium: false };
+  if (score >= 85) return { label: "Must Buy" };
+  if (score >= 75) return { label: "Strong Buy" };
+  if (score >= 55) return { label: "Recommended" };
+  return { label: "Consider" };
 }
 
 export function mapFactorBarsForPdf(
@@ -37,6 +44,86 @@ export function averageIndex(scores: Array<number | null | undefined>): number |
   const vals = scores.filter((s): s is number => s != null && Number.isFinite(s));
   if (vals.length === 0) return null;
   return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+}
+
+function isDigitalProduction(p: unknown): p is DigitalProductionSpecs {
+  return (
+    !!p &&
+    typeof p === "object" &&
+    "resolutionW" in p &&
+    typeof (p as DigitalProductionSpecs).resolutionW === "number"
+  );
+}
+
+function isStaticProduction(p: unknown): p is StaticProductionSpecs {
+  return !!p && typeof p === "object" && "lighting" in p && !("resolutionW" in p);
+}
+
+function formatDigitalProduction(
+  prod: DigitalProductionSpecs,
+  opts?: { dualScreen?: boolean }
+): string {
+  const dual = opts?.dualScreen === true;
+  const res = `${prod.resolutionW} px width X ${prod.resolutionH} px Height`;
+  const sizeBit = dual ? `${res} for upper | ${res} for Lower` : res;
+  const color = prod.colorMode ? `Color Mode : ${prod.colorMode}` : "Color Mode : RGB";
+  const dpi = prod.dpi != null ? `DPI : ${prod.dpi}` : null;
+  const fileSize = prod.maxFileSizeMb != null ? `File Size : ${prod.maxFileSizeMb} MB` : null;
+  const formats = [
+    ...(prod.motionFormats ?? []),
+    ...(prod.staticFormats ?? []),
+  ].filter(Boolean);
+  const formatBit = formats.length
+    ? `Format : ${formats.map((f) => f.toUpperCase()).join(" or ")}${prod.codec ? ` [${prod.codec} Codec]` : ""}`
+    : null;
+  const fps =
+    prod.frameRates?.length ? `Frame Rate : ${prod.frameRates.map((f) => `${f} Fps`).join(", ")}` : null;
+  const bitrate =
+    prod.maxBitrateMbps != null ? `Bitrate : ${prod.maxBitrateMbps} Mbps (VBR)` : null;
+  return [sizeBit, color, dpi, fileSize, formatBit, fps, bitrate].filter(Boolean).join(" | ");
+}
+
+function formatStaticProduction(
+  prod: StaticProductionSpecs,
+  inventoryType?: string | null,
+  fallbackSize?: { widthFt?: number | null; heightFt?: number | null }
+): string {
+  const w = prod.widthFt ?? fallbackSize?.widthFt;
+  const h = prod.heightFt ?? fallbackSize?.heightFt;
+  const size = w && h ? `${w} Ft X ${h} Ft` : "confirmed face size";
+  const material = prod.materialNotes?.trim();
+  if (material) {
+    return `${material} | Size ${size} ${formatInventoryType(inventoryType)}`;
+  }
+  return (
+    `Print-ready CMYK at 150 DPI for ${size} ${formatInventoryType(inventoryType)} | ` +
+    "50 mm bleed | High-contrast lockup | Brand marks inside safe area"
+  );
+}
+
+/** Prefer stored form specs; fall back to static vs digital defaults only. */
+export function artworkGuidanceFromSpecs(
+  staticSpecsJson: unknown,
+  inventoryType?: string | null,
+  opts?: { dualScreen?: boolean; widthFt?: number | null; heightFt?: number | null }
+): string {
+  const parsed: InventorySpecsJson | null = parseInventorySpecsJson(staticSpecsJson);
+  const widthFt = opts?.widthFt ?? parsed?.widthFt ?? null;
+  const heightFt = opts?.heightFt ?? parsed?.heightFt ?? null;
+  const production = parsed?.production ?? null;
+
+  if (isDigitalProduction(production)) {
+    return formatDigitalProduction(production, { dualScreen: opts?.dualScreen });
+  }
+  if (isStaticProduction(production)) {
+    return formatStaticProduction(production, inventoryType, { widthFt, heightFt });
+  }
+
+  return artworkGuidanceForType(inventoryType, {
+    dualScreen: opts?.dualScreen,
+    widthFt,
+    heightFt,
+  });
 }
 
 /** Artwork guidance defaults by inventory type (customer PDF). */

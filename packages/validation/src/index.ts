@@ -188,6 +188,8 @@ export const updateSkyarcLocationCommercialBodySchema = z.object({
   ratePeriod: z.enum(["daily", "weekly", "monthly"]).optional(),
   currency: z.string().min(3).max(3).optional(),
   notes: z.string().max(2000).optional(),
+  /** Customer pitch PREMIUM badge — independent of Skyarc Index. */
+  premium: z.boolean().optional(),
 });
 
 export const platformConfigBodySchema = z.object({
@@ -597,6 +599,7 @@ export const importInventoryItemSchema = z.object({
   cardRateAmount: z.number().nonnegative().nullish().transform((v) => v ?? undefined),
   discountedRateAmount: z.number().nonnegative().nullish().transform((v) => v ?? undefined),
   ratePeriod: z.string().nullish().transform((v) => v ?? "monthly"),
+  premium: z.boolean().optional(),
 });
 
 export const importInventoryBatchBodySchema = z.object({
