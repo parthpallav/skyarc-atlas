@@ -19,7 +19,12 @@ import {
 } from "@/lib/map-popup";
 import { AtlasLogoLoader } from "@/components/atlas-logo-loader";
 import { PageHeader } from "@/components/page-header";
-import { corridorsForCity, getMarketCity, listMarketCities } from "@skyarc/shared";
+import {
+  corridorsForCity,
+  getMarketCity,
+  listMarketCities,
+  locationMatchesCorridor,
+} from "@skyarc/shared";
 
 type AvailFilter = "ALL" | "BOOKABLE" | "PARTIAL" | "HELD" | "FULL";
 
@@ -91,30 +96,85 @@ export default function MapPage() {
   const [corridorFilter, setCorridorFilter] = useState<string>("");
 
   const markets = useMemo(() => listMarketCities(), []);
-  const corridorOptions = useMemo(
-    () => (cityFilter ? corridorsForCity(cityFilter) : markets.flatMap((m) => m.corridors.map((c) => c.name))),
-    [cityFilter, markets]
-  );
+
+  const { data: geoFacets } = useQuery({
+    queryKey: ["location-geo-facets"],
+    queryFn: async () => {
+      const client = createWebApiClient();
+      if (typeof client.getLocationGeoFacets !== "function") {
+        return {
+          cities: markets.map((c) => c.name),
+          corridors: markets.flatMap((m) => m.corridors.map((c) => c.name)),
+        };
+      }
+      try {
+        const result = await client.getLocationGeoFacets();
+        return result.data;
+      } catch {
+        return {
+          cities: markets.map((c) => c.name),
+          corridors: markets.flatMap((m) => m.corridors.map((c) => c.name)),
+        };
+      }
+    },
+    staleTime: 60_000,
+  });
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["locations-map", flightFrom, flightTo, cityFilter, corridorFilter],
+    queryKey: ["locations-map", flightFrom, flightTo, cityFilter],
     queryFn: () =>
       listAllLocations<MapLocationPin>({
         from: flightFrom,
         to: flightTo,
         cities: cityFilter ? [cityFilter] : undefined,
-        corridors: corridorFilter ? [corridorFilter] : undefined,
       }),
     retry: 2,
     retryDelay: 1000,
   });
 
-  const visiblePins = useMemo(() => {
+  /** Corridor options: city presets + real inventory roads (not other cities' presets). */
+  const corridorOptions = useMemo(() => {
+    const fromData = new Set<string>();
+    for (const loc of data ?? []) {
+      const road = (loc.road ?? "").trim();
+      if (road) fromData.add(road);
+    }
+    for (const c of geoFacets?.corridors ?? []) {
+      if (c?.trim()) fromData.add(c.trim());
+    }
+    const presets = cityFilter
+      ? corridorsForCity(cityFilter)
+      : markets.find((m) => m.id === "rajkot")?.corridors.map((c) => c.name) ?? [];
+    const linked: string[] = [];
+    for (const preset of presets) {
+      linked.push(preset);
+    }
+    for (const road of [...fromData].sort((a, b) => a.localeCompare(b))) {
+      const already = linked.some(
+        (p) =>
+          locationMatchesCorridor({ road }, p) || locationMatchesCorridor({ road: p }, road)
+      );
+      if (!already) linked.push(road);
+    }
+    // Keep selected corridor visible even if not in presets
+    if (corridorFilter && !linked.includes(corridorFilter)) {
+      linked.unshift(corridorFilter);
+    }
+    return linked;
+  }, [data, geoFacets, cityFilter, markets, corridorFilter]);
+
+  const basePins = useMemo(() => {
     const rows = (data ?? []).filter(hasValidCoords);
-    const byAvail = rows.filter((loc) => matchesAvail(loc, availFilter));
-    if (!searchTerm.trim()) return byAvail;
+    return rows.filter((loc) => matchesAvail(loc, availFilter));
+  }, [data, availFilter]);
+
+  const visiblePins = useMemo(() => {
+    const byCorridor = corridorFilter
+      ? basePins.filter((loc) => locationMatchesCorridor(loc, corridorFilter))
+      : basePins;
+    if (!searchTerm.trim()) return byCorridor;
     const term = searchTerm.toLowerCase();
-    return byAvail.filter(
+    return byCorridor.filter(
       (loc) =>
         loc.name.toLowerCase().includes(term) ||
         loc.skyarcSiteCode?.toLowerCase().includes(term) ||
@@ -123,7 +183,7 @@ export default function MapPage() {
         loc.junction?.toLowerCase().includes(term) ||
         loc.city?.toLowerCase().includes(term)
     );
-  }, [data, availFilter, searchTerm]);
+  }, [basePins, searchTerm, corridorFilter]);
 
   const searchMatches = useMemo(() => {
     if (!searchTerm.trim()) return [];
@@ -137,23 +197,27 @@ export default function MapPage() {
     let partial = 0;
     let held = 0;
     let booked = 0;
+    // Counts for visible (corridor-filtered) pins
     for (const loc of visiblePins) {
       const city = (loc.city ?? "Unassigned").trim() || "Unassigned";
       byCity.set(city, (byCity.get(city) ?? 0) + 1);
-      const road = (loc.road ?? "Other").trim() || "Other";
-      byCorridor.set(road, (byCorridor.get(road) ?? 0) + 1);
       const s = pinLiveStatus(loc);
       if (s === "AVAILABLE") open += 1;
       else if (s === "PARTIAL") partial += 1;
       else if (s === "ON_HOLD") held += 1;
       else booked += 1;
     }
+    // Corridor list from city+avail pins so users can switch roads without clearing first
+    for (const loc of basePins) {
+      const road = (loc.road ?? "Other").trim() || "Other";
+      byCorridor.set(road, (byCorridor.get(road) ?? 0) + 1);
+    }
     const topCorridors = [...byCorridor.entries()]
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 6);
+      .slice(0, 8);
     const cities = [...byCity.entries()].sort((a, b) => b[1] - a[1]);
     return { byCity: cities, topCorridors, open, partial, held, booked, total: visiblePins.length };
-  }, [visiblePins]);
+  }, [visiblePins, basePins]);
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
@@ -405,13 +469,17 @@ export default function MapPage() {
               <p className="mt-2 text-xs text-muted">No sites match these filters.</p>
             ) : (
               <ul className="mt-1.5 space-y-1">
-                {coverage.topCorridors.map(([road, count]) => (
+                {coverage.topCorridors.map(([road, count]) => {
+                  const on = corridorFilter === road || locationMatchesCorridor({ road }, corridorFilter);
+                  return (
                   <li key={road} className="flex items-center justify-between gap-2 text-xs">
                     <button
                       type="button"
-                      className="truncate text-left font-medium text-slate-800 hover:text-primary"
+                      className={`truncate text-left font-medium hover:text-primary ${
+                        on ? "text-primary" : "text-slate-800"
+                      }`}
                       onClick={() => {
-                        setCorridorFilter(road);
+                        setCorridorFilter((prev) => (prev === road ? "" : road));
                         setSelectedLocationId(null);
                       }}
                     >
@@ -419,7 +487,8 @@ export default function MapPage() {
                     </button>
                     <span className="tabular-nums text-muted">{count}</span>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </div>

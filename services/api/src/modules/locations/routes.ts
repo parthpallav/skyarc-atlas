@@ -36,6 +36,7 @@ import {
   normalizeCityName,
   getMarketCity,
   listMarketCities,
+  corridorSearchVariants,
 } from "@skyarc/shared";
 import { prisma } from "../../lib/prisma.js";
 import { success, listMeta, toIso } from "../../lib/response.js";
@@ -328,11 +329,12 @@ function geoFilterClauses(query: {
     });
   }
   if (corridors.length > 0) {
+    // Match inventory `road` (corridor) only — address "… Facing" phrases caused false positives.
+    const variants = [...new Set(corridors.flatMap((road) => corridorSearchVariants(road)))];
     filters.push({
-      OR: corridors.flatMap((road) => [
+      OR: variants.flatMap((road) => [
         { road: { contains: road, mode: "insensitive" as const } },
-        { address: { contains: road, mode: "insensitive" as const } },
-        { junction: { contains: road, mode: "insensitive" as const } },
+        { junction: { equals: road, mode: "insensitive" as const } },
       ]),
     });
   }

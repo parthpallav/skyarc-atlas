@@ -156,3 +156,45 @@ export function normalizeCityName(value?: string | null): string | null {
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(" ");
 }
+
+
+/** Normalize corridor/road labels so "150 Feet" ≈ "150ft". */
+export function normalizeCorridorKey(value?: string | null): string {
+  if (!value?.trim()) return "";
+  return value
+    .toLowerCase()
+    .replace(/(\d+)\s*(feet|ft\.?)/g, "$1ft")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+/** Whether a location belongs on a corridor — prefer `road`, then junction; never address "Facing" noise. */
+export function locationMatchesCorridor(
+  location: { road?: string | null; junction?: string | null },
+  corridor: string
+): boolean {
+  const needle = normalizeCorridorKey(corridor);
+  if (!needle) return false;
+  const road = normalizeCorridorKey(location.road);
+  if (road && (road === needle || road.includes(needle) || needle.includes(road))) {
+    return true;
+  }
+  const junction = normalizeCorridorKey(location.junction);
+  if (junction && (junction === needle || junction.includes(needle))) {
+    return true;
+  }
+  return false;
+}
+
+/** Prisma/search variants for a corridor label (Feet ↔ ft). */
+export function corridorSearchVariants(corridor: string): string[] {
+  const raw = corridor.trim();
+  if (!raw) return [];
+  const variants = new Set<string>([raw]);
+  variants.add(raw.replace(/(\d+)\s*Feet/gi, "$1ft"));
+  variants.add(raw.replace(/(\d+)\s*Ft\.?/gi, "$1 Feet"));
+  variants.add(raw.replace(/(\d+)\s*ft\.?/gi, "$1 Feet"));
+  variants.add(raw.replace(/(\d+)\s*Feet/gi, "$1 Ft"));
+  return [...variants].filter(Boolean);
+}

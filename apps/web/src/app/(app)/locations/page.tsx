@@ -29,6 +29,7 @@ import {
   inventoryTypeBucket,
   listMarketCities,
   corridorsForCity,
+  locationMatchesCorridor,
   type InventoryTypeBucket,
 } from "@skyarc/shared";
 import { formatInr } from "@/lib/format";
@@ -327,8 +328,7 @@ export default function LocationsPage() {
       if (!s || ![...stateFilters].some((x) => s === x.toLowerCase())) return false;
     }
     if (roadFilters.size > 0) {
-      const hay = `${loc.road || ""} ${loc.address || ""} ${loc.junction || ""}`.toLowerCase();
-      const match = [...roadFilters].some((road) => hay.includes(road.toLowerCase()));
+      const match = [...roadFilters].some((road) => locationMatchesCorridor(loc, road));
       if (!match) return false;
     }
     const status = effectiveStatus(loc);
