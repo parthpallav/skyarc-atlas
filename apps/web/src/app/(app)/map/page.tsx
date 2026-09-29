@@ -71,6 +71,27 @@ function hasValidCoords(loc: MapLocationPin): boolean {
   );
 }
 
+/** Soft city match — untagged (city null) Rajkot inventory still counts for Rajkot. */
+function locationInMarketCity(loc: MapLocationPin, cityName: string): boolean {
+  const tagged = (loc.city ?? "").trim().toLowerCase();
+  if (tagged && tagged === cityName.trim().toLowerCase()) return true;
+  const market = getMarketCity(cityName);
+  if (tagged && tagged === market.name.toLowerCase()) return true;
+  const district = (loc.district ?? "").trim().toLowerCase();
+  if (district && district === market.district.toLowerCase()) return true;
+  // Untagged: near market center or on a known corridor for that city
+  if (!tagged) {
+    const pad = 0.22;
+    const near =
+      Math.abs(loc.latitude - market.center.lat) <= pad &&
+      Math.abs(loc.longitude - market.center.lng) <= pad;
+    if (near) return true;
+    const corridors = corridorsForCity(cityName);
+    if (corridors.some((c) => locationMatchesCorridor(loc, c))) return true;
+  }
+  return false;
+}
+
 const AVAIL_OPTIONS: Array<{ value: AvailFilter; label: string; dot: string }> = [
   { value: "ALL", label: "All", dot: "bg-slate-400" },
   { value: "BOOKABLE", label: "Open", dot: "bg-emerald-500" },
@@ -121,12 +142,12 @@ export default function MapPage() {
   });
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["locations-map", flightFrom, flightTo, cityFilter],
+    // Fetch full network; city soft-match is client-side so null-city inventory still shows.
+    queryKey: ["locations-map", flightFrom, flightTo],
     queryFn: () =>
       listAllLocations<MapLocationPin>({
         from: flightFrom,
         to: flightTo,
-        cities: cityFilter ? [cityFilter] : undefined,
       }),
     retry: 2,
     retryDelay: 1000,
@@ -164,9 +185,12 @@ export default function MapPage() {
   }, [data, geoFacets, cityFilter, markets, corridorFilter]);
 
   const basePins = useMemo(() => {
-    const rows = (data ?? []).filter(hasValidCoords);
+    let rows = (data ?? []).filter(hasValidCoords);
+    if (cityFilter) {
+      rows = rows.filter((loc) => locationInMarketCity(loc, cityFilter));
+    }
     return rows.filter((loc) => matchesAvail(loc, availFilter));
-  }, [data, availFilter]);
+  }, [data, availFilter, cityFilter]);
 
   const visiblePins = useMemo(() => {
     const byCorridor = corridorFilter

@@ -36,6 +36,7 @@ import {
   normalizeCityName,
   getMarketCity,
   listMarketCities,
+  corridorsForCity,
   corridorSearchVariants,
 } from "@skyarc/shared";
 import { prisma } from "../../lib/prisma.js";
@@ -314,8 +315,40 @@ function geoFilterClauses(query: {
   const corridors = splitCsvParam(query.corridors);
 
   if (cities.length > 0) {
+    // Soft match: tagged city OR untagged inventory that belongs to that market
+    // (most seeded/imported Rajkot sites historically had city=null).
     filters.push({
-      OR: cities.map((c) => ({ city: { equals: c, mode: "insensitive" as const } })),
+      OR: cities.flatMap((c) => {
+        const market = getMarketCity(c);
+        const corridorNames = corridorsForCity(c);
+        const clauses: Record<string, unknown>[] = [
+          { city: { equals: c, mode: "insensitive" as const } },
+          { city: { equals: market.name, mode: "insensitive" as const } },
+          { district: { equals: market.district, mode: "insensitive" as const } },
+        ];
+        if (corridorNames.length > 0) {
+          clauses.push({
+            AND: [
+              { city: null },
+              {
+                OR: corridorNames.map((road) => ({
+                  road: { contains: road, mode: "insensitive" as const },
+                })),
+              },
+            ],
+          });
+        }
+        // Untagged sites near market center (~25km box) — last-resort for imports
+        const pad = 0.22; // ~25km
+        clauses.push({
+          AND: [
+            { city: null },
+            { latitude: { gte: market.center.lat - pad, lte: market.center.lat + pad } },
+            { longitude: { gte: market.center.lng - pad, lte: market.center.lng + pad } },
+          ],
+        });
+        return clauses;
+      }),
     });
   }
   if (districts.length > 0) {
