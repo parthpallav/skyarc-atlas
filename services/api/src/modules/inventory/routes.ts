@@ -438,7 +438,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
 
       for (const item of body.items) {
         const itemMediaCode = item.vendorMediaCode || item.iid;
-        let existingLoc: { id: string; organizationId: string | null; skyarcSiteCode: string | null } | null = null;
+        let existingLoc: { id: string; organizationId: string | null; skyarcSiteCode: string | null; skyarcCommercialJson: unknown } | null = null;
 
         if (itemMediaCode) {
           existingLoc = await prisma.location.findFirst({
