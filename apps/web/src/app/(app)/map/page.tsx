@@ -197,7 +197,6 @@ export default function MapPage() {
     let partial = 0;
     let held = 0;
     let booked = 0;
-    // Counts for visible (corridor-filtered) pins
     for (const loc of visiblePins) {
       const city = (loc.city ?? "Unassigned").trim() || "Unassigned";
       byCity.set(city, (byCity.get(city) ?? 0) + 1);
@@ -207,17 +206,25 @@ export default function MapPage() {
       else if (s === "ON_HOLD") held += 1;
       else booked += 1;
     }
-    // Corridor list from city+avail pins so users can switch roads without clearing first
-    for (const loc of basePins) {
+
+    // Corridor counts always track the same pin set users see when "All corridors".
+    // When a corridor is selected, list stays on basePins so other roads remain clickable.
+    const countSource = corridorFilter ? basePins : visiblePins;
+    for (const loc of countSource) {
       const road = (loc.road ?? "Other").trim() || "Other";
       byCorridor.set(road, (byCorridor.get(road) ?? 0) + 1);
     }
-    const topCorridors = [...byCorridor.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8);
+    const ranked = [...byCorridor.entries()].sort((a, b) => b[1] - a[1]);
+    const MAX_ROWS = 8;
+    let topCorridors = ranked;
+    if (ranked.length > MAX_ROWS) {
+      const head = ranked.slice(0, MAX_ROWS - 1);
+      const restCount = ranked.slice(MAX_ROWS - 1).reduce((sum, [, n]) => sum + n, 0);
+      topCorridors = [...head, ["Other roads", restCount]];
+    }
     const cities = [...byCity.entries()].sort((a, b) => b[1] - a[1]);
     return { byCity: cities, topCorridors, open, partial, held, booked, total: visiblePins.length };
-  }, [visiblePins, basePins]);
+  }, [visiblePins, basePins, corridorFilter]);
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
@@ -403,7 +410,7 @@ export default function MapPage() {
           <select
             value={corridorFilter}
             onChange={(e) => {
-              setCorridorFilter(e.target.value);
+              setCorridorFilter(e.target.value); // "" = All corridors (clears road filter)
               setSelectedLocationId(null);
             }}
             className="max-w-[12rem] rounded-lg border border-violet-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800"
@@ -426,6 +433,8 @@ export default function MapPage() {
                   type="button"
                   onClick={() => {
                     setAvailFilter(opt.value);
+                    // "All" availability resets corridor/road filter so counts match full view
+                    if (opt.value === "ALL") setCorridorFilter("");
                     setSelectedLocationId(null);
                   }}
                   className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-semibold ${
@@ -463,22 +472,33 @@ export default function MapPage() {
           </div>
           <div className="rounded-lg border border-violet-50 bg-white px-3 py-2">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-              Corridor coverage
+              {corridorFilter ? "Corridor coverage (pick another or All)" : "Corridor coverage"}
             </p>
             {coverage.topCorridors.length === 0 ? (
               <p className="mt-2 text-xs text-muted">No sites match these filters.</p>
             ) : (
               <ul className="mt-1.5 space-y-1">
                 {coverage.topCorridors.map(([road, count]) => {
-                  const on = corridorFilter === road || locationMatchesCorridor({ road }, corridorFilter);
+                  const isOther = road === "Other roads";
+                  const on =
+                    Boolean(corridorFilter) &&
+                    !isOther &&
+                    (corridorFilter === road || locationMatchesCorridor({ road }, corridorFilter));
                   return (
                   <li key={road} className="flex items-center justify-between gap-2 text-xs">
                     <button
                       type="button"
-                      className={`truncate text-left font-medium hover:text-primary ${
-                        on ? "text-primary" : "text-slate-800"
+                      disabled={isOther}
+                      className={`truncate text-left font-medium ${
+                        isOther
+                          ? "cursor-default text-muted"
+                          : on
+                            ? "text-primary hover:text-primary"
+                            : "text-slate-800 hover:text-primary"
                       }`}
                       onClick={() => {
+                        if (isOther) return;
+                        // Toggle off (= All corridors) when clicking the active road
                         setCorridorFilter((prev) => (prev === road ? "" : road));
                         setSelectedLocationId(null);
                       }}
@@ -562,8 +582,8 @@ export default function MapPage() {
               setSelectedLocationId(null);
               setSearchTerm("");
               setCityFilter("");
-              setCorridorFilter("");
-              setAvailFilter("BOOKABLE");
+              setCorridorFilter(""); // All corridors / roads
+              setAvailFilter("ALL"); // full inventory counts, not Open-only
               mapRef.current?.flyTo({
                 center: DEFAULT_MAP_CENTER,
                 zoom: DEFAULT_MAP_ZOOM,
