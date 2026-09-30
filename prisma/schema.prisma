@@ -293,6 +293,8 @@ model LocationAsset {
 model Screen {
   id                 String          @id @default(uuid()) @db.Uuid
   locationId         String          @db.Uuid
+  /// Skyarc-owned public screen identity (e.g. SKY-RAJ-001 or SKY-RAJ-001-F2).
+  skyarcScreenCode   String?         @unique
   label              String
   inventoryStatus    InventoryStatus @default(UNKNOWN)
   operatingHoursJson Json?
@@ -301,9 +303,54 @@ model Screen {
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
-  location    Location             @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  location      Location             @relation(fields: [locationId], references: [id], onDelete: Cascade)
   specification ScreenSpecification?
-  inventories Inventory[]
+  inventories   Inventory[]
+  devices       Device[]
+  externalIds   ScreenExternalId[]
+}
+
+/// External provider ids mapped to a Skyarc screen. Never the primary screen identity.
+model ScreenExternalId {
+  id         String   @id @default(uuid()) @db.Uuid
+  screenId   String   @db.Uuid
+  provider   String
+  idType     String
+  externalId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  screen Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, idType, externalId])
+  @@index([screenId, provider])
+}
+
+/// Atlas-side device association. Credentials and raw telemetry live in Orbit Cloud.
+model Device {
+  id             String    @id @default(uuid()) @db.Uuid
+  screenId       String    @db.Uuid
+  organizationId String?   @db.Uuid
+  provider       String
+  deviceType     String
+  externalId     String
+  status         String    @default("pending")
+  summaryJson    Json      @default("{}")
+  lastEventAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  screen Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalId])
+  @@index([screenId])
+}
+
+/// Idempotent receipts for Orbit → Atlas domain events.
+model OrbitEventReceipt {
+  eventId   String   @id @db.Uuid
+  eventType String
+  receivedAt DateTime @default(now())
 }
 
 model ScreenSpecification {

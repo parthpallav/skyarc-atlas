@@ -13,3 +13,9 @@ coverage/
 .deploy/
 .vercel
 .env*
+
+# Orbit Prisma client (generated)
+services/orbit-cloud/src/generated/
+
+.pnpm-store/
+services/orbit-cloud/src/generated/

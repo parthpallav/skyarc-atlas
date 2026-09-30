@@ -17,6 +17,8 @@ import { createWebApiClient } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ImageGallery } from "@/components/image-gallery";
 import { LocationInventoryPanel } from "@/components/location-inventory-panel";
+import { LocationOrbitTab } from "@/components/location-orbit-tab";
+import { showOrbitUi } from "@/lib/feature-flags";
 import { LocationCommercialPanel } from "@/components/location-commercial-panel";
 import { LocationSkyarcPricingPanel } from "@/components/location-skyarc-pricing-panel";
 import { canViewClientPricing, formatInventoryType } from "@skyarc/shared";
@@ -42,7 +44,7 @@ interface AssetRow {
   uploadStatus: string;
 }
 
-type DetailTab = "overview" | "index" | "rates" | "faces" | "admin";
+type DetailTab = "overview" | "index" | "rates" | "faces" | "orbit" | "admin";
 
 function isoDateLocal(d: Date) {
   const y = d.getFullYear();
@@ -241,6 +243,7 @@ export default function LocationDetailPage() {
   const showIndexTab = showInternalIntel;
   const showRatesTab = showVendorCommercial || canManageSkyarcPricing;
   const showAdminTab = isAdmin;
+  const showOrbitTab = showOrbitUi() && showInventory;
   const showMediaOwner =
     showVendorDetailsFlag && isInternal && Boolean(location?.mediaOwner);
   const showVendorMediaCode =
@@ -258,9 +261,10 @@ export default function LocationDetailPage() {
     }
     if (showRatesTab) list.push({ id: "rates", label: "Rates" });
     if (showInventory) list.push({ id: "faces", label: "Faces" });
+    if (showOrbitTab) list.push({ id: "orbit", label: "Orbit" });
     if (showAdminTab) list.push({ id: "admin", label: "Admin" });
     return list;
-  }, [showIndexTab, showRatesTab, showInventory, showAdminTab, score?.overallScore]);
+  }, [showIndexTab, showRatesTab, showInventory, showOrbitTab, showAdminTab, score?.overallScore]);
 
   const [tab, setTab] = useState<DetailTab>("overview");
   const [destinationOpen, setDestinationOpen] = useState(false);
@@ -835,6 +839,10 @@ export default function LocationDetailPage() {
             canWrite={false}
             showVendorRates={showVendorDetailsFlag}
           />
+        ) : null}
+
+        {tab === "orbit" && showOrbitTab ? (
+          <LocationOrbitTab locationId={id} canWrite={canEdit} />
         ) : null}
 
         {tab === "admin" && showAdminTab ? (

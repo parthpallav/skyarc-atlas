@@ -237,3 +237,11 @@ export function buildSiteCreativeSpec(opts: {
   }
   return `Artwork ${size} for a${lightBit} ${format}. Print-ready CMYK at 150 DPI, 50 mm bleed, brand lockup inside the safe area.`;
 }
+
+
+/** Public screen code: site code for face 1, site-Fn for additional faces (1-based). */
+export function buildSkyarcScreenCode(siteCode: string, faceIndex: number): string {
+  const base = siteCode.trim().toUpperCase();
+  if (faceIndex <= 1) return base;
+  return `${base}-F${faceIndex}`;
+}

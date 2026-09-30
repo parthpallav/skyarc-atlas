@@ -136,16 +136,13 @@ export async function userRoutes(fastify: FastifyInstance) {
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) throw notFound("User not found");
 
-    // Generate activation / password reset link
-    const resetToken = Buffer.from(JSON.stringify({ userId: user.id, email: user.email, exp: Date.now() + 86400000 * 7 })).toString("base64url");
-    const resetLink = `https://atlas.skyarcads.com/login?resetToken=${resetToken}&email=${encodeURIComponent(user.email)}`;
-
+    // Unsigned URL tokens are not accepted for auth. Admins reset passwords via PATCH /users/:id.
     return success({
       userId: user.id,
       email: user.email,
-      resetLink,
-      expiresInDays: 7,
-      message: "Password reset link generated successfully",
+      resetLink: null,
+      message:
+        "Email password reset is not configured. Use admin password update (PATCH /users/:id) instead.",
     });
   });
 }

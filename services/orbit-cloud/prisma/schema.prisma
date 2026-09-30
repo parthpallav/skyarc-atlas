@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("ORBIT_DATABASE_URL")
+}
+
+model OrbitDevice {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String
+  atlasScreenId    String    @db.Uuid
+  skyarcScreenCode String
+  deviceType       String
+  status           String    @default("pending")
+  credentialHash   String?
+  credentialVersion Int      @default(0)
+  revokedAt        DateTime?
+  lastSeenAt       DateTime?
+  health           String    @default("unknown")
+  firmwareVersion  String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  claims     ClaimCode[]
+  telemetry  OrbitTelemetry[]
+  state      OrbitDeviceState?
+  outbox     OrbitEventOutbox[]
+
+  @@index([tenantId, atlasScreenId])
+  @@index([skyarcScreenCode])
+}
+
+model ClaimCode {
+  id        String   @id @default(uuid()) @db.Uuid
+  deviceId  String   @db.Uuid
+  codeHash  String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+}
+
+model OrbitTelemetry {
+  id         String   @id @default(uuid()) @db.Uuid
+  deviceId   String   @db.Uuid
+  observedAt DateTime
+  kind       String
+  payloadJson Json
+  createdAt  DateTime @default(now())
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, observedAt(sort: Desc)])
+}
+
+model OrbitDeviceState {
+  deviceId         String   @id @db.Uuid
+  online           Boolean  @default(false)
+  health           String   @default("unknown")
+  lastHeartbeatAt  DateTime?
+  summaryJson      Json     @default("{}")
+  updatedAt        DateTime @updatedAt
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+}
+
+model OrbitEventOutbox {
+  eventId       String    @id @db.Uuid
+  deviceId      String    @db.Uuid
+  eventType     String
+  version       Int       @default(1)
+  tenantId      String
+  payloadJson   Json
+  createdAt     DateTime  @default(now())
+  deliveredAt   DateTime?
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deliveredAt, createdAt])
+}

@@ -11,6 +11,7 @@ interface ScreenRow {
   id: string;
   label: string;
   inventoryStatus: string;
+  skyarcScreenCode?: string | null;
 }
 
 interface InventoryRow {
@@ -267,7 +268,10 @@ export function LocationInventoryPanel({
                 setExpandedScreen((prev) => (prev === screen.id ? null : screen.id))
               }
             >
-              <span className="font-medium text-slate-900">{screen.label}</span>
+              <span className="font-medium text-slate-900">
+                {screen.skyarcScreenCode ? `${screen.skyarcScreenCode} · ` : ""}
+                {screen.label}
+              </span>
               <span className="text-xs text-muted">{screen.inventoryStatus}</span>
             </button>
 

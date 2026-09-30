@@ -2,7 +2,10 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 function loadDotEnv() {
-  const candidates = [resolve(process.cwd(), ".env"), resolve(process.cwd(), "../../.env")];
+  const candidates = [
+    resolve(process.cwd(), ".env"),
+    resolve(process.cwd(), "../../.env"),
+  ];
   for (const file of candidates) {
     if (!existsSync(file)) continue;
     for (const line of readFileSync(file, "utf8").split("\n")) {
@@ -23,32 +26,37 @@ function loadDotEnv() {
     break;
   }
 }
+
 loadDotEnv();
 
-import { loadEnv } from "@skyarc/config";
-import { buildApp } from "./app.js";
-import { connectDatabase, shutdownDatabase, startDatabaseKeepalive } from "./lib/prisma.js";
+import { loadOrbitEnv } from "./env.js";
+import { buildOrbitApp } from "./app.js";
+import { prisma } from "./prisma.js";
+import { flushOutbox } from "./events.js";
+import { markStaleDevicesOffline } from "./state.js";
 
-const env = loadEnv();
+const env = loadOrbitEnv();
+const app = await buildOrbitApp(env);
 
-await connectDatabase();
-startDatabaseKeepalive();
+const retentionMs = env.ORBIT_TELEMETRY_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
-const app = await buildApp();
+setInterval(async () => {
+  try {
+    await markStaleDevicesOffline(env.ORBIT_HEARTBEAT_TIMEOUT_MS);
+    await flushOutbox(env);
+    const cutoff = new Date(Date.now() - retentionMs);
+    await prisma.orbitTelemetry.deleteMany({ where: { createdAt: { lt: cutoff } } });
+  } catch (err) {
+    app.log.error(err);
+  }
+}, 15_000);
 
 const shutdown = async () => {
   await app.close();
-  await shutdownDatabase();
+  await prisma.$disconnect();
   process.exit(0);
 };
-
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
-try {
-  await app.listen({ port: env.PORT, host: "0.0.0.0" });
-} catch (err) {
-  app.log.error(err);
-  await shutdownDatabase();
-  process.exit(1);
-}
+await app.listen({ port: env.ORBIT_PORT, host: "0.0.0.0" });
