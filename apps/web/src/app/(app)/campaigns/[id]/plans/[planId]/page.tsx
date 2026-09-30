@@ -469,7 +469,8 @@ export default function MediaPlanDetailPage() {
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [detailTab, setDetailTab] = useState<"score" | "swap" | "add">("score");
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
   const {
@@ -653,12 +654,20 @@ export default function MediaPlanDetailPage() {
     selectedItem?.insights?.highlights?.[0] ||
     selectedItem?.insights?.explanationText ||
     null;
-  const audience = isClient ? "client" : isVendor ? "vendor" : "internal";
+  // Prefer client-facing demand copy on this page — safe if presenting while logged in as admin.
+  const audience = isVendor ? "vendor" : "client";
 
   function selectSite(id: string) {
     setSelectedItemId(id);
+    setReplaceOpen(false);
     setMobileDetailOpen(true);
-    if (isAdmin) setDetailTab("score");
+  }
+
+  /** Pitch-safe site rate only — never vendor net / margin / dual client label. */
+  function siteRate(item: PlanItemRow): number | null {
+    if (item.budgetAllocated > 0) return item.budgetAllocated;
+    if (item.pricing?.clientRate != null && item.pricing.clientRate > 0) return item.pricing.clientRate;
+    return null;
   }
 
   const alerts = (
@@ -814,9 +823,9 @@ export default function MediaPlanDetailPage() {
                   ) : (
                     <p className="text-xs text-muted">—</p>
                   )}
-                  {showClientPricing ? (
+                  {showClientPricing && siteRate(item) != null ? (
                     <p className="text-[10px] font-semibold tabular-nums text-muted">
-                      {formatInr(item.budgetAllocated)}
+                      {formatInr(siteRate(item)!)}
                     </p>
                   ) : null}
                 </div>
@@ -832,194 +841,181 @@ export default function MediaPlanDetailPage() {
   function renderDetailPane() {
     if (!selectedItem) {
       return (
-    <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-primary/20 bg-white/60 text-sm text-muted">
-      Select a site from the list
-    </div>
+        <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-primary/20 bg-white/70 px-6 text-center text-sm text-muted">
+          Select a site on the left to review Index, rate, and options.
+        </div>
       );
     }
+
+    const rate = siteRate(selectedItem);
+    const canEditMix = isAdmin;
+
     return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-primary/15 bg-white/95">
-      <div className="shrink-0 border-b border-primary/10 p-3">
-        <div className="flex gap-3">
-          <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-lg bg-slate-100 sm:h-24 sm:w-28">
-            {selectedItem.location?.coverImageUrl ? (
-              <Image
-                src={selectedItem.location.coverImageUrl}
-                alt={selectedItem.location.name}
-                fill
-                className="object-cover"
-                sizes="112px"
-                unoptimized
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-slate-300">
-                <MapPin className="h-6 w-6" />
-              </div>
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="font-mono text-[11px] font-semibold text-primary">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-primary/15 bg-white shadow-sm">
+        {/* Hero photo — dominant visual for pitch */}
+        <div className="relative h-44 shrink-0 bg-slate-200 sm:h-52">
+          {selectedItem.location?.coverImageUrl ? (
+            <Image
+              src={selectedItem.location.coverImageUrl}
+              alt={selectedItem.location.name}
+              fill
+              className="object-cover"
+              sizes="(max-width: 768px) 100vw, 60vw"
+              unoptimized
+              priority
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center bg-gradient-to-br from-violet-100 to-slate-100 text-slate-300">
+              <MapPin className="h-10 w-10" />
+            </div>
+          )}
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/75 to-transparent px-4 pb-3 pt-10">
+            <p className="font-mono text-[11px] font-semibold text-violet-200">
               {selectedItem.location?.skyarcSiteCode ?? "SKY"}
-              {selectedIndex >= 0 ? ` · #${selectedIndex + 1}` : ""}
+              {selectedIndex >= 0 ? ` · Site ${selectedIndex + 1} of ${planItems.length}` : ""}
             </p>
-            <h2 className="truncate text-sm font-bold text-slate-900">
+            <h2 className="truncate text-lg font-bold text-white">
               {selectedItem.location?.name}
             </h2>
-            <p className="text-[11px] text-muted">{siteSpecLine(selectedItem)}</p>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              {selectedScore != null ? (
-                <span className="rounded-md bg-violet-50 px-2 py-0.5 text-xs font-bold text-primary">
-                  Index {Math.round(selectedScore)}
-                </span>
-              ) : null}
-              {showClientPricing ? (
-                <span className="text-xs font-bold tabular-nums text-slate-900">
-                  {formatInr(selectedItem.budgetAllocated)}
-                </span>
-              ) : null}
-              {selectedItem.location ? (
-                <Link
-                  href={`/locations/${selectedItem.location.id}`}
-                  className="text-[11px] font-semibold text-primary hover:underline"
-                >
-                  Site details →
-                </Link>
-              ) : null}
-            </div>
+            <p className="truncate text-xs text-white/80">
+              {[selectedItem.location?.road, siteSpecLine(selectedItem)].filter(Boolean).join(" · ")}
+            </p>
           </div>
         </div>
 
-        {isAdmin ? (
-          <div className="mt-3 inline-flex w-full rounded-lg border border-primary/20 bg-slate-50 p-0.5">
-            {(
-              [
-                ["score", "Scoring"],
-                ["swap", "Swap"],
-                ["add", "Add sites"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setDetailTab(id)}
-                className={cn(
-                  "flex-1 rounded-md px-2 py-1.5 text-[11px] font-semibold",
-                  detailTab === id
-                    ? "bg-white text-primary shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                )}
-              >
-                {label}
-              </button>
-            ))}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {/* Rate + Index — only customer-safe numbers */}
+          <div className="grid grid-cols-2 gap-px border-b border-violet-100 bg-violet-100">
+            <div className="bg-white px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Rate</p>
+              <p className="mt-0.5 text-xl font-extrabold tabular-nums text-slate-900">
+                {showClientPricing && rate != null ? formatInr(rate) : "—"}
+              </p>
+            </div>
+            <div className="bg-white px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                Skyarc Index
+              </p>
+              <p className="mt-0.5 text-xl font-extrabold tabular-nums text-primary">
+                {selectedScore != null ? Math.round(selectedScore) : "—"}
+                <span className="text-sm font-semibold text-muted"> /100</span>
+              </p>
+            </div>
           </div>
-        ) : null}
-      </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {!isAdmin || detailTab === "score" ? (
-          <div className="space-y-3">
-            {isAdmin && selectedItem.pricing ? (
-              <div className="grid grid-cols-3 gap-2 rounded-lg border border-primary/15 bg-primary/5 p-2.5 text-[11px]">
-                <div>
-                  <p className="text-muted">Vendor</p>
-                  <p className="font-bold tabular-nums text-slate-900">
-                    {selectedItem.pricing.vendorRate != null
-                      ? formatInr(selectedItem.pricing.vendorRate)
-                      : "—"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted">Client</p>
-                  <p className="font-bold tabular-nums text-slate-900">
-                    {selectedItem.pricing.clientRate != null
-                      ? formatInr(selectedItem.pricing.clientRate)
-                      : "—"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted">Margin</p>
-                  <p className="font-bold text-emerald-700">
-                    {selectedItem.pricing.impliedMarginPercent != null
-                      ? `${selectedItem.pricing.impliedMarginPercent}%`
-                      : "—"}
-                  </p>
-                </div>
+          <div className="space-y-4 p-4">
+            {selectedWhy ? (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                  Why this site
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-slate-700">{selectedWhy}</p>
               </div>
             ) : null}
 
             {selectedItem.insights && selectedItem.insights.metrics.length > 0 ? (
               <div>
                 <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted">
-                  {isAdmin ? "Admin scoring — Skyarc Index factors" : "Site factors"}
+                  Index breakdown
                 </p>
                 <SiteMetricsBars metrics={selectedItem.insights.metrics} />
               </div>
-            ) : (
-              <p className="rounded-lg border border-dashed border-violet-200 px-3 py-6 text-center text-xs text-muted">
-                No factor scores for this site yet.
-              </p>
-            )}
-
-            {selectedWhy ? (
-              <p className="rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2 text-xs leading-relaxed text-slate-700">
-                <span className="font-semibold text-slate-900">Why · </span>
-                {selectedWhy}
-              </p>
             ) : null}
 
             <SiteDemandSignals demand={selectedItem.demand} audience={audience} />
 
-            {!isAdmin ? (
+            {selectedItem.location ? (
+              <Link
+                href={`/locations/${selectedItem.location.id}`}
+                className="inline-flex text-xs font-semibold text-primary hover:underline"
+              >
+                Open full site page →
+              </Link>
+            ) : null}
+
+            {canEditMix ? (
+              <div className="space-y-2 border-t border-violet-100 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setReplaceOpen((v) => !v)}
+                  className="flex w-full items-center justify-between rounded-xl border border-primary/20 bg-violet-50/60 px-3 py-2.5 text-left"
+                >
+                  <div>
+                    <p className="text-xs font-bold text-slate-900">Replace this site</p>
+                    <p className="text-[10px] text-muted">
+                      {(selectedItem.alternatives?.length ?? 0) > 0
+                        ? `${selectedItem.alternatives!.length} alternatives with similar fit`
+                        : "No alternatives ranked yet"}
+                    </p>
+                  </div>
+                  <ChevronDown
+                    className={`h-4 w-4 text-primary transition-transform ${replaceOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {replaceOpen ? (
+                  <div className="rounded-xl border border-primary/10 bg-slate-50/80 p-2.5">
+                    <BudgetMeter
+                      allocated={totalAllocated}
+                      budget={planTotal}
+                      leftover={leftover}
+                      overBy={overBy}
+                    />
+                    <div className="mt-2">
+                      <SwapAlternativeCards
+                        item={selectedItem}
+                        pending={pendingMix}
+                        showScore
+                        planTotal={planTotal}
+                        totalAllocated={totalAllocated}
+                        forCustomer
+                        onSwap={(inventoryId) =>
+                          swapMutation.mutate({ itemId: selectedItem.id, inventoryId })
+                        }
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => setAddOpen((v) => !v)}
+                  className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left"
+                >
+                  <div>
+                    <p className="text-xs font-bold text-slate-900">Add another site</p>
+                    <p className="text-[10px] text-muted">
+                      {availableSites.length} available
+                      {leftover > 0 ? ` · ${formatInr(leftover)} left in budget` : ""}
+                    </p>
+                  </div>
+                  <ChevronDown
+                    className={`h-4 w-4 text-slate-500 transition-transform ${addOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {addOpen ? (
+                  <AvailableOptions
+                    leftover={leftover}
+                    suggestedAdds={suggestedAdds}
+                    availableSites={availableSites}
+                    pending={pendingMix}
+                    open
+                    onToggle={() => undefined}
+                    onAdd={(inventoryId) => addMutation.mutate(inventoryId)}
+                  />
+                ) : null}
+              </div>
+            ) : (
               <BudgetMeter
                 allocated={totalAllocated}
                 budget={planTotal}
                 leftover={leftover}
                 overBy={overBy}
               />
-            ) : null}
+            )}
           </div>
-        ) : null}
-
-        {isAdmin && detailTab === "swap" ? (
-          <div className="space-y-2">
-            <BudgetMeter
-              allocated={totalAllocated}
-              budget={planTotal}
-              leftover={leftover}
-              overBy={overBy}
-            />
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-              Swap alternatives for this site
-            </p>
-            <SwapAlternativeCards
-              item={selectedItem}
-              pending={pendingMix}
-              showScore
-              planTotal={planTotal}
-              totalAllocated={totalAllocated}
-              forCustomer={isClient}
-              onSwap={(inventoryId) =>
-                swapMutation.mutate({ itemId: selectedItem.id, inventoryId })
-              }
-            />
-          </div>
-        ) : null}
-
-        {isAdmin && detailTab === "add" ? (
-          <AvailableOptions
-            leftover={leftover}
-            suggestedAdds={suggestedAdds}
-            availableSites={availableSites}
-            pending={pendingMix}
-            open
-            onToggle={() => undefined}
-            onAdd={(inventoryId) => addMutation.mutate(inventoryId)}
-          />
-        ) : null}
+        </div>
       </div>
-    </div>
-  );
+    );
   }
 
   return (
