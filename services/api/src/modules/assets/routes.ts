@@ -25,7 +25,7 @@ import { MEDIA_LIMITS } from "@skyarc/config";
 import type { StorageProvider } from "../../lib/storage/index.js";
 import { prisma } from "../../lib/prisma.js";
 import { success, toIso } from "../../lib/response.js";
-import { canWriteLocation, isReadOnly } from "../../lib/rbac.js";
+import { canAccessLocation, canWriteLocation, isReadOnly } from "../../lib/rbac.js";
 import { forbidden, notFound, validationError } from "../../lib/errors.js";
 import { resolveAssetUrl } from "../../lib/asset-url.js";
 import { invalidateLocationCaches } from "../../lib/cache/location-cache.js";
@@ -141,6 +141,9 @@ export async function assetRoutes(
     { preHandler: [fastify.authenticate] },
     async (request) => {
       const locationId = uuidSchema.parse((request.params as { id: string }).id);
+      const location = await prisma.location.findUnique({ where: { id: locationId } });
+      if (!location) throw notFound("Location not found");
+      if (!canAccessLocation(request.user, location)) throw forbidden();
       const assets = await prisma.locationAsset.findMany({
         where: { locationId },
       });

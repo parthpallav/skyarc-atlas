@@ -438,6 +438,10 @@ export const screenSpecificationSchema = z.object({
 
 export const createScreenBodySchema = z.object({
   label: z.string().min(1),
+  skyarcScreenCode: z
+    .string()
+    .regex(/^SKY-[A-Z0-9]+(?:-F\d+)?$/i)
+    .optional(),
   inventoryStatus: z.nativeEnum(InventoryStatus).default(InventoryStatus.UNKNOWN),
   operatingHoursJson: z.record(z.unknown()).optional(),
   loopDurationSec: z.number().int().optional(),
@@ -639,3 +643,23 @@ export const healthSchema = z.object({
 export type LoginBody = z.infer<typeof loginBodySchema>;
 export type CreateLocationBody = z.infer<typeof createLocationBodySchema>;
 export type PresignAssetBody = z.infer<typeof presignAssetBodySchema>;
+
+
+export const createDeviceBodySchema = z.object({
+  provider: z.enum(["orbit", "xtreme", "led_controller", "other"]).default("orbit"),
+  deviceType: z
+    .enum(["orbit_edge", "orbit_edge_sense", "media_player", "led_controller", "other"])
+    .default("orbit_edge"),
+  externalId: z.string().min(1).max(128).optional(),
+});
+
+export const orbitEventEnvelopeSchema = z.object({
+  eventId: uuidSchema,
+  eventType: z.string().min(1),
+  version: z.number().int().min(1).default(1),
+  tenantId: z.string().min(1),
+  timestamp: z.string().datetime(),
+  source: z.literal("orbit-cloud"),
+  correlationId: uuidSchema.optional(),
+  payload: z.record(z.unknown()),
+});

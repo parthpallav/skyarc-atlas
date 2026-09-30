@@ -24,6 +24,7 @@ import { success } from "../../lib/response.js";
 import { canAccessLocation, canWriteLocation, isReadOnly, isVendorUser, isInternalUser } from "../../lib/rbac.js";
 import { forbidden, notFound, validationError } from "../../lib/errors.js";
 import { invalidateLocationCaches } from "../../lib/cache/location-cache.js";
+import { allocateSkyarcScreenCode } from "../../lib/screen-code.js";
 import { loadPlatformConfig } from "../../lib/commercial-config.js";
 
 function estimateScore(sqft: number, lightingType?: string | null): number {
@@ -538,6 +539,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
               const newScreen = await prisma.screen.create({
                 data: {
                   locationId: existingLoc.id,
+                  skyarcScreenCode: await allocateSkyarcScreenCode(existingLoc.id),
                   label: itemMediaCode ?? item.name,
                   inventoryStatus: "AVAILABLE",
                   ...(item.widthFt && item.heightFt
@@ -653,6 +655,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
               },
               screens: {
                 create: {
+                  skyarcScreenCode: (item.skyarcSiteCode || generatedSkyarcCode).toUpperCase(),
                   label: itemMediaCode ?? item.name,
                   inventoryStatus: "AVAILABLE",
                   ...(item.widthFt && item.heightFt

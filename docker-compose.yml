@@ -46,9 +46,32 @@ services:
       PORT: 3001
       NODE_ENV: production
       CORS_ORIGINS: ${CORS_ORIGINS}
+      ORBIT_CLOUD_URL: ${ORBIT_CLOUD_URL:-http://orbit-cloud:3002}
+      ORBIT_SERVICE_TOKEN: ${ORBIT_SERVICE_TOKEN:-}
+      ORBIT_WEBHOOK_SECRET: ${ORBIT_WEBHOOK_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+
+  orbit-cloud:
+    build:
+      context: .
+      dockerfile: services/orbit-cloud/Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      ORBIT_DATABASE_URL: ${ORBIT_DATABASE_URL:?Set ORBIT_DATABASE_URL in .env}
+      ORBIT_SERVICE_TOKEN: ${ORBIT_SERVICE_TOKEN:?Set ORBIT_SERVICE_TOKEN in .env}
+      ORBIT_WEBHOOK_SECRET: ${ORBIT_WEBHOOK_SECRET:?Set ORBIT_WEBHOOK_SECRET in .env}
+      ATLAS_INTERNAL_URL: ${ATLAS_INTERNAL_URL:-http://api:3001}
+      ORBIT_PORT: 3002
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
     restart: unless-stopped
 
 volumes:

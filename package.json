@@ -19,7 +19,11 @@
     "db:seed:media-planning": "tsx prisma/seed-media-planning.ts",
     "db:postgis": "tsx prisma/apply-postgis.ts",
     "db:setup": "prisma db push && tsx prisma/apply-postgis.ts && tsx prisma/seed-full.ts",
-    "openapi:generate": "pnpm --filter @skyarc/validation run build && pnpm --filter @skyarc/api run openapi:generate"
+    "openapi:generate": "pnpm --filter @skyarc/validation run build && pnpm --filter @skyarc/api run openapi:generate",
+    "orbit:dev": "pnpm --filter @skyarc/orbit-cloud dev",
+    "orbit:db:push": "pnpm --filter @skyarc/orbit-cloud db:push",
+    "db:backfill-screen-codes": "tsx prisma/backfill-screen-codes.ts",
+    "orbit:e2e": "tsx scripts/orbit-e2e-smoke.ts"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.716.0",

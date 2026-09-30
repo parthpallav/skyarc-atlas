@@ -21,6 +21,8 @@ import { platformRoutes } from "./modules/platform/routes.js";
 import { inventoryRoutes } from "./modules/inventory/routes.js";
 import { campaignRoutes, mediaPlanRoutes } from "./modules/media-plans/routes.js";
 import { bookingRoutes } from "./modules/booking/routes.js";
+import { deviceRoutes } from "./modules/devices/routes.js";
+import { orbitEventRoutes } from "./modules/orbit-events/routes.js";
 import { startAnalysisRunner } from "./workers/analysis-runner.js";
 import { success } from "./lib/response.js";
 
@@ -59,6 +61,21 @@ export async function buildApp() {
       await campaignRoutes(api, ai);
       await mediaPlanRoutes(api, env);
       await bookingRoutes(api);
+      await deviceRoutes(api, env);
+    },
+    { prefix: API_PREFIX }
+  );
+
+  await fastify.register(
+    async (internal) => {
+      internal.addContentTypeParser(
+        "application/json",
+        { parseAs: "string" },
+        (_req, body, done) => {
+          done(null, body);
+        }
+      );
+      await orbitEventRoutes(internal, env);
     },
     { prefix: API_PREFIX }
   );

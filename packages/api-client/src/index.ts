@@ -750,6 +750,28 @@ export class ApiClient {
     return this.request<unknown[]>(`/locations/${locationId}/screens`);
   }
 
+  getScreenOrbitStatus(screenId: string) {
+    return this.request<{
+      attached: boolean;
+      skyarcScreenCode?: string | null;
+      device?: unknown;
+    }>(`/screens/${screenId}/orbit-status`);
+  }
+
+  listScreenDevices(screenId: string) {
+    return this.request<unknown[]>(`/screens/${screenId}/devices`);
+  }
+
+  attachScreenDevice(
+    screenId: string,
+    body: { provider?: string; deviceType?: string; externalId?: string }
+  ) {
+    return this.request<unknown>(`/screens/${screenId}/devices`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
   createScreen(
     locationId: string,
     data: {

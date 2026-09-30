@@ -9,10 +9,12 @@ import { prisma } from "../../lib/prisma.js";
 import { success } from "../../lib/response.js";
 import { canWriteLocation, isReadOnly, canAccessLocation } from "../../lib/rbac.js";
 import { forbidden, notFound } from "../../lib/errors.js";
+import { allocateSkyarcScreenCode } from "../../lib/screen-code.js";
 
 function serializeScreen(screen: {
   id: string;
   locationId: string;
+  skyarcScreenCode?: string | null;
   label: string;
   inventoryStatus: string;
   operatingHoursJson: unknown;
@@ -24,6 +26,7 @@ function serializeScreen(screen: {
   return {
     id: screen.id,
     locationId: screen.locationId,
+    skyarcScreenCode: screen.skyarcScreenCode ?? null,
     label: screen.label,
     inventoryStatus: screen.inventoryStatus,
     operatingHoursJson: screen.operatingHoursJson,
@@ -71,6 +74,24 @@ export async function screenRoutes(fastify: FastifyInstance) {
     }
   );
 
+  fastify.get(
+    "/screens/by-code/:code",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      const code = String((request.params as { code: string }).code).trim().toUpperCase();
+      const screen = await prisma.screen.findUnique({
+        where: { skyarcScreenCode: code },
+        include: { location: true, specification: true },
+      });
+      if (!screen) throw notFound("Screen not found");
+      if (!canAccessLocation(request.user, screen.location)) throw forbidden();
+      return success({
+        ...serializeScreen(screen),
+        specification: screen.specification,
+      });
+    }
+  );
+
   fastify.post(
     "/locations/:id/screens",
     { preHandler: [fastify.authenticate] },
@@ -82,9 +103,12 @@ export async function screenRoutes(fastify: FastifyInstance) {
         throw forbidden();
       }
       const body = createScreenBodySchema.parse(request.body);
+      const skyarcScreenCode = body.skyarcScreenCode?.trim().toUpperCase()
+        || (await allocateSkyarcScreenCode(locationId));
       const screen = await prisma.screen.create({
         data: {
           locationId,
+          skyarcScreenCode,
           label: body.label,
           inventoryStatus: body.inventoryStatus,
           operatingHoursJson: body.operatingHoursJson as object | undefined,
@@ -110,8 +134,14 @@ export async function screenRoutes(fastify: FastifyInstance) {
     const updated = await prisma.screen.update({
       where: { id },
       data: {
-        ...body,
+        label: body.label,
+        inventoryStatus: body.inventoryStatus,
         operatingHoursJson: body.operatingHoursJson as object | undefined,
+        loopDurationSec: body.loopDurationSec,
+        slotDurationSec: body.slotDurationSec,
+        ...(body.skyarcScreenCode !== undefined
+          ? { skyarcScreenCode: body.skyarcScreenCode?.trim().toUpperCase() ?? null }
+          : {}),
       },
     });
     return success(serializeScreen(updated));

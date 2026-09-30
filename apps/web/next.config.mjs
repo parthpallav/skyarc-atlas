@@ -8,8 +8,9 @@ const nextConfig = {
   transpilePackages: ["@skyarc/api-client", "@skyarc/shared"],
   outputFileTracingRoot: path.join(__dirname, "../../"),
   async rewrites() {
+    // Local default only. Production / preview must set API_PROXY_TARGET (HTTPS).
     const apiTarget =
-      process.env.API_PROXY_TARGET ?? "http://200.97.170.55:3001";
+      process.env.API_PROXY_TARGET?.trim() || "http://127.0.0.1:3001";
     return [
       {
         source: "/api/:path*",

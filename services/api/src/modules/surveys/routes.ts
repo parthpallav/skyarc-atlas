@@ -3,7 +3,7 @@ import { upsertSurveyBodySchema, uuidSchema } from "@skyarc/validation";
 import { SurveyStatus } from "@skyarc/shared";
 import { prisma } from "../../lib/prisma.js";
 import { success } from "../../lib/response.js";
-import { canWriteLocation, isReadOnly } from "../../lib/rbac.js";
+import { canAccessLocation, canWriteLocation, isReadOnly } from "../../lib/rbac.js";
 import { forbidden, notFound } from "../../lib/errors.js";
 
 function serializeSurvey(survey: {
@@ -72,6 +72,9 @@ export async function surveyRoutes(fastify: FastifyInstance) {
     { preHandler: [fastify.authenticate] },
     async (request) => {
       const locationId = uuidSchema.parse((request.params as { id: string }).id);
+      const location = await prisma.location.findUnique({ where: { id: locationId } });
+      if (!location) throw notFound("Location not found");
+      if (!canAccessLocation(request.user, location)) throw forbidden();
       const survey = await prisma.locationSurvey.findUnique({ where: { locationId } });
       if (!survey) throw notFound("Survey not found");
       return success(serializeSurvey(survey));

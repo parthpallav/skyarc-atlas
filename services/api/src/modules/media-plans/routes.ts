@@ -489,10 +489,14 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
           ],
         }
       : {};
+    const clientScope = isClientUser(request.user)
+      ? { createdByUserId: request.user.id }
+      : {};
+    const roleScope = { ...vendorScope, ...clientScope };
     const where =
-      Object.keys(searchWhere).length > 0 && Object.keys(vendorScope).length > 0
-        ? { AND: [searchWhere, vendorScope] }
-        : { ...searchWhere, ...vendorScope };
+      Object.keys(searchWhere).length > 0 && Object.keys(roleScope).length > 0
+        ? { AND: [searchWhere, roleScope] }
+        : { ...searchWhere, ...roleScope };
     const campaigns = await prisma.campaign.findMany({
       where,
       skip,
@@ -583,6 +587,7 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
     });
     if (!campaign) throw notFound("Campaign not found");
     const ownsCampaign = campaign.createdByUserId === request.user.id;
+    if (isClientUser(request.user) && !ownsCampaign) throw forbidden();
     const briefIsRequest = isSiteRequestBrief(campaign.brief?.structuredRequirementsJson);
     if (isVendorUser(request.user) && !ownsCampaign) {
       // Allow inbound site requests that include this vendor's inventory
