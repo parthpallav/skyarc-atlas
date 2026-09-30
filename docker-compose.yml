@@ -1,4 +1,9 @@
 # Production: API + self-hosted PostGIS on the same VPS (no external DB).
+#
+# Internal container ports stay fixed (docker DNS: api:3001, orbit-cloud:3002).
+# Publish to the host via API_HOST_PORT / ORBIT_HOST_PORT — open those on the
+# firewall when you add a module. Do not hardcode VPS hostnames in app config;
+# the web app proxies via API_PROXY_TARGET at runtime.
 services:
   postgres:
     image: postgis/postgis:17-3.5
@@ -26,7 +31,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3001:3001"
+      - "${API_HOST_PORT:-3001}:3001"
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       DATABASE_BOOTSTRAP: ${DATABASE_BOOTSTRAP:-auto}
@@ -59,7 +64,7 @@ services:
       context: .
       dockerfile: services/orbit-cloud/Dockerfile
     ports:
-      - "3002:3002"
+      - "${ORBIT_HOST_PORT:-3002}:3002"
     environment:
       ORBIT_DATABASE_URL: ${ORBIT_DATABASE_URL:?Set ORBIT_DATABASE_URL in .env}
       ORBIT_SERVICE_TOKEN: ${ORBIT_SERVICE_TOKEN:?Set ORBIT_SERVICE_TOKEN in .env}

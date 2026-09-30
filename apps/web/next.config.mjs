@@ -7,22 +7,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const nextConfig = {
   transpilePackages: ["@skyarc/api-client", "@skyarc/shared"],
   outputFileTracingRoot: path.join(__dirname, "../../"),
-  async rewrites() {
-    // Rewrites are baked at build time. Never fall back to loopback on Vercel —
-    // that surfaces as DNS_HOSTNAME_RESOLVED_PRIVATE and breaks all /api data loads.
-    const fromEnv = process.env.API_PROXY_TARGET?.trim();
-    const apiTarget =
-      fromEnv ||
-      (process.env.VERCEL
-        ? "http://srv1887077.hstgr.cloud:3001"
-        : "http://127.0.0.1:3001");
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${apiTarget}/api/:path*`,
-      },
-    ];
-  },
+  // /api/* is proxied at request time by app/api/[...path]/route.ts using
+  // API_PROXY_TARGET (runtime env). No build-time host hardcoding.
   images: {
     remotePatterns: [
       {

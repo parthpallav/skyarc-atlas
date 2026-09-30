@@ -12,8 +12,8 @@ export function getApiBaseUrl(): string {
       // (localhost vs 127.0.0.1 are different origins).
       return `${window.location.protocol}//${host}:3001`;
     }
-    // In production (e.g. atlas.skyarcads.com or Vercel preview), use same-origin relative path
-    // which Next.js rewrites to the VPS backend over HTTP without triggering browser Mixed Content blocks.
+    // In production (e.g. atlas.skyarcads.com or Vercel preview), use same-origin
+    // relative /api — proxied at runtime by app/api/[...path] via API_PROXY_TARGET.
     return "";
   }
   return "http://localhost:3001";

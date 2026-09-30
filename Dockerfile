@@ -19,6 +19,7 @@ COPY --from=builder /app/services/api ./services/api
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/docs ./docs
 COPY scripts/docker-entrypoint.sh /app/scripts/docker-entrypoint.sh
-RUN chmod +x /app/scripts/docker-entrypoint.sh
+COPY scripts/apply-sql-migrations.sh /app/scripts/apply-sql-migrations.sh
+RUN chmod +x /app/scripts/docker-entrypoint.sh /app/scripts/apply-sql-migrations.sh
 EXPOSE 3001
 ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]

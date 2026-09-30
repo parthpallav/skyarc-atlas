@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import { loadEnv, parseCorsOrigins } from "@skyarc/config";
+import { loadEnv, corsOriginOption } from "@skyarc/config";
 import { API_PREFIX } from "@skyarc/shared";
 import authPlugin from "./plugins/auth.js";
 import errorHandler from "./plugins/error-handler.js";
@@ -36,7 +36,7 @@ export async function buildApp() {
   const ai = createAIProvider(env);
 
   await fastify.register(helmet);
-  await fastify.register(cors, { origin: parseCorsOrigins(env.CORS_ORIGINS) });
+  await fastify.register(cors, { origin: corsOriginOption(env.CORS_ORIGINS) });
   await fastify.register(rateLimit, { max: 100, timeWindow: "1 minute" });
   await fastify.register(errorHandler);
   await fastify.register(openapiPlugin);

@@ -20,14 +20,10 @@ should_bootstrap() {
   [ "$COUNT" = "0" ]
 }
 
-# Additive Orbit schema (IF NOT EXISTS) — safe even when DATABASE_BOOTSTRAP=never.
-# Full `prisma db push` can fight PostGIS; this SQL is the production-safe path.
-if [ -f prisma/migrations/0006_orbit_foundation/migration.sql ]; then
-  echo "Applying Orbit foundation SQL (idempotent)..."
-  pnpm exec prisma db execute \
-    --file prisma/migrations/0006_orbit_foundation/migration.sql \
-    --schema prisma/schema.prisma
-fi
+# Always apply any missing additive SQL migrations (ledger-tracked, idempotent files).
+# Works even when DATABASE_BOOTSTRAP=never — full `prisma db push` is unsafe with PostGIS.
+chmod +x /app/scripts/apply-sql-migrations.sh
+/app/scripts/apply-sql-migrations.sh prisma/migrations prisma/schema.prisma
 
 if [ "${DATABASE_BOOTSTRAP:-auto}" != "never" ]; then
   echo "Syncing Prisma schema (non-destructive, data preserved)..."
@@ -43,7 +39,7 @@ fi
 
 # Fill Screen.skyarcScreenCode when null (idempotent).
 echo "Backfilling screen codes if needed..."
-pnpm exec tsx prisma/backfill-screen-codes.ts || echo "Screen code backfill skipped"
+pnpm exec tsx prisma/backfill-screen-codes.ts
 
 echo "Starting API..."
 cd /app/services/api

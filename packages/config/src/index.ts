@@ -64,3 +64,33 @@ export function loadEnv(input: NodeJS.ProcessEnv = process.env): Env {
 export function parseCorsOrigins(origins: string): string[] {
   return origins.split(",").map((o) => o.trim()).filter(Boolean);
 }
+
+/** Convert a CORS allowlist entry into a matcher. Supports one `*` wildcard segment. */
+export function corsOriginAllowed(origin: string | undefined, allowlist: string): boolean {
+  if (!origin) return true;
+  const entries = parseCorsOrigins(allowlist);
+  if (entries.includes("*")) return true;
+  for (const entry of entries) {
+    if (!entry.includes("*")) {
+      if (entry === origin) return true;
+      continue;
+    }
+    const escaped = entry
+      .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*/g, ".*");
+    if (new RegExp(`^${escaped}$`, "i").test(origin)) return true;
+  }
+  return false;
+}
+
+/** Fastify/@fastify/cors-compatible origin option (array or callback). */
+export function corsOriginOption(
+  allowlist: string
+): true | string[] | ((origin: string | undefined, cb: (err: Error | null, allow: boolean) => void) => void) {
+  const entries = parseCorsOrigins(allowlist);
+  if (entries.includes("*")) return true;
+  if (entries.every((e) => !e.includes("*"))) return entries;
+  return (origin, cb) => {
+    cb(null, corsOriginAllowed(origin, allowlist));
+  };
+}
