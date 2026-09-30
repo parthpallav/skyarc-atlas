@@ -236,9 +236,8 @@ export default function CampaignDetailPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 pb-12">
-      {/* Sticky glass header — locations-style */}
-      <div className="sticky top-0 z-20 -mx-1 rounded-xl border border-primary/15 bg-white/90 px-3 py-2.5 shadow-sm backdrop-blur-md sm:px-4">
+    <div className="-mx-3.5 -mt-3.5 flex h-[calc(100dvh-3.5rem-5.25rem)] flex-col sm:-mx-6 sm:-mt-6 md:h-[calc(100dvh-2rem)] lg:-mx-8 lg:-mt-8">
+      <div className="shrink-0 border-b border-primary/15 bg-white/90 px-3 py-2 backdrop-blur-md sm:px-4">
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/campaigns"
@@ -248,14 +247,14 @@ export default function CampaignDetailPage() {
             {isSiteRequest ? "Requests" : "Campaigns"}
           </Link>
           <span className="text-muted">/</span>
-          <h1 className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900 sm:text-base">
+          <h1 className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900">
             {campaign.name}
           </h1>
           {canEdit && !isSiteRequest ? (
             <div className="flex items-center gap-1.5">
               <Link
                 href={`/campaigns/${campaign.id}/edit`}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-white/80 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-violet-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-violet-50"
               >
                 <Pencil className="h-3.5 w-3.5" />
                 Edit
@@ -280,186 +279,162 @@ export default function CampaignDetailPage() {
             </div>
           ) : null}
         </div>
-      </div>
-
-      {error ? (
-        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </p>
-      ) : null}
-
-      {/* Compact stat strip */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <div className="rounded-xl border border-primary/15 bg-white/80 px-3 py-2.5 backdrop-blur-sm">
-          <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
-            <Building2 className="h-3 w-3 text-primary" /> Brand
-          </p>
-          <p className="mt-0.5 truncate text-sm font-bold text-slate-900">
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600">
+          <span className="inline-flex items-center gap-1 font-semibold text-slate-900">
+            <Building2 className="h-3 w-3 text-primary" />
             {campaign.advertiser?.name ?? "—"}
-          </p>
-          {brief?.brandCategory ? (
-            <p className="truncate text-[11px] text-muted">{brief.brandCategory}</p>
-          ) : null}
-        </div>
-        <div className="rounded-xl border border-primary/15 bg-white/80 px-3 py-2.5 backdrop-blur-sm">
-          <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
-            <IndianRupee className="h-3 w-3 text-emerald-600" /> Budget
-          </p>
-          <p className="mt-0.5 text-sm font-bold tabular-nums text-slate-900">
+          </span>
+          <span className="inline-flex items-center gap-1 font-semibold tabular-nums text-slate-900">
+            <IndianRupee className="h-3 w-3 text-emerald-600" />
             {budget ? formatInr(budget) : "—"}
-          </p>
-        </div>
-        <div className="rounded-xl border border-primary/15 bg-white/80 px-3 py-2.5 backdrop-blur-sm">
-          <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
-            <CalendarDays className="h-3 w-3 text-primary" /> Flight
-          </p>
-          <p className="mt-0.5 text-sm font-bold text-slate-900">
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <CalendarDays className="h-3 w-3 text-primary" />
             {campaign.startDate && campaign.endDate
               ? `${formatDateIn(campaign.startDate)} – ${formatDateIn(campaign.endDate)}`
-              : "Not set"}
-          </p>
+              : "Dates not set"}
+            {days ? ` · ${days}d` : ""}
+          </span>
+          <span className="text-muted">{plans.length} plan{plans.length === 1 ? "" : "s"}</span>
         </div>
-        <div className="rounded-xl border border-primary/15 bg-white/80 px-3 py-2.5 backdrop-blur-sm">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Duration</p>
-          <p className="mt-0.5 text-sm font-bold text-slate-900">
-            {days ? `${days} days` : "—"}
+        {error ? (
+          <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {error}
           </p>
-          <p className="text-[11px] text-muted">{plans.length} plan{plans.length === 1 ? "" : "s"}</p>
-        </div>
+        ) : null}
+        {!isSiteRequest ? (
+          <div className="mt-2">
+            {campaign.readyForSiteRequests ? (
+              <p className="text-[11px] text-emerald-800">
+                <span className="font-semibold">Ready for site requests.</span> Brands can send
+                sites to media owners.
+              </p>
+            ) : campaign.canMarkReady ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1.5">
+                <p className="text-[11px] text-slate-700">Unlock site requests for brands</p>
+                <button
+                  type="button"
+                  className="btn-primary px-2.5 py-1 text-[11px]"
+                  disabled={readyMutation.isPending}
+                  onClick={() => readyMutation.mutate()}
+                >
+                  {readyMutation.isPending ? "…" : "Mark ready"}
+                </button>
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted">Waiting for Skyarc to mark ready.</p>
+            )}
+          </div>
+        ) : null}
       </div>
 
-      {!isSiteRequest ? (
-        <section className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-3 backdrop-blur-sm">
-          {campaign.readyForSiteRequests ? (
-            <p className="text-sm text-slate-800">
-              <span className="font-semibold text-emerald-800">Ready for site requests.</span> Brand
-              and planners can send listed sites to media owners for this flight.
-            </p>
-          ) : campaign.canMarkReady ? (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Unlock site requests</p>
-                <p className="mt-0.5 text-xs text-muted">
-                  Only Skyarc can mark the campaign ready before brands send requests.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="btn-primary shrink-0 px-3 py-2 text-xs"
-                disabled={readyMutation.isPending}
-                onClick={() => readyMutation.mutate()}
-              >
-                {readyMutation.isPending ? "Marking…" : "Mark ready for site requests"}
-              </button>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-700">
-              Waiting for Skyarc to mark this campaign ready before site requests go out.
-            </p>
-          )}
-        </section>
-      ) : null}
-
-      <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
-        {/* Primary: media plans */}
-        <section className="rounded-xl border border-primary/15 bg-white/90 shadow-sm backdrop-blur-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-primary/10 px-4 py-3">
+      <div className="grid min-h-0 flex-1 gap-3 p-3 md:grid-cols-[1fr_270px] md:p-4">
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-primary/15 bg-white/95">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-primary/10 px-3 py-2.5">
             <div>
               <h2 className="text-sm font-bold text-slate-900">
                 {isSiteRequest ? "Request plans" : "Media plans"}
               </h2>
-              <p className="text-[11px] text-muted">
-                {isSiteRequest
-                  ? "Open a request to approve, reject, or view pricing."
-                  : "Open a plan to present, swap sites, or export PDF."}
-              </p>
+              <p className="text-[10px] text-muted">Open a plan to score, swap, and export.</p>
             </div>
             {!isSiteRequest ? (
               <button
                 type="button"
-                className="btn-primary gap-1.5 px-3 py-2 text-xs"
+                className="btn-primary gap-1.5 px-3 py-1.5 text-xs"
                 disabled={optimizeMutation.isPending}
                 onClick={() => optimizeMutation.mutate()}
               >
                 <Layers className="h-3.5 w-3.5" />
-                {optimizeMutation.isPending ? "Creating…" : "Create media plan"}
+                {optimizeMutation.isPending ? "Creating…" : "Create plan"}
               </button>
             ) : null}
           </div>
-
-          {plans.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-muted">
-              No plan yet. Create one when you are ready to pack sites.
-            </p>
-          ) : (
-            <ul className="divide-y divide-violet-50">
-              {plans.map((plan) => {
-                const pill = planStatusPill(plan);
-                return (
-                  <li key={plan.id}>
-                    <Link
-                      href={`/campaigns/${campaign.id}/plans/${plan.id}`}
-                      className="flex items-center justify-between gap-3 px-4 py-3.5 transition-colors hover:bg-violet-50/70"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="truncate text-sm font-semibold text-slate-900">
-                            {plan.name}
-                          </h3>
-                          <span
-                            className={cn(
-                              "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                              pill.className
-                            )}
-                          >
-                            {pill.label}
-                          </span>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {plans.length === 0 ? (
+              <p className="px-4 py-10 text-center text-sm text-muted">
+                No plan yet. Create one to pack sites against this budget.
+              </p>
+            ) : (
+              <ul className="divide-y divide-violet-50">
+                {plans.map((plan) => {
+                  const pill = planStatusPill(plan);
+                  return (
+                    <li key={plan.id}>
+                      <Link
+                        href={`/campaigns/${campaign.id}/plans/${plan.id}`}
+                        className="flex items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-violet-50/80"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="truncate text-sm font-semibold text-slate-900">
+                              {plan.name}
+                            </h3>
+                            <span
+                              className={cn(
+                                "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                                pill.className
+                              )}
+                            >
+                              {pill.label}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-xs text-muted">
+                            {plan._count?.items ?? 0} sites ·{" "}
+                            {formatInr(Number(plan.totalBudget) || 0)}
+                          </p>
                         </div>
-                        <p className="mt-0.5 text-xs text-muted">
-                          {plan._count?.items ?? 0} sites ·{" "}
-                          {formatInr(Number(plan.totalBudget) || 0)}
-                        </p>
-                      </div>
-                      <span className="inline-flex shrink-0 items-center gap-0.5 text-xs font-semibold text-primary">
-                        Open <ChevronRight className="h-4 w-4" />
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                        <span className="inline-flex shrink-0 items-center gap-0.5 text-xs font-semibold text-primary">
+                          Open <ChevronRight className="h-4 w-4" />
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
         </section>
 
-        {/* Side: brief details */}
-        <aside className="space-y-3">
-          <div className="rounded-xl border border-primary/15 bg-primary/5 p-3 backdrop-blur-sm lg:sticky lg:top-[4.25rem]">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between text-left lg:pointer-events-none"
-              onClick={() => setBriefOpen((v) => !v)}
-            >
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                Brief detail
-              </p>
-              <span className="text-[11px] font-semibold text-primary lg:hidden">
-                {briefOpen ? "Hide" : "Show"}
-              </span>
-            </button>
-            <div className={cn("mt-2", briefOpen ? "block" : "hidden lg:block")}>
-              <div className="max-h-[28rem] overflow-y-auto">
-                <CampaignSummary
-                  advertiserName={campaign.advertiser?.name}
-                  startDate={campaign.startDate}
-                  endDate={campaign.endDate}
-                  budget={budget}
-                  brief={brief}
-                  variant="embedded"
-                />
-              </div>
-            </div>
+        <aside className="hidden min-h-0 flex-col overflow-hidden rounded-xl border border-primary/15 bg-primary/5 md:flex">
+          <div className="shrink-0 border-b border-primary/10 px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+              Brief
+            </p>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <CampaignSummary
+              advertiserName={campaign.advertiser?.name}
+              startDate={campaign.startDate}
+              endDate={campaign.endDate}
+              budget={budget}
+              brief={brief}
+              variant="embedded"
+            />
           </div>
         </aside>
+
+        {/* Mobile brief toggle */}
+        <div className="md:hidden">
+          <button
+            type="button"
+            className="mb-2 w-full rounded-lg border border-primary/20 bg-white px-3 py-2 text-left text-xs font-semibold text-primary"
+            onClick={() => setBriefOpen((v) => !v)}
+          >
+            {briefOpen ? "Hide brief" : "Show brief"}
+          </button>
+          {briefOpen ? (
+            <div className="rounded-xl border border-primary/15 bg-white p-3">
+              <CampaignSummary
+                advertiserName={campaign.advertiser?.name}
+                startDate={campaign.startDate}
+                endDate={campaign.endDate}
+                budget={budget}
+                brief={brief}
+                variant="embedded"
+              />
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );

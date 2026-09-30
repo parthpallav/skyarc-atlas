@@ -8,9 +8,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   ChevronDown,
-  ChevronRight,
   Download,
-  Layers,
   MapPin,
   Share2,
   Trash2,
@@ -23,12 +21,10 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { formatInventoryType, formatLighting, siteLabelForAudience } from "@skyarc/shared";
 import { trackEntityView, trackBusinessEvent } from "@/lib/clarity-telemetry";
 import {
-  PlanSummaryCards,
   SiteMetricsBars,
   type PlanSummaryView,
   type SiteInsightsView,
 } from "@/components/media-plan-insights";
-import { PlanMixViz } from "@/components/plan-mix-viz";
 import { MediaPlanDetailSkeleton } from "@/components/ui/skeleton";
 import { SiteDemandSignals } from "@/components/site-demand-signals";
 import { cn } from "@/lib/utils";
@@ -473,8 +469,8 @@ export default function MediaPlanDetailPage() {
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [catalogOpen, setCatalogOpen] = useState(true);
-  const [mobileAdminOpen, setMobileAdminOpen] = useState(false);
+  const [detailTab, setDetailTab] = useState<"score" | "swap" | "add">("score");
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
   const {
     data: plan,
@@ -640,60 +636,362 @@ export default function MediaPlanDetailPage() {
   const availableSites = plan.availableSites ?? [];
   const planName = plan.name;
   const ownedItemCount = plan.ownedItemCount;
+  const planItems = plan.items;
+  const planSummary = plan.summary;
 
-  const showAdminRail = !isClient && !isVendor;
+  const isAdmin = !isClient && !isVendor;
   const selectedItem =
-    plan.items.find((i) => i.id === selectedItemId) ?? plan.items[0] ?? null;
+    planItems.find((i) => i.id === selectedItemId) ?? planItems[0] ?? null;
+  const selectedIndex = selectedItem
+    ? planItems.findIndex((i) => i.id === selectedItem.id)
+    : -1;
+  const selectedScore =
+    selectedItem?.skyarcIndex?.overallScore ?? selectedItem?.insights?.overallScore ?? null;
+  const selectedWhy =
+    selectedItem?.whyThisSite ||
+    selectedItem?.explanationText ||
+    selectedItem?.insights?.highlights?.[0] ||
+    selectedItem?.insights?.explanationText ||
+    null;
+  const audience = isClient ? "client" : isVendor ? "vendor" : "internal";
 
-  function renderAdminRail() {
-    if (!showAdminRail) return null;
-    return (
-    <aside className="space-y-3 lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto">
-      <BudgetMeter
-        allocated={totalAllocated}
-        budget={planTotal}
-        leftover={leftover}
-        overBy={overBy}
-      />
+  function selectSite(id: string) {
+    setSelectedItemId(id);
+    setMobileDetailOpen(true);
+    if (isAdmin) setDetailTab("score");
+  }
 
-      {planMix ? (
-        <div className="rounded-xl border border-primary/15 bg-white/85 px-3 py-2.5 text-xs backdrop-blur-sm">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Mix</p>
-          <p className="mt-1 font-semibold text-slate-900">
-            {planMix.hoardings} static · {planMix.digital} digital · {planMix.kiosks} kiosk
-            {planMix.other > 0 ? ` · ${planMix.other} other` : ""}
-          </p>
+  const alerts = (
+    <>
+      {showPendingVendor ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          <span className="font-semibold">Request pending.</span> Sites held for this flight;
+          pricing after approval.
         </div>
       ) : null}
-
-      <div className="rounded-xl border border-primary/15 bg-primary/5 p-3 backdrop-blur-sm">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Swap for</p>
-        <p className="mt-0.5 truncate text-sm font-bold text-slate-900">
-          {selectedItem?.location?.skyarcSiteCode ?? selectedItem?.location?.name ?? "Select a site"}
+      {canRespond ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+          <p className="text-xs font-semibold text-slate-900">
+            Request for your inventory
+            {ownedItemCount ? ` · ${ownedItemCount}` : ""}
+          </p>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              className="btn-secondary px-2.5 py-1.5 text-[11px]"
+              disabled={respondMutation.isPending}
+              onClick={() => respondMutation.mutate("REJECT")}
+            >
+              Reject
+            </button>
+            <button
+              type="button"
+              className="btn-primary px-2.5 py-1.5 text-[11px]"
+              disabled={respondMutation.isPending}
+              onClick={() => respondMutation.mutate("APPROVE")}
+            >
+              {respondMutation.isPending ? "…" : "Approve"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {canApprove ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
+          <p className="text-xs font-semibold text-slate-900">Site request — approve to book</p>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              className="btn-secondary px-2.5 py-1.5 text-[11px]"
+              disabled={approveMutation.isPending}
+              onClick={() => approveMutation.mutate("REJECTED")}
+            >
+              Reject
+            </button>
+            <button
+              type="button"
+              className="btn-primary px-2.5 py-1.5 text-[11px]"
+              disabled={approveMutation.isPending}
+              onClick={() => approveMutation.mutate("APPROVED")}
+            >
+              {approveMutation.isPending ? "…" : "Approve"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {isVendor && pricingReady ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
+          Approved — site rates visible for this flight.
+        </div>
+      ) : null}
+      {(exportMutation.isError || swapMutation.isError || addMutation.isError) && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {(exportMutation.error ?? swapMutation.error ?? addMutation.error) instanceof Error
+            ? ((exportMutation.error ?? swapMutation.error ?? addMutation.error) as Error).message
+            : "Something went wrong"}
         </p>
-        {selectedItem?.pricing && isInternal ? (
-          <div className="mt-2 space-y-0.5 text-[11px] text-muted">
-            {selectedItem.pricing.vendorRate != null ? (
-              <p>Vendor {formatInr(selectedItem.pricing.vendorRate)}</p>
-            ) : null}
-            {selectedItem.pricing.clientRate != null ? (
-              <p className="font-medium text-slate-800">
-                Client {formatInr(selectedItem.pricing.clientRate)}
-              </p>
+      )}
+    </>
+  );
+
+  function renderSiteList() {
+    return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-primary/15 bg-white/95">
+      <div className="shrink-0 border-b border-primary/10 px-3 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-bold text-slate-900">
+              Plan sites · {planItems.length}
+            </p>
+            <p className="text-[10px] text-muted">
+              {formatInr(totalAllocated)}
+              {overBy > 1
+                ? ` · over ${formatInr(overBy)}`
+                : leftover > 0
+                  ? ` · ${formatInr(leftover)} left`
+                  : " · on budget"}
+            </p>
+          </div>
+          {planSummary ? (
+            <p className="text-right text-[10px] font-semibold text-primary">
+              Fit {Math.round(planSummary.avgOverallScore)}
+              <span className="block font-normal text-muted">plan avg</span>
+            </p>
+          ) : null}
+        </div>
+        {planMix ? (
+          <p className="mt-1 text-[10px] text-muted">
+            {planMix.hoardings} static · {planMix.digital} digital · {planMix.kiosks} kiosk
+            {planMix.other ? ` · ${planMix.other} other` : ""}
+          </p>
+        ) : null}
+      </div>
+      <ul className="min-h-0 flex-1 overflow-y-auto divide-y divide-violet-50">
+        {planItems.map((item, idx) => {
+          const score = item.skyarcIndex?.overallScore ?? item.insights?.overallScore;
+          const on = selectedItem?.id === item.id;
+          return (
+            <li key={item.id}>
+              <button
+                type="button"
+                onClick={() => selectSite(item.id)}
+                className={cn(
+                  "flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors",
+                  on ? "bg-primary/10" : "hover:bg-violet-50/80"
+                )}
+              >
+                <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-slate-100">
+                  {item.location?.coverImageUrl ? (
+                    <Image
+                      src={item.location.coverImageUrl}
+                      alt=""
+                      fill
+                      className="object-cover"
+                      sizes="48px"
+                      unoptimized
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-slate-300">
+                      <MapPin className="h-4 w-4" />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-mono text-[10px] font-semibold text-primary">
+                    #{idx + 1} · {item.location?.skyarcSiteCode ?? "SKY"}
+                  </p>
+                  <p className="truncate text-xs font-semibold text-slate-900">
+                    {item.location?.name ?? "Site"}
+                  </p>
+                  <p className="truncate text-[10px] text-muted">
+                    {item.location?.road ?? siteSpecLine(item)}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  {score != null ? (
+                    <p className="text-sm font-bold tabular-nums text-slate-900">
+                      {Math.round(score)}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted">—</p>
+                  )}
+                  {showClientPricing ? (
+                    <p className="text-[10px] font-semibold tabular-nums text-muted">
+                      {formatInr(item.budgetAllocated)}
+                    </p>
+                  ) : null}
+                </div>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+  }
+
+  function renderDetailPane() {
+    if (!selectedItem) {
+      return (
+    <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-primary/20 bg-white/60 text-sm text-muted">
+      Select a site from the list
+    </div>
+      );
+    }
+    return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-primary/15 bg-white/95">
+      <div className="shrink-0 border-b border-primary/10 p-3">
+        <div className="flex gap-3">
+          <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-lg bg-slate-100 sm:h-24 sm:w-28">
+            {selectedItem.location?.coverImageUrl ? (
+              <Image
+                src={selectedItem.location.coverImageUrl}
+                alt={selectedItem.location.name}
+                fill
+                className="object-cover"
+                sizes="112px"
+                unoptimized
+              />
             ) : (
-              <p className="text-amber-700">Client price not set</p>
+              <div className="flex h-full items-center justify-center text-slate-300">
+                <MapPin className="h-6 w-6" />
+              </div>
             )}
-            {selectedItem.pricing.impliedMarginPercent != null &&
-            selectedItem.pricing.skyarcRevenue != null ? (
-              <p className="font-medium text-emerald-700">
-                Margin {selectedItem.pricing.impliedMarginPercent}% (
-                {formatInr(selectedItem.pricing.skyarcRevenue)})
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-mono text-[11px] font-semibold text-primary">
+              {selectedItem.location?.skyarcSiteCode ?? "SKY"}
+              {selectedIndex >= 0 ? ` · #${selectedIndex + 1}` : ""}
+            </p>
+            <h2 className="truncate text-sm font-bold text-slate-900">
+              {selectedItem.location?.name}
+            </h2>
+            <p className="text-[11px] text-muted">{siteSpecLine(selectedItem)}</p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              {selectedScore != null ? (
+                <span className="rounded-md bg-violet-50 px-2 py-0.5 text-xs font-bold text-primary">
+                  Index {Math.round(selectedScore)}
+                </span>
+              ) : null}
+              {showClientPricing ? (
+                <span className="text-xs font-bold tabular-nums text-slate-900">
+                  {formatInr(selectedItem.budgetAllocated)}
+                </span>
+              ) : null}
+              {selectedItem.location ? (
+                <Link
+                  href={`/locations/${selectedItem.location.id}`}
+                  className="text-[11px] font-semibold text-primary hover:underline"
+                >
+                  Site details →
+                </Link>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {isAdmin ? (
+          <div className="mt-3 inline-flex w-full rounded-lg border border-primary/20 bg-slate-50 p-0.5">
+            {(
+              [
+                ["score", "Scoring"],
+                ["swap", "Swap"],
+                ["add", "Add sites"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setDetailTab(id)}
+                className={cn(
+                  "flex-1 rounded-md px-2 py-1.5 text-[11px] font-semibold",
+                  detailTab === id
+                    ? "bg-white text-primary shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {!isAdmin || detailTab === "score" ? (
+          <div className="space-y-3">
+            {isAdmin && selectedItem.pricing ? (
+              <div className="grid grid-cols-3 gap-2 rounded-lg border border-primary/15 bg-primary/5 p-2.5 text-[11px]">
+                <div>
+                  <p className="text-muted">Vendor</p>
+                  <p className="font-bold tabular-nums text-slate-900">
+                    {selectedItem.pricing.vendorRate != null
+                      ? formatInr(selectedItem.pricing.vendorRate)
+                      : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted">Client</p>
+                  <p className="font-bold tabular-nums text-slate-900">
+                    {selectedItem.pricing.clientRate != null
+                      ? formatInr(selectedItem.pricing.clientRate)
+                      : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted">Margin</p>
+                  <p className="font-bold text-emerald-700">
+                    {selectedItem.pricing.impliedMarginPercent != null
+                      ? `${selectedItem.pricing.impliedMarginPercent}%`
+                      : "—"}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            {selectedItem.insights && selectedItem.insights.metrics.length > 0 ? (
+              <div>
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                  {isAdmin ? "Admin scoring — Skyarc Index factors" : "Site factors"}
+                </p>
+                <SiteMetricsBars metrics={selectedItem.insights.metrics} />
+              </div>
+            ) : (
+              <p className="rounded-lg border border-dashed border-violet-200 px-3 py-6 text-center text-xs text-muted">
+                No factor scores for this site yet.
               </p>
+            )}
+
+            {selectedWhy ? (
+              <p className="rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2 text-xs leading-relaxed text-slate-700">
+                <span className="font-semibold text-slate-900">Why · </span>
+                {selectedWhy}
+              </p>
+            ) : null}
+
+            <SiteDemandSignals demand={selectedItem.demand} audience={audience} />
+
+            {!isAdmin ? (
+              <BudgetMeter
+                allocated={totalAllocated}
+                budget={planTotal}
+                leftover={leftover}
+                overBy={overBy}
+              />
             ) : null}
           </div>
         ) : null}
-        <div className="mt-3">
-          {selectedItem ? (
+
+        {isAdmin && detailTab === "swap" ? (
+          <div className="space-y-2">
+            <BudgetMeter
+              allocated={totalAllocated}
+              budget={planTotal}
+              leftover={leftover}
+              overBy={overBy}
+            />
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+              Swap alternatives for this site
+            </p>
             <SwapAlternativeCards
               item={selectedItem}
               pending={pendingMix}
@@ -705,26 +1003,28 @@ export default function MediaPlanDetailPage() {
                 swapMutation.mutate({ itemId: selectedItem.id, inventoryId })
               }
             />
-          ) : null}
-        </div>
-      </div>
+          </div>
+        ) : null}
 
-      <AvailableOptions
-        leftover={leftover}
-        suggestedAdds={suggestedAdds}
-        availableSites={availableSites}
-        pending={pendingMix}
-        open={catalogOpen}
-        onToggle={() => setCatalogOpen((value) => !value)}
-        onAdd={(inventoryId) => addMutation.mutate(inventoryId)}
-      />
-    </aside>
-    );
+        {isAdmin && detailTab === "add" ? (
+          <AvailableOptions
+            leftover={leftover}
+            suggestedAdds={suggestedAdds}
+            availableSites={availableSites}
+            pending={pendingMix}
+            open
+            onToggle={() => undefined}
+            onAdd={(inventoryId) => addMutation.mutate(inventoryId)}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 pb-16">
-      <div className="sticky top-0 z-20 rounded-xl border border-primary/15 bg-white/90 px-3 py-2.5 shadow-sm backdrop-blur-md sm:px-4">
+    <div className="-mx-3.5 -mt-3.5 flex h-[calc(100dvh-3.5rem-5.25rem)] flex-col sm:-mx-6 sm:-mt-6 md:h-[calc(100dvh-2rem)] lg:-mx-8 lg:-mt-8">
+      <div className="shrink-0 border-b border-primary/15 bg-white/90 px-3 py-2 backdrop-blur-md sm:px-4">
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href={isDraftRequest || isVendor ? "/campaigns" : `/campaigns/${campaignId}`}
@@ -734,7 +1034,7 @@ export default function MediaPlanDetailPage() {
             {isVendor || isDraftRequest ? "Requests" : "Campaign"}
           </Link>
           <span className="text-muted">/</span>
-          <h1 className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900 sm:text-base">
+          <h1 className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900">
             {displayName}
           </h1>
           <span
@@ -742,346 +1042,76 @@ export default function MediaPlanDetailPage() {
           >
             {statusBadge.label}
           </span>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {showAdminRail ? (
-              <button
-                type="button"
-                onClick={() => setMobileAdminOpen(true)}
-                className="inline-flex items-center gap-1 rounded-lg border border-primary/25 bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary lg:hidden"
-              >
-                <Layers className="h-3.5 w-3.5" />
-                Swap / add
-              </button>
-            ) : null}
+          <button
+            type="button"
+            onClick={handleCopyShareLink}
+            className="inline-flex items-center gap-1 rounded-lg border border-primary/20 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700"
+          >
+            {copiedLink ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+            ) : (
+              <Share2 className="h-3.5 w-3.5 text-primary" />
+            )}
+            {copiedLink ? "Copied" : "Share"}
+          </button>
+          {canExportPdf && (!isVendor || pricingReady) ? (
             <button
               type="button"
-              onClick={handleCopyShareLink}
-              className="inline-flex items-center gap-1 rounded-lg border border-primary/20 bg-white/80 px-2.5 py-1.5 text-xs font-semibold text-slate-700"
+              className="btn-primary gap-1 px-2.5 py-1.5 text-xs"
+              disabled={exportMutation.isPending}
+              onClick={() => exportMutation.mutate()}
             >
-              {copiedLink ? (
-                <>
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Share2 className="h-3.5 w-3.5 text-primary" />
-                  Share
-                </>
-              )}
+              <Download className="h-3.5 w-3.5" />
+              PDF
             </button>
-            {canExportPdf && (!isVendor || pricingReady) ? (
-              <button
-                type="button"
-                className="btn-primary gap-1 px-2.5 py-1.5 text-xs"
-                disabled={exportMutation.isPending}
-                onClick={() => exportMutation.mutate()}
-              >
-                <Download className="h-3.5 w-3.5" />
-                {exportMutation.isPending ? "…" : "PDF"}
-              </button>
-            ) : null}
-            {!isClient && !isVendor ? (
-              <button
-                type="button"
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                disabled={deleteMutation.isPending}
-                onClick={() => {
-                  if (window.confirm(`Delete "${planName}"? This cannot be undone.`)) {
-                    deleteMutation.mutate();
-                  }
-                }}
-                title="Delete plan"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            ) : null}
-          </div>
-        </div>
-        {goalLabel ? <p className="mt-1 text-[11px] text-muted">{goalLabel}</p> : null}
-      </div>
-
-      {showPendingVendor ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950 backdrop-blur-sm">
-          <p className="font-semibold">Request pending</p>
-          <p className="mt-1 text-xs text-amber-900/90">
-            Waiting for review. Sites are held for this flight. Pricing appears after approval.
-          </p>
-        </div>
-      ) : null}
-
-      {canRespond ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 backdrop-blur-sm">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">
-              Request for your inventory
-              {ownedItemCount ? ` · ${ownedItemCount} site(s)` : ""}
-            </p>
-            <p className="text-xs text-muted">Approve to book, or reject to free holds.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="btn-secondary px-3 py-2 text-xs"
-              disabled={respondMutation.isPending}
-              onClick={() => respondMutation.mutate("REJECT")}
-            >
-              Reject my sites
-            </button>
-            <button
-              type="button"
-              className="btn-primary px-3 py-2 text-xs"
-              disabled={respondMutation.isPending}
-              onClick={() => respondMutation.mutate("APPROVE")}
-            >
-              {respondMutation.isPending ? "Saving…" : "Approve my sites"}
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {canApprove ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50/90 px-4 py-3 backdrop-blur-sm">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Site request</p>
-            <p className="text-xs text-muted">Approve to book all sites; reject releases holds.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="btn-secondary px-3 py-2 text-xs"
-              disabled={approveMutation.isPending}
-              onClick={() => approveMutation.mutate("REJECTED")}
-            >
-              Reject
-            </button>
-            <button
-              type="button"
-              className="btn-primary px-3 py-2 text-xs"
-              disabled={approveMutation.isPending}
-              onClick={() => approveMutation.mutate("APPROVED")}
-            >
-              {approveMutation.isPending ? "Saving…" : "Approve request"}
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {isVendor && pricingReady ? (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
-          <p className="font-semibold">Approved — priced plan</p>
-          <p className="mt-1 text-xs">Site rates below are visible for this campaign window.</p>
-        </div>
-      ) : null}
-
-      {(exportMutation.isError || swapMutation.isError || addMutation.isError) && (
-        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-          {(exportMutation.error ?? swapMutation.error ?? addMutation.error) instanceof Error
-            ? ((exportMutation.error ?? swapMutation.error ?? addMutation.error) as Error).message
-            : "Something went wrong"}
-        </p>
-      )}
-
-      {!showAdminRail ? (
-        <BudgetMeter
-          allocated={totalAllocated}
-          budget={planTotal}
-          leftover={leftover}
-          overBy={overBy}
-        />
-      ) : null}
-
-      <div className={cn("grid gap-4", showAdminRail ? "lg:grid-cols-[1fr_300px]" : "")}>
-        <div className="min-w-0 space-y-4">
-          <div className="rounded-2xl border border-primary/15 bg-gradient-to-br from-violet-50/90 to-white/90 p-4 backdrop-blur-sm sm:p-5">
-            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">
-                  Presentation · {plan.items.length} {plan.items.length === 1 ? "site" : "sites"}
-                </p>
-                <p className="text-2xl font-extrabold tabular-nums text-slate-900">
-                  {formatInr(totalAllocated)}
-                </p>
-                <p className="mt-0.5 text-xs text-muted">
-                  {overBy > 1
-                    ? `Over budget by ${formatInr(overBy)} of ${formatInr(planTotal)}`
-                    : leftover > 0
-                      ? `${formatInr(leftover)} remaining of ${formatInr(planTotal)}`
-                      : `Matches campaign budget of ${formatInr(planTotal)}`}
-                </p>
-              </div>
-            </div>
-            <PlanMixViz
-              items={plan.items.map((item) => ({
-                id: item.id,
-                label: item.location?.skyarcSiteCode ?? item.location?.name ?? "Site",
-                value: item.budgetAllocated,
-                inventoryType: item.inventoryType,
-              }))}
-            />
-          </div>
-
-          {plan.summary && plan.summary.siteCount > 0 ? (
-            <PlanSummaryCards summary={plan.summary} />
           ) : null}
-
-          <div className="space-y-3">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">Sites in this plan</h2>
-              <p className="mt-0.5 text-xs text-muted">
-                {showAdminRail
-                  ? "Select a site to swap alternatives in the side panel."
-                  : "Skyarc Index, fit reasons, and demand — safe to share."}
-              </p>
-            </div>
-            <ul className="space-y-3">
-              {plan.items.map((item) => {
-                const plannedSpend = item.budgetAllocated;
-                const indexScore = item.skyarcIndex?.overallScore ?? item.insights?.overallScore;
-                const why =
-                  item.whyThisSite ||
-                  item.explanationText ||
-                  item.insights?.highlights?.[0] ||
-                  item.insights?.explanationText ||
-                  null;
-                const audience = isClient ? "client" : isVendor ? "vendor" : "internal";
-                const selected = selectedItemId === item.id;
-                return (
-                  <li key={item.id}>
-                    <article
-                      className={cn(
-                        "overflow-hidden rounded-2xl border bg-white/95 shadow-sm backdrop-blur-sm transition-shadow",
-                        selected && showAdminRail
-                          ? "border-primary ring-2 ring-primary/25"
-                          : "border-primary/15 hover:border-primary/35"
-                      )}
-                    >
-                      <button
-                        type="button"
-                        className="grid w-full gap-0 text-left sm:grid-cols-[9rem_1fr]"
-                        onClick={() => {
-                          if (!showAdminRail) return;
-                          setSelectedItemId(item.id);
-                          setMobileAdminOpen(true);
-                        }}
-                      >
-                        <div className="relative h-36 bg-slate-100 sm:h-full sm:min-h-[9rem]">
-                          {item.location?.coverImageUrl ? (
-                            <Image
-                              src={item.location.coverImageUrl}
-                              alt={item.location.name}
-                              fill
-                              className="object-cover"
-                              sizes="160px"
-                              unoptimized
-                            />
-                          ) : (
-                            <div className="flex h-full min-h-[9rem] items-center justify-center text-slate-300">
-                              <MapPin className="h-6 w-6" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex flex-col gap-2.5 p-4">
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="font-mono text-[11px] font-semibold text-primary">
-                                {item.location?.skyarcSiteCode ?? "SKY"}
-                              </p>
-                              <h3 className="truncate text-sm font-semibold text-slate-900">
-                                {item.location?.name}
-                              </h3>
-                              <p className="text-[11px] text-muted">{siteSpecLine(item)}</p>
-                            </div>
-                            <div className="text-right">
-                              {indexScore != null ? (
-                                <p className="text-lg font-bold tabular-nums text-slate-900">
-                                  {Math.round(indexScore)}
-                                  <span className="text-[10px] font-semibold text-muted"> /100</span>
-                                </p>
-                              ) : null}
-                              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                                Skyarc Index
-                              </p>
-                              {showClientPricing && plannedSpend > 0 ? (
-                                <p className="mt-1 text-sm font-semibold tabular-nums text-slate-900">
-                                  {formatInr(plannedSpend)}
-                                </p>
-                              ) : null}
-                            </div>
-                          </div>
-                          {why ? (
-                            <p className="text-xs leading-relaxed text-slate-700">
-                              <span className="font-semibold text-slate-900">Why this site · </span>
-                              {why}
-                            </p>
-                          ) : null}
-                        </div>
-                      </button>
-                      <div className="space-y-2 border-t border-violet-50 px-4 pb-4">
-                        <SiteDemandSignals demand={item.demand} audience={audience} />
-                        {item.insights && item.insights.metrics.length > 0 ? (
-                          <details className="rounded-lg border border-violet-50 bg-violet-50/40 px-3 py-2">
-                            <summary className="cursor-pointer text-[11px] font-semibold text-slate-700">
-                              Factor detail
-                            </summary>
-                            <div className="mt-2">
-                              <SiteMetricsBars metrics={item.insights.metrics} />
-                            </div>
-                          </details>
-                        ) : null}
-                        {item.location ? (
-                          <Link
-                            href={`/locations/${item.location.id}`}
-                            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            Site details <ChevronRight className="h-3.5 w-3.5" />
-                          </Link>
-                        ) : null}
-                      </div>
-                    </article>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          {!showAdminRail ? (
-            <AvailableOptions
-              leftover={leftover}
-              suggestedAdds={suggestedAdds}
-              availableSites={availableSites}
-              pending={pendingMix}
-              open={catalogOpen}
-              onToggle={() => setCatalogOpen((value) => !value)}
-              onAdd={(inventoryId) => addMutation.mutate(inventoryId)}
-            />
+          {isAdmin ? (
+            <button
+              type="button"
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+              disabled={deleteMutation.isPending}
+              onClick={() => {
+                if (window.confirm(`Delete "${planName}"? This cannot be undone.`)) {
+                  deleteMutation.mutate();
+                }
+              }}
+              title="Delete plan"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
           ) : null}
         </div>
-
-        <div className="hidden lg:block">{renderAdminRail()}</div>
+        {goalLabel ? <p className="mt-0.5 text-[10px] text-muted">{goalLabel}</p> : null}
+        <div className="mt-1.5 space-y-1.5">{alerts}</div>
       </div>
 
-      {showAdminRail && mobileAdminOpen ? (
+      {/* Fixed-height master–detail: list scrolls left, scoring/swap stay on the right */}
+      <div className="grid min-h-0 flex-1 gap-3 p-3 md:grid-cols-[minmax(240px,34%)_1fr] md:p-4">
+        <div className="flex min-h-0 flex-col">{renderSiteList()}</div>
+        <div className="hidden min-h-0 flex-col md:flex">{renderDetailPane()}</div>
+      </div>
+
+      {/* Mobile: detail as sheet so list stays put */}
+      {mobileDetailOpen ? (
         <>
           <button
             type="button"
-            aria-label="Close admin panel"
-            className="fixed inset-0 z-40 bg-slate-900/40 lg:hidden"
-            onClick={() => setMobileAdminOpen(false)}
+            aria-label="Close site detail"
+            className="fixed inset-0 z-40 bg-slate-900/40 md:hidden"
+            onClick={() => setMobileDetailOpen(false)}
           />
-          <div className="fixed inset-x-0 bottom-0 z-50 max-h-[78dvh] overflow-y-auto rounded-t-2xl border border-primary/20 bg-white/95 p-4 shadow-2xl backdrop-blur-md lg:hidden">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-bold text-slate-900">Swap & add sites</p>
+          <div className="fixed inset-x-0 bottom-0 z-50 flex max-h-[85dvh] flex-col rounded-t-2xl border border-primary/20 bg-white shadow-2xl md:hidden">
+            <div className="flex items-center justify-between border-b border-violet-100 px-3 py-2">
+              <p className="text-sm font-bold text-slate-900">Site workspace</p>
               <button
                 type="button"
                 className="rounded-lg p-1.5 text-muted hover:bg-violet-50"
-                onClick={() => setMobileAdminOpen(false)}
+                onClick={() => setMobileDetailOpen(false)}
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            {renderAdminRail()}
+            <div className="min-h-0 flex-1 overflow-hidden p-2">{renderDetailPane()}</div>
           </div>
         </>
       ) : null}
