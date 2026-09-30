@@ -93,7 +93,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Menu className="w-5 h-5" />
             </button>
-            <SkyarcLogo height={28} collapsed />
+            <SkyarcLogo height={30} />
           </div>
 
           <div className="flex items-center gap-2">

@@ -59,6 +59,61 @@ export function pinColorForStatus(status: MapLiveInventory["status"]): string {
   return "#10b981";
 }
 
+/** Initials for photo-less map pins (site code preferred). */
+export function pinMonogram(location: MapLocationPin): string {
+  const code = (location.skyarcSiteCode ?? "").trim();
+  if (code) {
+    const compact = code.replace(/[^A-Za-z0-9]/g, "");
+    return (compact.slice(0, 2) || "AT").toUpperCase();
+  }
+  const words = (location.name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return `${words[0]![0] ?? ""}${words[1]![0] ?? ""}`.toUpperCase() || "AT";
+  }
+  return (words[0]?.slice(0, 2) ?? "AT").toUpperCase();
+}
+
+/** DOM marker: circular cover thumb + status ring, or monogram fallback. */
+export function createMapPinElement(
+  location: MapLocationPin,
+  options: { highlighted?: boolean } = {}
+): HTMLDivElement {
+  const status = pinLiveStatus(location);
+  const color = pinColorForStatus(status);
+  const size = options.highlighted ? 44 : 34;
+  const el = document.createElement("div");
+  el.className = `map-photo-pin${options.highlighted ? " map-photo-pin--selected" : ""}`;
+  el.style.width = `${size}px`;
+  el.style.height = `${size}px`;
+  el.style.borderColor = color;
+  el.title = `${location.name} · ${status}`;
+
+  if (location.coverImageUrl) {
+    const img = document.createElement("img");
+    img.src = location.coverImageUrl;
+    img.alt = location.name;
+    img.loading = "lazy";
+    img.className = "map-photo-pin__img";
+    img.onerror = () => {
+      img.remove();
+      const mono = document.createElement("span");
+      mono.className = "map-photo-pin__mono";
+      mono.textContent = pinMonogram(location);
+      mono.style.backgroundColor = color;
+      el.appendChild(mono);
+    };
+    el.appendChild(img);
+  } else {
+    const mono = document.createElement("span");
+    mono.className = "map-photo-pin__mono";
+    mono.textContent = pinMonogram(location);
+    mono.style.backgroundColor = color;
+    el.appendChild(mono);
+  }
+
+  return el;
+}
+
 export function buildMapLocationCardHtml(
   location: MapLocationPin,
   mode: "hover" | "detail"

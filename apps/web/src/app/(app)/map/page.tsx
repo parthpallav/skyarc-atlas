@@ -4,7 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Search, X, MapPin, Navigation, CalendarDays } from "lucide-react";
+import {
+  Search,
+  X,
+  MapPin,
+  Navigation,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Route,
+} from "lucide-react";
 import { createWebApiClient, listAllLocations } from "@/lib/api";
 import {
   DEFAULT_MAP_CENTER,
@@ -13,18 +22,18 @@ import {
 } from "@/lib/map-style";
 import {
   buildMapLocationCardHtml,
-  pinColorForStatus,
+  createMapPinElement,
   pinLiveStatus,
   type MapLocationPin,
 } from "@/lib/map-popup";
 import { AtlasLogoLoader } from "@/components/atlas-logo-loader";
-import { PageHeader } from "@/components/page-header";
 import {
   corridorsForCity,
   getMarketCity,
   listMarketCities,
   locationMatchesCorridor,
 } from "@skyarc/shared";
+import { cn } from "@/lib/utils";
 
 type AvailFilter = "ALL" | "BOOKABLE" | "PARTIAL" | "HELD" | "FULL";
 
@@ -115,31 +124,10 @@ export default function MapPage() {
   const [availFilter, setAvailFilter] = useState<AvailFilter>("BOOKABLE");
   const [cityFilter, setCityFilter] = useState<string>("");
   const [corridorFilter, setCorridorFilter] = useState<string>("");
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const [mobileRailOpen, setMobileRailOpen] = useState(false);
 
   const markets = useMemo(() => listMarketCities(), []);
-
-  const { data: geoFacets } = useQuery({
-    queryKey: ["location-geo-facets"],
-    queryFn: async () => {
-      const client = createWebApiClient();
-      if (typeof client.getLocationGeoFacets !== "function") {
-        return {
-          cities: markets.map((c) => c.name),
-          corridors: markets.flatMap((m) => m.corridors.map((c) => c.name)),
-        };
-      }
-      try {
-        const result = await client.getLocationGeoFacets();
-        return result.data;
-      } catch {
-        return {
-          cities: markets.map((c) => c.name),
-          corridors: markets.flatMap((m) => m.corridors.map((c) => c.name)),
-        };
-      }
-    },
-    staleTime: 60_000,
-  });
 
   const { data, isLoading, error, refetch } = useQuery({
     // Fetch full network; city soft-match is client-side so null-city inventory still shows.
@@ -152,37 +140,6 @@ export default function MapPage() {
     retry: 2,
     retryDelay: 1000,
   });
-
-  /** Corridor options: city presets + real inventory roads (not other cities' presets). */
-  const corridorOptions = useMemo(() => {
-    const fromData = new Set<string>();
-    for (const loc of data ?? []) {
-      const road = (loc.road ?? "").trim();
-      if (road) fromData.add(road);
-    }
-    for (const c of geoFacets?.corridors ?? []) {
-      if (c?.trim()) fromData.add(c.trim());
-    }
-    const presets = cityFilter
-      ? corridorsForCity(cityFilter)
-      : markets.find((m) => m.id === "rajkot")?.corridors.map((c) => c.name) ?? [];
-    const linked: string[] = [];
-    for (const preset of presets) {
-      linked.push(preset);
-    }
-    for (const road of [...fromData].sort((a, b) => a.localeCompare(b))) {
-      const already = linked.some(
-        (p) =>
-          locationMatchesCorridor({ road }, p) || locationMatchesCorridor({ road: p }, road)
-      );
-      if (!already) linked.push(road);
-    }
-    // Keep selected corridor visible even if not in presets
-    if (corridorFilter && !linked.includes(corridorFilter)) {
-      linked.unshift(corridorFilter);
-    }
-    return linked;
-  }, [data, geoFacets, cityFilter, markets, corridorFilter]);
 
   const basePins = useMemo(() => {
     let rows = (data ?? []).filter(hasValidCoords);
@@ -273,7 +230,14 @@ export default function MapPage() {
     });
 
     mapRef.current = map;
+
+    const ro = new ResizeObserver(() => {
+      map.resize();
+    });
+    ro.observe(mapContainer.current);
+
     return () => {
+      ro.disconnect();
       hoverPopupRef.current?.remove();
       hoverPopupRef.current = null;
       markersRef.current.forEach((m) => m.remove());
@@ -309,19 +273,12 @@ export default function MapPage() {
     const client = createWebApiClient();
 
     for (const location of visiblePins) {
-      const status = pinLiveStatus(location);
-      const color = pinColorForStatus(status);
       const isHighlighted = selectedLocationId === location.id;
-      const el = document.createElement("div");
-      el.className = `h-3.5 w-3.5 rounded-full border-2 border-white shadow-md cursor-pointer transition-transform hover:scale-125 ${
-        isHighlighted ? "scale-150 ring-4 ring-violet-300" : ""
-      }`;
-      el.style.backgroundColor = color;
-      el.title = `${location.name} · ${status}`;
+      const el = createMapPinElement(location, { highlighted: isHighlighted });
 
       const detailHref = `/locations/${location.id}?from=${flightFrom}&to=${flightTo}`;
       const clickPopup = new maplibregl.Popup({
-        offset: 16,
+        offset: 22,
         maxWidth: "300px",
         className: "map-location-click-popup",
       }).setHTML(
@@ -331,7 +288,7 @@ export default function MapPage() {
         )
       );
 
-      const marker = new maplibregl.Marker({ element: el })
+      const marker = new maplibregl.Marker({ element: el, anchor: "center" })
         .setLngLat([location.longitude, location.latitude])
         .setPopup(clickPopup)
         .addTo(map);
@@ -385,18 +342,171 @@ export default function MapPage() {
       ?.catch(() => undefined);
   };
 
-  return (
-    <div className="space-y-3">
-      <PageHeader
-        title="Network Map"
-        description={`Inventory coverage for ${formatFlightLabel(flightFrom, flightTo)} — pins follow live availability`}
-      />
+  const handleReset = () => {
+    setSelectedLocationId(null);
+    setSearchTerm("");
+    setShowSearchResults(false);
+    setCityFilter("");
+    setCorridorFilter("");
+    setAvailFilter("ALL");
+    setMobileRailOpen(false);
+    mapRef.current?.flyTo({
+      center: DEFAULT_MAP_CENTER,
+      zoom: DEFAULT_MAP_ZOOM,
+      essential: true,
+    });
+  };
 
-      {/* Coverage + availability controls */}
-      <div className="rounded-xl border border-violet-100 bg-white p-3 shadow-sm">
+  const corridorList = (
+    <ul className="space-y-0.5">
+      <li>
+        <button
+          type="button"
+          className={cn(
+            "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-medium",
+            !corridorFilter ? "bg-primary/15 text-primary" : "text-slate-700 hover:bg-primary/10"
+          )}
+          onClick={() => {
+            setCorridorFilter("");
+            setSelectedLocationId(null);
+          }}
+        >
+          All corridors
+          <span className="tabular-nums text-muted">{basePins.length}</span>
+        </button>
+      </li>
+      {coverage.topCorridors.length === 0 ? (
+        <li className="px-2 py-2 text-xs text-muted">No sites match these filters.</li>
+      ) : (
+        coverage.topCorridors.map(([road, count]) => {
+          const isOther = road === "Other roads";
+          const on =
+            Boolean(corridorFilter) &&
+            !isOther &&
+            (corridorFilter === road || locationMatchesCorridor({ road }, corridorFilter));
+          return (
+            <li key={road}>
+              <button
+                type="button"
+                disabled={isOther}
+                className={cn(
+                  "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium",
+                  isOther
+                    ? "cursor-default text-muted"
+                    : on
+                      ? "bg-primary/15 text-primary"
+                      : "text-slate-800 hover:bg-primary/10"
+                )}
+                onClick={() => {
+                  if (isOther) return;
+                  setCorridorFilter((prev) => (prev === road ? "" : road));
+                  setSelectedLocationId(null);
+                  setMobileRailOpen(false);
+                }}
+              >
+                <span className="truncate">{road}</span>
+                <span className="tabular-nums text-muted">{count}</span>
+              </button>
+            </li>
+          );
+        })
+      )}
+    </ul>
+  );
+
+  const searchBlock = (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+      <input
+        type="text"
+        value={searchTerm}
+        onChange={(e) => {
+          setSearchTerm(e.target.value);
+          setShowSearchResults(true);
+        }}
+        onFocus={() => setShowSearchResults(true)}
+        placeholder="Search site, road, city…"
+        className="w-full rounded-lg border border-primary/20 bg-white/80 py-2 pl-8 pr-7 text-xs font-medium text-slate-900 backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-primary/30"
+      />
+      {searchTerm ? (
+        <button
+          type="button"
+          onClick={() => {
+            setSearchTerm("");
+            setShowSearchResults(false);
+            setSelectedLocationId(null);
+          }}
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-muted hover:text-slate-900"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
+      {showSearchResults && searchTerm.trim() ? (
+        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-52 divide-y divide-violet-100 overflow-y-auto rounded-lg border border-primary/20 bg-white/95 shadow-xl backdrop-blur-md">
+          {searchMatches.length === 0 ? (
+            <div className="p-2.5 text-center text-xs text-muted">No matching sites</div>
+          ) : (
+            searchMatches.map((loc) => (
+              <button
+                key={loc.id}
+                type="button"
+                onClick={() => {
+                  handleSelectLocation(loc);
+                  setMobileRailOpen(false);
+                }}
+                className="flex w-full items-start gap-2 p-2 text-left transition-colors hover:bg-violet-50/80"
+              >
+                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-bold text-slate-900">
+                    {loc.skyarcSiteCode ?? loc.name}
+                  </p>
+                  <p className="truncate text-[11px] text-muted">
+                    {loc.road ?? loc.junction ?? loc.city ?? loc.address ?? "Site"}
+                  </p>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const legendBlock = (
+    <div className="rounded-lg border border-primary/15 bg-white/60 px-2.5 py-2 text-[10px] text-slate-600 backdrop-blur-sm">
+      <p className="mb-1 font-semibold text-slate-800">Pin legend</p>
+      <ul className="space-y-0.5">
+        <li className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-emerald-500" /> Open
+        </li>
+        <li className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-sky-500" /> Partial
+        </li>
+        <li className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-amber-500" /> On hold
+        </li>
+        <li className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-rose-500" /> Booked
+        </li>
+      </ul>
+    </div>
+  );
+
+  return (
+    <div className="-mx-3.5 -mt-3.5 flex h-[calc(100dvh-3.5rem-5.25rem)] flex-col sm:-mx-6 sm:-mt-6 md:h-[calc(100dvh-2rem)] lg:-mx-8 lg:-mt-8">
+      {/* Compact glass toolbar */}
+      <div className="z-20 shrink-0 border-b border-primary/15 bg-white/80 px-3 py-2 backdrop-blur-md sm:px-4">
         <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50/40 px-2 py-1.5 text-xs text-slate-700">
-            <CalendarDays className="h-3.5 w-3.5 text-muted" />
+          <div className="mr-1 min-w-0">
+            <h1 className="text-sm font-bold tracking-tight text-slate-900">Network Map</h1>
+            <p className="hidden text-[10px] text-muted sm:block">
+              {formatFlightLabel(flightFrom, flightTo)}
+            </p>
+          </div>
+
+          <label className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2 py-1.5 text-xs text-slate-700">
+            <CalendarDays className="h-3.5 w-3.5 text-primary" />
             <input
               type="date"
               value={flightFrom}
@@ -420,30 +530,13 @@ export default function MapPage() {
               setCorridorFilter("");
               setSelectedLocationId(null);
             }}
-            className="rounded-lg border border-violet-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800"
+            className="rounded-lg border border-primary/20 bg-white/90 px-2.5 py-1.5 text-xs font-semibold text-slate-800"
             aria-label="City coverage"
           >
             <option value="">All cities</option>
             {markets.map((m) => (
               <option key={m.id} value={m.name}>
                 {m.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={corridorFilter}
-            onChange={(e) => {
-              setCorridorFilter(e.target.value); // "" = All corridors (clears road filter)
-              setSelectedLocationId(null);
-            }}
-            className="max-w-[12rem] rounded-lg border border-violet-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800"
-            aria-label="Corridor coverage"
-          >
-            <option value="">All corridors</option>
-            {corridorOptions.map((c) => (
-              <option key={c} value={c}>
-                {c}
               </option>
             ))}
           </select>
@@ -457,15 +550,15 @@ export default function MapPage() {
                   type="button"
                   onClick={() => {
                     setAvailFilter(opt.value);
-                    // "All" availability resets corridor/road filter so counts match full view
                     if (opt.value === "ALL") setCorridorFilter("");
                     setSelectedLocationId(null);
                   }}
-                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-semibold ${
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-semibold",
                     on
-                      ? "border-primary bg-violet-50 text-primary"
-                      : "border-slate-200 bg-white text-slate-600"
-                  }`}
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-slate-200/80 bg-white/70 text-slate-600"
+                  )}
                 >
                   <span className={`h-2 w-2 rounded-full ${opt.dot}`} />
                   {opt.label}
@@ -473,193 +566,144 @@ export default function MapPage() {
               );
             })}
           </div>
-        </div>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1.2fr]">
-          <div className="rounded-lg border border-violet-50 bg-violet-50/40 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-              Visible inventory
-            </p>
-            <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
-              {coverage.total}
-              <span className="ml-1 text-sm font-normal text-muted">sites</span>
-            </p>
-            <p className="mt-1 text-[11px] text-slate-600">
-              <span className="text-emerald-700">{coverage.open} open</span>
-              {" · "}
-              <span className="text-sky-700">{coverage.partial} partial</span>
-              {" · "}
-              <span className="text-amber-700">{coverage.held} hold</span>
-              {" · "}
-              <span className="text-rose-700">{coverage.booked} booked</span>
-            </p>
-          </div>
-          <div className="rounded-lg border border-violet-50 bg-white px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-              {corridorFilter ? "Corridor coverage (pick another or All)" : "Corridor coverage"}
-            </p>
-            {coverage.topCorridors.length === 0 ? (
-              <p className="mt-2 text-xs text-muted">No sites match these filters.</p>
-            ) : (
-              <ul className="mt-1.5 space-y-1">
-                {coverage.topCorridors.map(([road, count]) => {
-                  const isOther = road === "Other roads";
-                  const on =
-                    Boolean(corridorFilter) &&
-                    !isOther &&
-                    (corridorFilter === road || locationMatchesCorridor({ road }, corridorFilter));
-                  return (
-                  <li key={road} className="flex items-center justify-between gap-2 text-xs">
-                    <button
-                      type="button"
-                      disabled={isOther}
-                      className={`truncate text-left font-medium ${
-                        isOther
-                          ? "cursor-default text-muted"
-                          : on
-                            ? "text-primary hover:text-primary"
-                            : "text-slate-800 hover:text-primary"
-                      }`}
-                      onClick={() => {
-                        if (isOther) return;
-                        // Toggle off (= All corridors) when clicking the active road
-                        setCorridorFilter((prev) => (prev === road ? "" : road));
-                        setSelectedLocationId(null);
-                      }}
-                    >
-                      {road}
-                    </button>
-                    <span className="tabular-nums text-muted">{count}</span>
-                  </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+          <p className="ml-auto text-[11px] font-semibold tabular-nums text-slate-700">
+            <span className="text-slate-900">{coverage.total} sites</span>
+            <span className="mx-1 text-muted">·</span>
+            <span className="text-emerald-700">{coverage.open} open</span>
+            <span className="mx-1 text-muted">·</span>
+            <span className="text-sky-700">{coverage.partial} partial</span>
+            <span className="mx-1 hidden text-muted sm:inline">·</span>
+            <span className="hidden text-amber-700 sm:inline">{coverage.held} hold</span>
+            <span className="mx-1 hidden text-muted sm:inline">·</span>
+            <span className="hidden text-rose-700 sm:inline">{coverage.booked} booked</span>
+          </p>
         </div>
       </div>
 
-      <div className="card-surface relative overflow-hidden border border-violet-100 shadow-md">
-        <div className="absolute left-3 top-3 z-20 w-80 max-w-[calc(100vw-3rem)]">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setShowSearchResults(true);
-              }}
-              onFocus={() => setShowSearchResults(true)}
-              placeholder="Search site, road, city…"
-              className="w-full rounded-xl border border-violet-200 bg-white/95 py-2.5 pl-9 pr-8 text-sm font-medium text-slate-900 shadow-lg backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-primary/40"
-            />
-            {searchTerm ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchTerm("");
-                  setShowSearchResults(false);
-                  setSelectedLocationId(null);
-                }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted hover:text-slate-900"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            ) : null}
-          </div>
-
-          {showSearchResults && searchTerm.trim() ? (
-            <div className="mt-1.5 max-h-60 divide-y divide-violet-100 overflow-y-auto rounded-xl border border-violet-200 bg-white/95 shadow-xl backdrop-blur-md">
-              {searchMatches.length === 0 ? (
-                <div className="p-3 text-center text-xs text-muted">
-                  No matching sites for these filters
-                </div>
-              ) : (
-                searchMatches.map((loc) => (
-                  <button
-                    key={loc.id}
-                    type="button"
-                    onClick={() => handleSelectLocation(loc)}
-                    className="flex w-full items-start gap-2 p-2.5 text-left transition-colors hover:bg-violet-50/80"
-                  >
-                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-bold text-slate-900">
-                        {loc.skyarcSiteCode ?? loc.name}
-                      </p>
-                      <p className="truncate text-[11px] text-muted">
-                        {loc.road ?? loc.junction ?? loc.city ?? loc.address ?? "Site"}
-                      </p>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="absolute bottom-6 left-3 z-20 flex flex-col gap-2">
+      <div className="relative flex min-h-0 flex-1">
+        {/* Desktop side rail */}
+        <aside
+          className={cn(
+            "relative z-20 hidden shrink-0 flex-col border-r border-primary/15 bg-primary/10 backdrop-blur-md transition-[width] duration-200 md:flex",
+            railCollapsed ? "w-10" : "w-[270px]"
+          )}
+        >
           <button
             type="button"
-            onClick={() => {
-              setSelectedLocationId(null);
-              setSearchTerm("");
-              setCityFilter("");
-              setCorridorFilter(""); // All corridors / roads
-              setAvailFilter("ALL"); // full inventory counts, not Open-only
-              mapRef.current?.flyTo({
-                center: DEFAULT_MAP_CENTER,
-                zoom: DEFAULT_MAP_ZOOM,
-                essential: true,
-              });
-            }}
-            className="btn-secondary gap-1.5 bg-white/95 px-3 py-1.5 text-xs shadow-md backdrop-blur-md"
+            aria-label={railCollapsed ? "Expand corridors panel" : "Collapse corridors panel"}
+            className="absolute -right-3 top-3 z-30 flex h-6 w-6 items-center justify-center rounded-full border border-primary/25 bg-white/90 text-primary shadow-sm"
+            onClick={() => setRailCollapsed((v) => !v)}
+          >
+            {railCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
+          </button>
+
+          {railCollapsed ? (
+            <div className="flex flex-1 flex-col items-center gap-3 py-4">
+              <Route className="h-4 w-4 text-primary" />
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
+              {searchBlock}
+              <div>
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                  {corridorFilter ? "Corridor (tap again for All)" : "Corridors"}
+                </p>
+                {corridorList}
+              </div>
+              {legendBlock}
+              <button
+                type="button"
+                onClick={handleReset}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-primary/20 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 backdrop-blur-sm hover:bg-white"
+              >
+                <Navigation className="h-3.5 w-3.5 text-primary" />
+                Reset
+              </button>
+            </div>
+          )}
+        </aside>
+
+        {/* Map stage */}
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100">
+          {/* Desktop search when rail collapsed */}
+          {railCollapsed ? (
+            <div className="absolute left-3 top-3 z-20 hidden w-80 max-w-[calc(100%-5rem)] md:block">
+              {searchBlock}
+            </div>
+          ) : null}
+
+          {/* Mobile: corridors + search floating controls */}
+          <div className="absolute left-3 top-3 z-20 flex max-w-[calc(100%-5.5rem)] flex-col gap-2 md:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileRailOpen(true)}
+              className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-primary/25 bg-white/85 px-2.5 py-1.5 text-xs font-semibold text-primary shadow-md backdrop-blur-md"
+            >
+              <Route className="h-3.5 w-3.5" />
+              Corridors
+              {corridorFilter ? (
+                <span className="max-w-[7rem] truncate text-slate-600">· {corridorFilter}</span>
+              ) : null}
+            </button>
+            <div className="w-72 max-w-full">{searchBlock}</div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleReset}
+            className="absolute bottom-6 left-3 z-20 inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-white/85 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-md backdrop-blur-md md:hidden"
           >
             <Navigation className="h-3.5 w-3.5 text-primary" />
             Reset
           </button>
-          <div className="rounded-lg border border-violet-100 bg-white/95 px-2.5 py-2 text-[10px] text-slate-600 shadow-md backdrop-blur-md">
-            <p className="mb-1 font-semibold text-slate-800">Pin legend</p>
-            <ul className="space-y-0.5">
-              <li className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" /> Open
-              </li>
-              <li className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-sky-500" /> Partial
-              </li>
-              <li className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-amber-500" /> On hold
-              </li>
-              <li className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-rose-500" /> Booked
-              </li>
-            </ul>
-          </div>
+
+          {mobileRailOpen ? (
+            <>
+              <button
+                type="button"
+                aria-label="Close corridors"
+                className="absolute inset-0 z-30 bg-slate-900/40 md:hidden"
+                onClick={() => setMobileRailOpen(false)}
+              />
+              <div className="absolute inset-x-0 bottom-0 z-40 max-h-[70%] overflow-y-auto rounded-t-2xl border border-primary/20 bg-white/95 p-4 shadow-2xl backdrop-blur-md md:hidden">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-sm font-bold text-slate-900">Corridors</p>
+                  <button
+                    type="button"
+                    aria-label="Close"
+                    className="rounded-lg p-1.5 text-muted hover:bg-violet-50"
+                    onClick={() => setMobileRailOpen(false)}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                {corridorList}
+                <div className="mt-3">{legendBlock}</div>
+              </div>
+            </>
+          ) : null}
+
+          {isLoading ? (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-violet-50/70 backdrop-blur-sm">
+              <AtlasLogoLoader size="md" label="Loading inventory map" />
+            </div>
+          ) : null}
+
+          {error ? (
+            <div className="absolute right-4 top-4 z-10 rounded-lg border border-red-200 bg-red-50/95 p-3 text-xs text-red-700 shadow backdrop-blur-sm">
+              Failed to load map pins.{" "}
+              <button type="button" onClick={() => refetch()} className="font-bold underline">
+                Retry
+              </button>
+            </div>
+          ) : null}
+
+          <div ref={mapContainer} className="h-full w-full" />
+          <p className="absolute bottom-2 right-3 z-10 rounded bg-white/80 px-1.5 py-0.5 text-[10px] text-slate-500 backdrop-blur-sm">
+            Map data © OpenStreetMap
+          </p>
         </div>
-
-        {isLoading ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-violet-50/85 backdrop-blur-sm">
-            <AtlasLogoLoader size="md" label="Loading inventory map" />
-          </div>
-        ) : null}
-
-        {error ? (
-          <div className="absolute right-4 top-4 z-10 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700 shadow">
-            Failed to load map pins.{" "}
-            <button type="button" onClick={() => refetch()} className="font-bold underline">
-              Retry
-            </button>
-          </div>
-        ) : null}
-
-        <div
-          ref={mapContainer}
-          className="h-[calc(100vh-18rem)] min-h-[480px] w-full bg-slate-100"
-        />
-        <p className="absolute bottom-2 right-3 z-10 rounded bg-white/80 px-1.5 py-0.5 text-[10px] text-slate-500">
-          Map data © OpenStreetMap
-        </p>
       </div>
     </div>
   );
