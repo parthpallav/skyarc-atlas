@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "prisma generate && tsc",
+    "build": "prisma generate && tsc && mkdir -p dist/generated && cp -R src/generated/prisma dist/generated/",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
