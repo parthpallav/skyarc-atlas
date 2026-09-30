@@ -21,7 +21,7 @@ pnpm orbit:dev
 # one-time
 psql "$DATABASE_URL" -f prisma/migrations/0006_orbit_foundation/migration.sql
 pnpm db:backfill-screen-codes
-createdb skyarc_orbit   # if needed
+createdb skyarc_orbit   # optional; shared Atlas DB also works (tables in schema `orbit`)
 pnpm orbit:db:push
 
 # e2e
