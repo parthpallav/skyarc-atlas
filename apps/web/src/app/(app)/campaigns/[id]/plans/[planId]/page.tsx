@@ -649,10 +649,10 @@ export default function MediaPlanDetailPage() {
   const selectedScore =
     selectedItem?.skyarcIndex?.overallScore ?? selectedItem?.insights?.overallScore ?? null;
   const selectedWhy =
+    selectedItem?.insights?.explanationText ||
+    selectedItem?.insights?.highlights?.[0] ||
     selectedItem?.whyThisSite ||
     selectedItem?.explanationText ||
-    selectedItem?.insights?.highlights?.[0] ||
-    selectedItem?.insights?.explanationText ||
     null;
   // Prefer client-facing demand copy on this page — safe if presenting while logged in as admin.
   const audience = isVendor ? "vendor" : "client";

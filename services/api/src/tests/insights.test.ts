@@ -17,24 +17,29 @@ describe("media plan insights", () => {
     expect(scores.brand_suitability).toBeGreaterThan(0);
   });
 
-  it("builds client-facing site insights", () => {
+  it("builds client-facing site insights from live scores and road", () => {
     const factors = estimateFactorScores({
       sqft: 350,
       lightingType: "frontlit",
       road: "Kalawad Road",
     });
     const insights = buildSiteInsights({
-      rank: 1,
-      locationName: "G-1507 — Amin Marg",
-      road: "Amin Marg",
+      rank: 2,
+      locationName: "SKY-D-01 — Kalawad Road",
+      road: "Kalawad Road",
       budgetAllocated: 120000,
-      overallScore: 82,
+      overallScore: 74,
       attributes: { sqft: 350, lighting_type: "frontlit", ...factors },
       componentsJson: null,
     });
 
     expect(insights.metrics.length).toBe(4);
-    expect(insights.explanationText).toContain("Rank #1");
+    expect(insights.explanationText).toContain("Rank #2");
+    expect(insights.explanationText).toContain("Kalawad Road");
+    expect(insights.explanationText).toContain("Overall fit 74/100");
+    const topScore = Math.max(...insights.metrics.map((m) => m.score));
+    expect(insights.explanationText).toContain(`(${topScore}/100)`);
+    expect(insights.explanationText).not.toContain("Supports");
     expect(insights.highlights.length).toBeGreaterThan(0);
   });
 

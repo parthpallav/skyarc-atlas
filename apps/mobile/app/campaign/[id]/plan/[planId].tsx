@@ -224,7 +224,7 @@ export default function MediaPlanDetailScreen() {
                   <>
                     <SiteMetricsBars metrics={item.insights.metrics} />
                     <Text style={styles.explanation}>
-                      {item.explanationText ?? item.insights.explanationText}
+                      {item.insights?.explanationText ?? item.explanationText}
                     </Text>
                     {item.location?.id ? (
                       <Pressable

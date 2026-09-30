@@ -170,14 +170,21 @@ export function buildSiteInsights(input: {
   });
 
   const top = [...metrics].sort((a, b) => b.score - a.score).slice(0, 2);
-  const roadLabel = input.road ? ` on ${input.road}` : "";
+  const roadLabel = input.road?.trim()
+    ? ` on ${input.road.trim()}`
+    : input.locationName?.trim()
+      ? ` · ${input.locationName.trim()}`
+      : "";
+  // Keep overall fit aligned with the Index number we show (input.overallScore),
+  // and factor figures aligned with the same metrics bars.
+  const overallFit = Math.round(input.overallScore);
   const highlights = top.map(
     (m) => `${m.label}: ${m.score}/100 · ${m.clientOutcome}`
   );
 
   const explanationText = [
     `Rank #${input.rank}${roadLabel}.`,
-    `Overall fit ${Math.round(input.overallScore)}/100.`,
+    `Overall fit ${overallFit}/100.`,
     top[0]
       ? `Leads on ${top[0].label.toLowerCase()} (${top[0].score}/100)`
       : "Strong overall fit",

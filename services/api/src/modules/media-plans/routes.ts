@@ -213,10 +213,12 @@ function serializeMediaPlan(
     const demand =
       demandByLocation?.get(location.id) ??
       buildSiteDemandView({ planCount: 0 });
+    // Always use live insights for Why copy — stored explanationText drifts when
+    // ranks/roads/scores change (wrong road + mismatched visibility/awareness).
     const whyThisSite =
       (forCustomer
-        ? stripVendorTokensFromText(item.explanationText ?? insights.explanationText)
-        : item.explanationText ?? insights.explanationText) ||
+        ? stripVendorTokensFromText(insights.explanationText)
+        : insights.explanationText) ||
       insights.highlights[0] ||
       null;
 
