@@ -8,9 +8,14 @@ const nextConfig = {
   transpilePackages: ["@skyarc/api-client", "@skyarc/shared"],
   outputFileTracingRoot: path.join(__dirname, "../../"),
   async rewrites() {
-    // Local default only. Production / preview must set API_PROXY_TARGET (HTTPS).
+    // Rewrites are baked at build time. Never fall back to loopback on Vercel —
+    // that surfaces as DNS_HOSTNAME_RESOLVED_PRIVATE and breaks all /api data loads.
+    const fromEnv = process.env.API_PROXY_TARGET?.trim();
     const apiTarget =
-      process.env.API_PROXY_TARGET?.trim() || "http://127.0.0.1:3001";
+      fromEnv ||
+      (process.env.VERCEL
+        ? "http://srv1887077.hstgr.cloud:3001"
+        : "http://127.0.0.1:3001");
     return [
       {
         source: "/api/:path*",
