@@ -172,15 +172,17 @@ export function buildSiteInsights(input: {
   const top = [...metrics].sort((a, b) => b.score - a.score).slice(0, 2);
   const roadLabel = input.road ? ` on ${input.road}` : "";
   const highlights = top.map(
-    (m) => `${m.label}: ${m.score}/100 (${m.band}) — supports ${m.clientOutcome}`
+    (m) => `${m.label}: ${m.score}/100 · ${m.clientOutcome}`
   );
 
   const explanationText = [
     `Rank #${input.rank}${roadLabel}.`,
     `Overall fit ${Math.round(input.overallScore)}/100.`,
-    `Strong ${top[0]?.label.toLowerCase() ?? "visibility"} (${top[0]?.score ?? 0}/100)`,
-    top[1] ? `and ${top[1].label.toLowerCase()} (${top[1].score}/100)` : "",
-    `support ${top[0]?.clientOutcome ?? "campaign impact"} for this plan.`,
+    top[0]
+      ? `Leads on ${top[0].label.toLowerCase()} (${top[0].score}/100)`
+      : "Strong overall fit",
+    top[1] ? `with solid ${top[1].label.toLowerCase()} (${top[1].score}/100)` : "",
+    top[0]?.clientOutcome ? `— ${top[0].clientOutcome.toLowerCase()}.` : "for this plan.",
   ]
     .filter(Boolean)
     .join(" ");

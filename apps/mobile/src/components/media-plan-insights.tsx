@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { scoreBand } from "@skyarc/shared";
+import { factorBandLabel, factorPitchCaption, scoreBand } from "@skyarc/shared";
 import { AppText, Card } from "./ui";
 import { colors, radii, spacing } from "../theme";
 
@@ -49,7 +49,7 @@ export function PlanSummaryCards({ summary }: { summary: PlanSummaryView }) {
     <Card style={styles.summaryCard}>
       <AppText variant="subtitle">Client impact summary</AppText>
       <Text style={styles.summaryHint}>
-        How this plan supports visibility, awareness, and brand recall.
+        How this plan drives visibility, awareness, and brand recall.
       </Text>
       <View style={styles.summaryGrid}>
         {cards.map((card) => {
@@ -81,9 +81,14 @@ export function SiteMetricsBars({ metrics }: { metrics: SiteMetricView[] }) {
         <View key={metric.factor} style={styles.metricRow}>
           <View style={styles.metricHeader}>
             <Text style={styles.metricLabel}>{metric.label}</Text>
-            <Text style={[styles.metricScore, { color: bandColor(metric.band) }]}>
-              {metric.score}/100
-            </Text>
+            <View style={styles.metricHeaderRight}>
+              <Text style={[styles.metricBand, { color: bandColor(metric.band) }]}>
+                {factorBandLabel(metric.band)}
+              </Text>
+              <Text style={[styles.metricScore, { color: bandColor(metric.band) }]}>
+                {metric.score}
+              </Text>
+            </View>
           </View>
           <View style={styles.metricTrack}>
             <View
@@ -93,7 +98,7 @@ export function SiteMetricsBars({ metrics }: { metrics: SiteMetricView[] }) {
               ]}
             />
           </View>
-          <Text style={styles.metricOutcome}>Supports {metric.clientOutcome}</Text>
+          <Text style={styles.metricOutcome}>{factorPitchCaption(metric)}</Text>
         </View>
       ))}
     </View>
@@ -129,16 +134,25 @@ const styles = StyleSheet.create({
   summaryTileUnit: { fontSize: 10, color: colors.muted },
   strengthBullet: { color: colors.text, fontSize: 14, marginTop: 4, lineHeight: 20 },
   metricsGrid: { gap: spacing.sm },
-  metricRow: { marginBottom: spacing.xs },
-  metricHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
+  metricRow: {
+    marginBottom: spacing.xs,
+    backgroundColor: "#F8F7FC",
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    padding: spacing.sm,
+  },
+  metricHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  metricHeaderRight: { flexDirection: "row", alignItems: "center", gap: 6 },
   metricLabel: { fontSize: 12, fontWeight: "600", color: colors.text, flex: 1 },
+  metricBand: { fontSize: 10, fontWeight: "700", textTransform: "uppercase" },
   metricScore: { fontSize: 12, fontWeight: "700" },
   metricTrack: {
-    height: 8,
+    height: 6,
     borderRadius: 4,
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#FFFFFF",
     overflow: "hidden",
   },
   metricFill: { height: "100%", borderRadius: 4 },
-  metricOutcome: { fontSize: 10, color: colors.muted, marginTop: 4 },
+  metricOutcome: { fontSize: 11, color: colors.muted, marginTop: 6, lineHeight: 15 },
 });

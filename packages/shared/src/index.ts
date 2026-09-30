@@ -438,6 +438,8 @@ export {
   SCORING_FACTOR_CLIENT,
   PLAN_HIGHLIGHT_FACTORS,
   scoreBand,
+  factorBandLabel,
+  factorPitchCaption,
   type ClientFactorMeta,
 } from "./scoring-display.js";
 export {
