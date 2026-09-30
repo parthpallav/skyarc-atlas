@@ -7,10 +7,12 @@ Atlas owns screens. Orbit owns device credentials and raw telemetry.
 ## Local
 
 ```bash
-# DB
-createdb skyarc_orbit   # or docker compose postgres + 02-orbit-db.sql
+# DB — prefer a dedicated database; sharing Atlas DB is OK because Orbit
+# tables live in the Postgres schema `orbit` (never `public`).
+createdb skyarc_orbit   # optional dedicated DB
 
 export ORBIT_DATABASE_URL=postgresql://skyarc:skyarc@127.0.0.1:5432/skyarc_orbit
+# or shared: postgresql://skyarc:skyarc@127.0.0.1:5432/skyarc_atlas
 export ORBIT_SERVICE_TOKEN=local-orbit-service-token-32c
 export ORBIT_WEBHOOK_SECRET=local-orbit-webhook-secret-32
 export ATLAS_INTERNAL_URL=http://127.0.0.1:3001
