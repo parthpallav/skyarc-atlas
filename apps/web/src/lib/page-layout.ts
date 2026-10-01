@@ -35,8 +35,14 @@ export const workspaceStickyHeader = cn(
   "max-md:sticky max-md:top-0 max-md:z-20"
 );
 
-/** Map stage height on phones when the shell main area scrolls. */
+/** Full-bleed map page: fills shell main on mobile; fixed workspace height on md+. */
+export const workspaceMapPageRoot = cn(
+  "flex min-h-0 flex-1 flex-col overflow-hidden",
+  "max-md:h-full max-md:max-h-full",
+  "md:-mx-6 md:-mt-6 md:h-[calc(100dvh-2rem)] md:max-h-[calc(100dvh-2rem)] lg:-mx-8 lg:-mt-8"
+);
+
+/** Map canvas fills remaining space under optional desktop toolbar. */
 export const workspaceMapStage = cn(
-  "relative min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100",
-  "max-md:min-h-[min(62dvh,520px)]"
+  "relative min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100"
 );

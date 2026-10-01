@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Route,
+  SlidersHorizontal,
 } from "lucide-react";
 import { createWebApiClient, listAllLocations } from "@/lib/api";
 import {
@@ -35,8 +36,8 @@ import {
 } from "@skyarc/shared";
 import { cn } from "@/lib/utils";
 import {
+  workspaceMapPageRoot,
   workspaceMapStage,
-  workspacePageRoot,
   workspaceStickyHeader,
 } from "@/lib/page-layout";
 
@@ -130,9 +131,13 @@ export default function MapPage() {
   const [cityFilter, setCityFilter] = useState<string>("");
   const [corridorFilter, setCorridorFilter] = useState<string>("");
   const [railCollapsed, setRailCollapsed] = useState(false);
-  const [mobileRailOpen, setMobileRailOpen] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const markets = useMemo(() => listMarketCities(), []);
+  const activeFilterCount =
+    (cityFilter ? 1 : 0) +
+    (availFilter !== "BOOKABLE" ? 1 : 0) +
+    (corridorFilter ? 1 : 0);
 
   const { data, isLoading, error, refetch } = useQuery({
     // Fetch full network; city soft-match is client-side so null-city inventory still shows.
@@ -354,7 +359,7 @@ export default function MapPage() {
     setCityFilter("");
     setCorridorFilter("");
     setAvailFilter("ALL");
-    setMobileRailOpen(false);
+    setMobileFiltersOpen(false);
     mapRef.current?.flyTo({
       center: DEFAULT_MAP_CENTER,
       zoom: DEFAULT_MAP_ZOOM,
@@ -406,7 +411,7 @@ export default function MapPage() {
                   if (isOther) return;
                   setCorridorFilter((prev) => (prev === road ? "" : road));
                   setSelectedLocationId(null);
-                  setMobileRailOpen(false);
+                  setMobileFiltersOpen(false);
                 }}
               >
                 <span className="truncate">{road}</span>
@@ -457,7 +462,7 @@ export default function MapPage() {
                 type="button"
                 onClick={() => {
                   handleSelectLocation(loc);
-                  setMobileRailOpen(false);
+                  setMobileFiltersOpen(false);
                 }}
                 className="flex w-full items-start gap-2 p-2 text-left transition-colors hover:bg-violet-50/80"
               >
@@ -498,90 +503,96 @@ export default function MapPage() {
     </div>
   );
 
+  const flightDatesBlock = (
+    <label className="inline-flex w-full items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 text-sm text-slate-700 md:w-auto md:rounded-lg md:px-2 md:py-1.5 md:text-xs">
+      <CalendarDays className="h-4 w-4 shrink-0 text-primary md:h-3.5 md:w-3.5" />
+      <input
+        type="date"
+        value={flightFrom}
+        onChange={(e) => setFlightFrom(e.target.value)}
+        className="min-w-0 flex-1 bg-transparent text-sm md:max-w-[8rem] md:flex-none md:text-xs"
+      />
+      <span className="text-muted">–</span>
+      <input
+        type="date"
+        value={flightTo}
+        min={flightFrom}
+        onChange={(e) => setFlightTo(e.target.value)}
+        className="min-w-0 flex-1 bg-transparent text-sm md:max-w-[8rem] md:flex-none md:text-xs"
+      />
+    </label>
+  );
+
+  const citySelectBlock = (
+    <select
+      value={cityFilter}
+      onChange={(e) => {
+        setCityFilter(e.target.value);
+        setCorridorFilter("");
+        setSelectedLocationId(null);
+      }}
+      className="w-full rounded-xl border border-primary/20 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 md:w-auto md:rounded-lg md:px-2.5 md:py-1.5 md:text-xs"
+      aria-label="City coverage"
+    >
+      <option value="">All cities</option>
+      {markets.map((m) => (
+        <option key={m.id} value={m.name}>
+          {m.name}
+        </option>
+      ))}
+    </select>
+  );
+
+  const availPillsBlock = (
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Availability">
+      {AVAIL_OPTIONS.map((opt) => {
+        const on = availFilter === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => {
+              setAvailFilter(opt.value);
+              if (opt.value === "ALL") setCorridorFilter("");
+              setSelectedLocationId(null);
+            }}
+            className={cn(
+              "inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-semibold md:min-h-0 md:rounded-lg md:px-2 md:py-1.5 md:text-xs",
+              on
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-slate-200/80 bg-white text-slate-600"
+            )}
+          >
+            <span className={`h-2 w-2 rounded-full ${opt.dot}`} />
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   return (
-    <div className={workspacePageRoot}>
-      {/* Compact glass toolbar */}
-      <div className={cn(workspaceStickyHeader, "bg-white/80")}>
+    <div className={workspaceMapPageRoot}>
+      {/* Desktop toolbar only — mobile filters live in a sheet over the map */}
+      <div className={cn(workspaceStickyHeader, "hidden bg-white/80 md:block")}>
         <div className="flex flex-wrap items-center gap-2">
           <div className="mr-1 min-w-0">
             <h1 className="text-sm font-bold tracking-tight text-slate-900">Network Map</h1>
-            <p className="hidden text-[10px] text-muted sm:block">
-              {formatFlightLabel(flightFrom, flightTo)}
-            </p>
+            <p className="text-[10px] text-muted">{formatFlightLabel(flightFrom, flightTo)}</p>
           </div>
-
-          <label className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2 py-1.5 text-xs text-slate-700">
-            <CalendarDays className="h-3.5 w-3.5 text-primary" />
-            <input
-              type="date"
-              value={flightFrom}
-              onChange={(e) => setFlightFrom(e.target.value)}
-              className="max-w-[8rem] bg-transparent text-xs"
-            />
-            <span className="text-muted">–</span>
-            <input
-              type="date"
-              value={flightTo}
-              min={flightFrom}
-              onChange={(e) => setFlightTo(e.target.value)}
-              className="max-w-[8rem] bg-transparent text-xs"
-            />
-          </label>
-
-          <select
-            value={cityFilter}
-            onChange={(e) => {
-              setCityFilter(e.target.value);
-              setCorridorFilter("");
-              setSelectedLocationId(null);
-            }}
-            className="rounded-lg border border-primary/20 bg-white/90 px-2.5 py-1.5 text-xs font-semibold text-slate-800"
-            aria-label="City coverage"
-          >
-            <option value="">All cities</option>
-            {markets.map((m) => (
-              <option key={m.id} value={m.name}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-
-          <div className="flex flex-wrap gap-1" role="group" aria-label="Availability">
-            {AVAIL_OPTIONS.map((opt) => {
-              const on = availFilter === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => {
-                    setAvailFilter(opt.value);
-                    if (opt.value === "ALL") setCorridorFilter("");
-                    setSelectedLocationId(null);
-                  }}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-semibold",
-                    on
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-slate-200/80 bg-white/70 text-slate-600"
-                  )}
-                >
-                  <span className={`h-2 w-2 rounded-full ${opt.dot}`} />
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-
+          {flightDatesBlock}
+          {citySelectBlock}
+          {availPillsBlock}
           <p className="ml-auto text-[11px] font-semibold tabular-nums text-slate-700">
             <span className="text-slate-900">{coverage.total} sites</span>
             <span className="mx-1 text-muted">·</span>
             <span className="text-emerald-700">{coverage.open} open</span>
             <span className="mx-1 text-muted">·</span>
             <span className="text-sky-700">{coverage.partial} partial</span>
-            <span className="mx-1 hidden text-muted sm:inline">·</span>
-            <span className="hidden text-amber-700 sm:inline">{coverage.held} hold</span>
-            <span className="mx-1 hidden text-muted sm:inline">·</span>
-            <span className="hidden text-rose-700 sm:inline">{coverage.booked} booked</span>
+            <span className="mx-1 text-muted">·</span>
+            <span className="text-amber-700">{coverage.held} hold</span>
+            <span className="mx-1 text-muted">·</span>
+            <span className="text-rose-700">{coverage.booked} booked</span>
           </p>
         </div>
       </div>
@@ -629,62 +640,106 @@ export default function MapPage() {
           )}
         </aside>
 
-        {/* Map stage */}
+        {/* Map stage — full-bleed on mobile */}
         <div className={workspaceMapStage}>
-          {/* Desktop search when rail collapsed */}
           {railCollapsed ? (
             <div className="absolute left-3 top-3 z-20 hidden w-80 max-w-[calc(100%-5rem)] md:block">
               {searchBlock}
             </div>
           ) : null}
 
-          {/* Mobile: corridors + search floating controls */}
-          <div className="absolute left-3 top-3 z-20 flex max-w-[calc(100%-5.5rem)] flex-col gap-2 md:hidden">
-            <button
-              type="button"
-              onClick={() => setMobileRailOpen(true)}
-              className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-primary/25 bg-white/85 px-2.5 py-1.5 text-xs font-semibold text-primary shadow-md backdrop-blur-md"
-            >
-              <Route className="h-3.5 w-3.5" />
-              Corridors
-              {corridorFilter ? (
-                <span className="max-w-[7rem] truncate text-slate-600">· {corridorFilter}</span>
-              ) : null}
-            </button>
-            <div className="w-72 max-w-full">{searchBlock}</div>
+          {/* Mobile floating chrome */}
+          <div className="absolute inset-x-0 top-0 z-20 p-3 md:hidden">
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">{searchBlock}</div>
+              <button
+                type="button"
+                onClick={() => setMobileFiltersOpen(true)}
+                className="relative inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-primary/25 bg-white/95 px-3 text-sm font-semibold text-primary shadow-lg backdrop-blur-md"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                Filters
+                {activeFilterCount > 0 ? (
+                  <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-white">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+              </button>
+            </div>
+            <p className="mt-2 w-fit rounded-full bg-slate-900/75 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-white shadow backdrop-blur-sm">
+              {coverage.total} sites · {coverage.open} open
+              {cityFilter ? ` · ${cityFilter}` : ""}
+            </p>
           </div>
 
           <button
             type="button"
             onClick={handleReset}
-            className="absolute bottom-6 left-3 z-20 inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-white/85 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-md backdrop-blur-md md:hidden"
+            className="absolute bottom-4 left-3 z-20 inline-flex h-10 items-center gap-1.5 rounded-xl border border-primary/20 bg-white/95 px-3 text-xs font-semibold text-slate-700 shadow-lg backdrop-blur-md md:hidden"
           >
             <Navigation className="h-3.5 w-3.5 text-primary" />
             Reset
           </button>
 
-          {mobileRailOpen ? (
+          {mobileFiltersOpen ? (
             <>
               <button
                 type="button"
-                aria-label="Close corridors"
-                className="absolute inset-0 z-30 bg-slate-900/40 md:hidden"
-                onClick={() => setMobileRailOpen(false)}
+                aria-label="Close filters"
+                className="fixed inset-0 z-40 bg-slate-900/45 md:hidden"
+                onClick={() => setMobileFiltersOpen(false)}
               />
-              <div className="absolute inset-x-0 bottom-0 z-40 max-h-[70%] overflow-y-auto rounded-t-2xl border border-primary/20 bg-white/95 p-4 shadow-2xl backdrop-blur-md md:hidden">
-                <div className="mb-3 flex items-center justify-between">
-                  <p className="text-sm font-bold text-slate-900">Corridors</p>
+              <div className="fixed inset-x-0 bottom-0 z-50 flex max-h-[min(85dvh,640px)] flex-col rounded-t-2xl border border-primary/20 bg-white shadow-2xl md:hidden pb-[env(safe-area-inset-bottom,0px)]">
+                <div className="flex shrink-0 items-center justify-between border-b border-violet-100 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">Map filters</p>
+                    <p className="text-[11px] text-muted">{formatFlightLabel(flightFrom, flightTo)}</p>
+                  </div>
                   <button
                     type="button"
                     aria-label="Close"
-                    className="rounded-lg p-1.5 text-muted hover:bg-violet-50"
-                    onClick={() => setMobileRailOpen(false)}
+                    className="rounded-lg p-2 text-muted hover:bg-violet-50"
+                    onClick={() => setMobileFiltersOpen(false)}
                   >
-                    <X className="h-4 w-4" />
+                    <X className="h-5 w-5" />
                   </button>
                 </div>
-                {corridorList}
-                <div className="mt-3">{legendBlock}</div>
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
+                  <div>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                      Flight dates
+                    </p>
+                    {flightDatesBlock}
+                  </div>
+                  <div>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                      City
+                    </p>
+                    {citySelectBlock}
+                  </div>
+                  <div>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                      Availability
+                    </p>
+                    {availPillsBlock}
+                  </div>
+                  <div>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                      {corridorFilter ? "Corridor (tap again to clear)" : "Corridors"}
+                    </p>
+                    {corridorList}
+                  </div>
+                  {legendBlock}
+                </div>
+                <div className="shrink-0 border-t border-violet-100 p-3">
+                  <button
+                    type="button"
+                    className="btn-primary w-full py-3 text-sm"
+                    onClick={() => setMobileFiltersOpen(false)}
+                  >
+                    Show {coverage.total} sites
+                  </button>
+                </div>
               </div>
             </>
           ) : null}
@@ -696,7 +751,7 @@ export default function MapPage() {
           ) : null}
 
           {error ? (
-            <div className="absolute right-4 top-4 z-10 rounded-lg border border-red-200 bg-red-50/95 p-3 text-xs text-red-700 shadow backdrop-blur-sm">
+            <div className="absolute right-4 top-20 z-10 rounded-lg border border-red-200 bg-red-50/95 p-3 text-xs text-red-700 shadow backdrop-blur-sm md:top-4">
               Failed to load map pins.{" "}
               <button type="button" onClick={() => refetch()} className="font-bold underline">
                 Retry
@@ -705,7 +760,7 @@ export default function MapPage() {
           ) : null}
 
           <div ref={mapContainer} className="h-full w-full" />
-          <p className="absolute bottom-2 right-3 z-10 rounded bg-white/80 px-1.5 py-0.5 text-[10px] text-slate-500 backdrop-blur-sm">
+          <p className="absolute bottom-2 right-3 z-10 hidden rounded bg-white/80 px-1.5 py-0.5 text-[10px] text-slate-500 backdrop-blur-sm md:block">
             Map data © OpenStreetMap
           </p>
         </div>

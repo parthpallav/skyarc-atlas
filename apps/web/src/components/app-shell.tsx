@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { SidebarNav } from "./sidebar";
 import { SkyarcLogo } from "./skyarc-logo";
@@ -11,6 +12,8 @@ import { safeGetItem, safeSetItem } from "@/lib/safe-storage";
 const SIDEBAR_COLLAPSED_KEY = "skyarc-sidebar-collapsed";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isMapRoute = pathname === "/map";
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -107,7 +110,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main
           className={cn(
             "mx-auto w-full max-w-[1600px] flex-1 overflow-x-hidden p-3.5 sm:p-6 lg:p-8",
-            "max-md:min-h-0 max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))]",
+            "max-md:min-h-0 max-md:overscroll-y-contain",
+            isMapRoute
+              ? "max-md:flex max-md:flex-col max-md:overflow-hidden max-md:p-0 max-md:pb-[calc(3.75rem+env(safe-area-inset-bottom,0px))]"
+              : "max-md:overflow-y-auto max-md:pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))]",
             "md:pb-8"
           )}
         >

@@ -24,6 +24,13 @@ describe("workspace page layout (mobile scroll)", () => {
     expect(plan).not.toMatch(/h-\[calc\(100dvh-3\.5rem/);
   });
 
+  it("map page is full-bleed with filter sheet on mobile", () => {
+    const map = readSrc("app/(app)/map/page.tsx");
+    expect(map).toContain("workspaceMapPageRoot");
+    expect(map).toContain("Map filters");
+    expect(map).not.toMatch(/h-\[calc\(100dvh-3\.5rem/);
+  });
+
   it("mobile detail sheet scrolls site workspace", () => {
     const plan = readSrc("app/(app)/campaigns/[id]/plans/[planId]/page.tsx");
     expect(plan).toMatch(/overflow-y-auto overscroll-contain/);

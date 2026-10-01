@@ -27,11 +27,12 @@ const checks = [
   },
   {
     file: "app/(app)/map/page.tsx",
-    mustInclude: ["workspacePageRoot"],
+    mustInclude: ["workspaceMapPageRoot", "SlidersHorizontal", "Map filters"],
     mustExclude: ["h-[calc(100dvh-3.5rem"],
   },
   {
     file: "components/app-shell.tsx",
+    mustInclude: ["isMapRoute"],
     mustExclude: ["PwaInstallButton"],
   },
 ];

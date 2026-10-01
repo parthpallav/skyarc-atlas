@@ -16,10 +16,11 @@ Campaign detail and media plan detail (and similar “workspace” screens) used
 
 | Phase | Scope | Status |
 |-------|--------|--------|
-| **0** | Campaign + plan detail scroll fix | In progress (this change) |
+| **0** | Campaign + plan detail scroll fix | Done |
+| **0b** | Remove Install App UI; app chrome shell | Done |
+| **0c** | Map full-bleed + filter sheet on mobile | Done |
 | **1** | Lists: campaigns, locations, media-plans — responsive tables/cards, filter bars wrap | Todo |
 | **2** | Forms (edit campaign, location wizard) — single column, sticky footers for primary CTA | Todo |
-| **3** | Map — collapsible filters, full-width map height `min(55dvh, 420px)` + scrollable site drawer | Todo |
 | **4** | Client/vendor request flows — parity with internal campaign UX | Todo |
 | **5** | QA matrix: iOS Safari, Android Chrome, PWA standalone | Todo |
 
