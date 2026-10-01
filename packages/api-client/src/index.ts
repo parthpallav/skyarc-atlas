@@ -91,7 +91,9 @@ export class ApiClient {
     if (
       response.status === 401 &&
       !path.startsWith("/auth/login") &&
-      !path.startsWith("/auth/refresh")
+      !path.startsWith("/auth/refresh") &&
+      !path.startsWith("/auth/forgot-password") &&
+      !path.startsWith("/auth/reset-password")
     ) {
       const newToken = await this.attemptRefresh();
       if (newToken) {
@@ -129,7 +131,9 @@ export class ApiClient {
     if (
       response.status === 401 &&
       !path.startsWith("/auth/login") &&
-      !path.startsWith("/auth/refresh")
+      !path.startsWith("/auth/refresh") &&
+      !path.startsWith("/auth/forgot-password") &&
+      !path.startsWith("/auth/reset-password")
     ) {
       const newToken = await this.attemptRefresh();
       if (newToken) {
@@ -986,6 +990,34 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify({ name }),
     });
+  }
+
+  deleteOrganization(id: string) {
+    return this.request<{
+      id: string;
+      removed: boolean;
+      name: string;
+      message: string;
+    }>(`/organizations/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  forgotPassword(email: string) {
+    return this.request<{ ok: boolean; message: string }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  resetPassword(token: string, password: string) {
+    return this.request<{ ok: boolean; email: string; message: string }>(
+      "/auth/reset-password",
+      {
+        method: "POST",
+        body: JSON.stringify({ token, password }),
+      }
+    );
   }
 
   updateOrganizationStatus(id: string, status: string) {

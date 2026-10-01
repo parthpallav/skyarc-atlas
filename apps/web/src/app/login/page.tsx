@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { getDefaultLandingPath, UserRole } from "@skyarc/shared";
@@ -130,6 +131,14 @@ function LoginForm() {
                 className="w-full bg-white border border-violet-200 rounded-lg px-4 py-3 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
               />
             </label>
+            <div className="flex justify-end">
+              <Link
+                href="/forgot-password"
+                className="text-xs font-semibold text-primary hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </div>
           </div>
           <button
             type="submit"

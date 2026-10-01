@@ -49,7 +49,7 @@ export async function buildApp() {
   await fastify.register(
     async (api) => {
       await authRoutes(api, env);
-      await userRoutes(api);
+      await userRoutes(api, env);
       await locationRoutes(api, env);
       await surveyRoutes(api);
       await assetRoutes(api, storage, env);

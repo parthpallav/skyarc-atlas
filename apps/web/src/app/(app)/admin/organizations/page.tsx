@@ -5,7 +5,9 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createWebApiClient } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
-import { CheckCircle2, Copy, UserCheck } from "lucide-react";
+import { ConfirmModal } from "@/components/confirm-modal";
+import { usePermissions } from "@/hooks/use-permissions";
+import { CheckCircle2, Trash2 } from "lucide-react";
 
 interface OrganizationRow {
   id: string;
@@ -19,8 +21,10 @@ interface OrganizationRow {
 
 export default function AdminOrganizationsPage() {
   const queryClient = useQueryClient();
+  const { isSuperAdmin } = usePermissions();
   const [name, setName] = useState("");
   const [error, setError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<OrganizationRow | null>(null);
   const [createdUserNotice, setCreatedUserNotice] = useState<{
     orgName: string;
     email: string;
@@ -59,6 +63,21 @@ export default function AdminOrganizationsPage() {
     },
     onError: (err) => {
       setError(err instanceof Error ? err.message : "Failed to create vendor");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (orgId: string) => {
+      const client = createWebApiClient();
+      return client.deleteOrganization(orgId);
+    },
+    onSuccess: async () => {
+      setDeleteTarget(null);
+      setError("");
+      await queryClient.invalidateQueries({ queryKey: ["organizations"] });
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed to remove vendor");
     },
   });
 
@@ -104,18 +123,22 @@ export default function AdminOrganizationsPage() {
               Agency: <strong className="text-slate-900">{createdUserNotice.orgName}</strong>
             </p>
             <div className="p-3 bg-white border border-emerald-100 rounded-lg text-xs space-y-1 font-mono">
-              <p>Email: <strong className="text-primary">{createdUserNotice.email}</strong></p>
-              <p>Default Password: <strong className="text-slate-700">{createdUserNotice.tempPassword}</strong></p>
+              <p>
+                Email: <strong className="text-primary">{createdUserNotice.email}</strong>
+              </p>
+              <p>
+                Default Password:{" "}
+                <strong className="text-slate-700">{createdUserNotice.tempPassword}</strong>
+              </p>
             </div>
             <p className="text-[11px] text-muted">
-              You can share these credentials or send an activation link to the vendor. They can also change their login email inside Account Settings.
+              Share credentials or open Manage &amp; Credentials → Get Reset Link so they can set
+              their own password on the public /reset-password page.
             </p>
           </div>
         )}
 
-        {error && (
-          <p className="text-sm text-red-700 mt-3">{error}</p>
-        )}
+        {error && <p className="text-sm text-red-700 mt-3">{error}</p>}
       </section>
 
       {isLoading && <p className="text-muted text-sm">Loading vendors…</p>}
@@ -133,9 +156,15 @@ export default function AdminOrganizationsPage() {
           </thead>
           <tbody>
             {(data ?? []).map((org) => (
-              <tr key={org.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-colors">
+              <tr
+                key={org.id}
+                className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-colors"
+              >
                 <td className="px-4 py-3 font-medium text-slate-900">
-                  <Link href={`/admin/organizations/${org.id}`} className="hover:text-primary font-bold">
+                  <Link
+                    href={`/admin/organizations/${org.id}`}
+                    className="hover:text-primary font-bold"
+                  >
                     {org.name}
                   </Link>
                 </td>
@@ -150,15 +179,35 @@ export default function AdminOrganizationsPage() {
                     {org.status}
                   </span>
                 </td>
-                <td className="px-4 py-3 font-semibold text-slate-700">{org.locationCount} sites</td>
+                <td className="px-4 py-3 font-semibold text-slate-700">
+                  {org.locationCount} sites
+                </td>
                 <td className="px-4 py-3 text-muted text-xs">{org.memberCount} account(s)</td>
                 <td className="px-4 py-3 text-right">
-                  <Link
-                    href={`/admin/organizations/${org.id}`}
-                    className="text-xs text-primary font-bold hover:underline inline-flex items-center gap-1"
-                  >
-                    Manage & Credentials →
-                  </Link>
+                  <div className="inline-flex items-center gap-2">
+                    {isSuperAdmin ? (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-40"
+                        disabled={org.locationCount > 0 || deleteMutation.isPending}
+                        title={
+                          org.locationCount > 0
+                            ? "Reassign or archive sites before removing"
+                            : "Remove vendor"
+                        }
+                        onClick={() => setDeleteTarget(org)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Remove
+                      </button>
+                    ) : null}
+                    <Link
+                      href={`/admin/organizations/${org.id}`}
+                      className="text-xs text-primary font-bold hover:underline inline-flex items-center gap-1"
+                    >
+                      Manage & Credentials →
+                    </Link>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -172,6 +221,25 @@ export default function AdminOrganizationsPage() {
           </tbody>
         </table>
       </div>
+
+      <ConfirmModal
+        open={Boolean(deleteTarget)}
+        title="Remove vendor"
+        description={
+          deleteTarget
+            ? `Permanently remove "${deleteTarget.name}" and its ${deleteTarget.memberCount} account(s)? This cannot be undone. Vendors with inventory sites must be cleaned up first.`
+            : undefined
+        }
+        confirmLabel="Remove vendor"
+        danger
+        busy={deleteMutation.isPending}
+        onClose={() => {
+          if (!deleteMutation.isPending) setDeleteTarget(null);
+        }}
+        onConfirm={() => {
+          if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+        }}
+      />
     </div>
   );
 }

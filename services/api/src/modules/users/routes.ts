@@ -1,3 +1,4 @@
+import type { Env } from "@skyarc/config";
 import type { FastifyInstance } from "fastify";
 import argon2 from "argon2";
 import {
@@ -11,6 +12,12 @@ import { prisma } from "../../lib/prisma.js";
 import { success, listMeta, toIso } from "../../lib/response.js";
 import { canManageUsers, isReadOnly } from "../../lib/rbac.js";
 import { forbidden, notFound, validationError } from "../../lib/errors.js";
+import {
+  PASSWORD_RESET_DAYS,
+  buildPasswordResetLink,
+  issuePasswordResetToken,
+  resolveWebAppOrigin,
+} from "../../lib/password-reset.js";
 
 function serializeUser(user: {
   id: string;
@@ -34,7 +41,7 @@ function serializeUser(user: {
   };
 }
 
-export async function userRoutes(fastify: FastifyInstance) {
+export async function userRoutes(fastify: FastifyInstance, env: Env) {
   fastify.get("/users/me", { preHandler: [fastify.authenticate] }, async (request) => {
     const user = await prisma.user.findUnique({ where: { id: request.user.id } });
     if (!user) throw notFound("User not found");
@@ -135,14 +142,23 @@ export async function userRoutes(fastify: FastifyInstance) {
     const id = uuidSchema.parse((request.params as { id: string }).id);
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) throw notFound("User not found");
+    if (user.deactivatedAt) throw validationError("Cannot reset password for a deactivated user");
 
-    // Unsigned URL tokens are not accepted for auth. Admins reset passwords via PATCH /users/:id.
+    const { rawToken, expiresAt } = await issuePasswordResetToken(user.id);
+    const origin = resolveWebAppOrigin(
+      env,
+      typeof request.headers.origin === "string" ? request.headers.origin : null
+    );
+    const resetLink = buildPasswordResetLink(origin, rawToken);
+
     return success({
       userId: user.id,
       email: user.email,
-      resetLink: null,
+      resetLink,
+      expiresAt: expiresAt.toISOString(),
+      expiresInDays: PASSWORD_RESET_DAYS,
       message:
-        "Email password reset is not configured. Use admin password update (PATCH /users/:id) instead.",
+        "Share this link with the vendor. It works outside Atlas and expires in 7 days. They set a new password on the public reset page.",
     });
   });
 }

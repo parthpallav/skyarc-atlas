@@ -53,6 +53,8 @@ export const envSchema = z.object({
     .default(
       "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8081,http://127.0.0.1:8081"
     ),
+  /** Public Atlas web origin for password-reset / activation links (e.g. https://atlas.skyarcads.com). */
+  WEB_APP_URL: optionalUrl,
 });
 
 export type Env = z.infer<typeof envSchema>;

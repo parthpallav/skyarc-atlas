@@ -3,11 +3,21 @@ import type { FastifyInstance } from "fastify";
 import { createHash, randomBytes } from "node:crypto";
 import argon2 from "argon2";
 import { OrganizationStatus, UserRole, normalizeUserRole } from "@skyarc/shared";
-import { loginBodySchema, refreshBodySchema } from "@skyarc/validation";
+import {
+  forgotPasswordBodySchema,
+  loginBodySchema,
+  refreshBodySchema,
+  resetPasswordBodySchema,
+} from "@skyarc/validation";
 import { prisma } from "../../lib/prisma.js";
 import { success } from "../../lib/response.js";
 import { unauthorized } from "../../lib/errors.js";
 import type { AuthUser } from "../../lib/rbac.js";
+import {
+  PASSWORD_RESET_DEVICE_LABEL,
+  hashPasswordResetToken,
+  issuePasswordResetToken,
+} from "../../lib/password-reset.js";
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -95,7 +105,12 @@ export async function authRoutes(fastify: FastifyInstance, env: Env) {
       include: { user: true },
     });
 
-    if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
+    if (
+      !stored ||
+      stored.revokedAt ||
+      stored.expiresAt < new Date() ||
+      stored.deviceLabel === PASSWORD_RESET_DEVICE_LABEL
+    ) {
       throw unauthorized("Invalid refresh token");
     }
 
@@ -125,5 +140,69 @@ export async function authRoutes(fastify: FastifyInstance, env: Env) {
       });
     }
     return success({ ok: true });
+  });
+
+  /** Public — vendors/clients can request help; always returns ok (no email enumeration). */
+  fastify.post("/auth/forgot-password", async (request) => {
+    const body = forgotPasswordBodySchema.parse(request.body);
+    const user = await prisma.user.findUnique({
+      where: { email: body.email.toLowerCase() },
+    });
+    if (user && !user.deactivatedAt) {
+      await issuePasswordResetToken(user.id);
+    }
+    return success({
+      ok: true,
+      message:
+        "If that email has an Atlas account, ask your Skyarc admin for a reset link, or use a link they already shared.",
+    });
+  });
+
+  /** Public — redeem reset token and set a new password (works outside authenticated Atlas). */
+  fastify.post("/auth/reset-password", async (request) => {
+    const body = resetPasswordBodySchema.parse(request.body);
+    const stored = await prisma.refreshToken.findUnique({
+      where: { tokenHash: hashPasswordResetToken(body.token) },
+      include: { user: true },
+    });
+
+    if (
+      !stored ||
+      stored.deviceLabel !== PASSWORD_RESET_DEVICE_LABEL ||
+      stored.revokedAt ||
+      stored.expiresAt < new Date()
+    ) {
+      throw unauthorized("Reset link is invalid or expired");
+    }
+
+    if (stored.user.deactivatedAt) {
+      throw unauthorized("Account is deactivated");
+    }
+
+    const passwordHash = await argon2.hash(body.password);
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: stored.userId },
+        data: { passwordHash },
+      }),
+      prisma.refreshToken.update({
+        where: { id: stored.id },
+        data: { revokedAt: new Date() },
+      }),
+      prisma.refreshToken.updateMany({
+        where: {
+          userId: stored.userId,
+          revokedAt: null,
+          NOT: { deviceLabel: PASSWORD_RESET_DEVICE_LABEL },
+        },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    return success({
+      ok: true,
+      email: stored.user.email,
+      message: "Password updated. You can sign in with your new password.",
+    });
   });
 }

@@ -10,10 +10,10 @@ import {
   Flag,
   MapPin,
   Layers,
-  ShieldAlert,
 } from "lucide-react";
 import { formatDateIn, durationDaysBetweenIso } from "@/lib/dates";
 import { formatInr } from "@/lib/format";
+import { isPremiumFormat } from "@/components/campaign-brief-form";
 
 export interface CampaignSummaryBrief {
   objective?: string;
@@ -29,15 +29,32 @@ export interface CampaignSummaryBrief {
   additionalNotes?: string;
 }
 
-function ChipList({ items }: { items?: string[] }) {
+function ChipList({
+  items,
+  premiumCheck,
+}: {
+  items?: string[];
+  premiumCheck?: (item: string) => boolean;
+}) {
   if (!items?.length) return <span className="text-slate-400">—</span>;
   return (
     <div className="flex flex-wrap gap-1.5 mt-1.5">
-      {items.map((item) => (
-        <span key={item} className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-white border border-violet-200 text-slate-700">
-          {item}
-        </span>
-      ))}
+      {items.map((item) => {
+        const premium = premiumCheck?.(item);
+        return (
+          <span
+            key={item}
+            className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-white border border-violet-200 text-slate-700"
+          >
+            {item}
+            {premium ? (
+              <span className="rounded px-1 py-px text-[9px] font-bold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-200">
+                Premium
+              </span>
+            ) : null}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -143,16 +160,9 @@ export function CampaignSummary({
         <div className="rounded-xl border border-violet-100 bg-white/70 p-3">
           <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase text-muted">
             <Layers className="h-3.5 w-3.5 text-primary" />
-            Formats
+            Preferred formats
           </p>
-          <ChipList items={brief?.preferredFormats} />
-        </div>
-        <div className="rounded-xl border border-violet-100 bg-white/70 p-3">
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase text-muted">
-            <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
-            Guardrails
-          </p>
-          <ChipList items={brief?.constraints} />
+          <ChipList items={brief?.preferredFormats} premiumCheck={isPremiumFormat} />
         </div>
       </div>
 

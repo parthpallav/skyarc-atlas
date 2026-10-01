@@ -120,7 +120,14 @@ export function createWebApiClient() {
     onUnauthorized: () => {
       clearTokens();
       if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
-        window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+        const path = window.location.pathname;
+        if (
+          path.startsWith("/reset-password") ||
+          path.startsWith("/forgot-password")
+        ) {
+          return;
+        }
+        window.location.href = `/login?next=${encodeURIComponent(path)}`;
       }
     },
   });

@@ -10,7 +10,6 @@ import {
   IndianRupee,
   CheckCircle2,
   Tag,
-  ShieldAlert,
 } from "lucide-react";
 import { formatInr } from "@/lib/format";
 import {
@@ -99,6 +98,17 @@ export const FORMAT_PRESETS = [
   "Transit / Bus Wrap",
 ];
 
+/** Formats highlighted with a Premium badge in the campaign brief UI. */
+export const PREMIUM_FORMATS = new Set([
+  "Digital Billboard (DOOH)",
+  "Unipole",
+  "Gantry / Overbridge",
+]);
+
+export function isPremiumFormat(format: string): boolean {
+  return PREMIUM_FORMATS.has(format);
+}
+
 export const BUDGET_PRESETS = [
   { label: "₹2 Lakh", value: 200000 },
   { label: "₹5 Lakh", value: 500000 },
@@ -126,13 +136,8 @@ export const KPI_PRESETS = [
   "Commercial Junction Presence",
 ];
 
-export const CONSTRAINT_PRESETS = [
-  "High Visibility Score (> 75) Only",
-  "Prime Facing / Unobstructed View Only",
-  "Night Illumination Required",
-  "No Competitor Adjacency",
-  "Minimum Dwell Time > 15s",
-];
+/** @deprecated Guardrails removed from campaign UX — kept empty for older briefs. */
+export const CONSTRAINT_PRESETS: string[] = [];
 
 export function CampaignBriefBuilder({
   initialValues,
@@ -185,12 +190,7 @@ export function CampaignBriefBuilder({
       KPI_PRESETS[2],
     ]
   );
-  const [constraints, setConstraints] = useState<string[]>(
-    initialValues?.structuredRequirements?.constraints ?? [
-      CONSTRAINT_PRESETS[0],
-      CONSTRAINT_PRESETS[2],
-    ]
-  );
+  const [constraints] = useState<string[]>([]);
   const [notes, setNotes] = useState(
     initialValues?.structuredRequirements?.additionalNotes ?? ""
   );
@@ -233,7 +233,6 @@ export function CampaignBriefBuilder({
       `**Geographic Corridors**: ${corridors.join(", ") || "Citywide"}`,
       `**Preferred Media Formats**: ${formats.join(", ") || "All formats"}`,
       `**Core KPIs**: ${kpis.join(", ") || "Brand awareness"}`,
-      `**Constraints / Guardrails**: ${constraints.join(", ") || "None"}`,
     ];
     if (notes.trim()) {
       lines.push(`**Additional Notes**: ${notes.trim()}`);
@@ -562,6 +561,7 @@ export function CampaignBriefBuilder({
             <div className="flex flex-wrap gap-2">
               {FORMAT_PRESETS.map((fmt) => {
                 const isSelected = formats.includes(fmt);
+                const premium = isPremiumFormat(fmt);
                 return (
                   <button
                     key={fmt}
@@ -575,64 +575,47 @@ export function CampaignBriefBuilder({
                   >
                     {isSelected && <CheckCircle2 className="w-3 h-3" />}
                     {fmt}
+                    {premium ? (
+                      <span
+                        className={`rounded px-1 py-px text-[9px] font-bold uppercase tracking-wide ${
+                          isSelected
+                            ? "bg-white/25 text-white"
+                            : "bg-amber-100 text-amber-800 border border-amber-200"
+                        }`}
+                      >
+                        Premium
+                      </span>
+                    ) : null}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* KPIs & Constraints */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase mb-2">
-                <Target className="w-3.5 h-3.5 text-primary" />
-                Primary KPIs
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {KPI_PRESETS.map((kpi) => {
-                  const isSelected = kpis.includes(kpi);
-                  return (
-                    <button
-                      key={kpi}
-                      type="button"
-                      onClick={() => toggleArrayItem(kpi, kpis, setKpis)}
-                      className={`px-2.5 py-1 text-xs rounded-md border transition-all ${
-                        isSelected
-                          ? "bg-purple-700 text-white border-purple-700 font-medium"
-                          : "bg-white text-slate-700 border-violet-200 hover:bg-violet-50"
-                      }`}
-                    >
-                      {kpi}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase mb-2">
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
-                Guardrails & Constraints
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {CONSTRAINT_PRESETS.map((c) => {
-                  const isSelected = constraints.includes(c);
-                  return (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => toggleArrayItem(c, constraints, setConstraints)}
-                      className={`px-2.5 py-1 text-xs rounded-md border transition-all ${
-                        isSelected
-                          ? "bg-amber-600 text-white border-amber-600 font-medium"
-                          : "bg-white text-slate-700 border-violet-200 hover:bg-violet-50"
-                      }`}
-                    >
-                      {c}
-                    </button>
-                  );
-                })}
-              </div>
+          {/* KPIs */}
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase mb-2">
+              <Target className="w-3.5 h-3.5 text-primary" />
+              Primary KPIs
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {KPI_PRESETS.map((kpi) => {
+                const isSelected = kpis.includes(kpi);
+                return (
+                  <button
+                    key={kpi}
+                    type="button"
+                    onClick={() => toggleArrayItem(kpi, kpis, setKpis)}
+                    className={`px-2.5 py-1 text-xs rounded-md border transition-all ${
+                      isSelected
+                        ? "bg-purple-700 text-white border-purple-700 font-medium"
+                        : "bg-white text-slate-700 border-violet-200 hover:bg-violet-50"
+                    }`}
+                  >
+                    {kpi}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

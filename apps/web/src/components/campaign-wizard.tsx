@@ -21,11 +21,11 @@ import {
   AUDIENCE_PRESETS,
   BUDGET_PRESETS,
   CATEGORY_OPTIONS,
-  CONSTRAINT_PRESETS,
   DURATION_PRESETS,
   FORMAT_PRESETS,
   KPI_PRESETS,
   OBJECTIVE_OPTIONS,
+  isPremiumFormat,
   type StructuredBriefState,
 } from "@/components/campaign-brief-form";
 
@@ -46,16 +46,24 @@ function ChipGroup({
   selected,
   onToggle,
   activeClass,
+  premiumOptions,
 }: {
   options: string[];
   selected: string[];
   onToggle: (value: string) => void;
   activeClass: string;
+  premiumOptions?: Set<string> | ((value: string) => boolean);
 }) {
+  const isPremium = (option: string) =>
+    typeof premiumOptions === "function"
+      ? premiumOptions(option)
+      : Boolean(premiumOptions?.has(option));
+
   return (
     <div className="flex flex-wrap gap-2">
       {options.map((option) => {
         const on = selected.includes(option);
+        const premium = isPremium(option);
         return (
           <button
             key={option}
@@ -67,6 +75,17 @@ function ChipGroup({
           >
             {on && <CheckCircle2 className="w-3 h-3" />}
             {option}
+            {premium ? (
+              <span
+                className={`rounded px-1 py-px text-[9px] font-bold uppercase tracking-wide ${
+                  on
+                    ? "bg-white/25 text-white"
+                    : "bg-amber-100 text-amber-800 border border-amber-200"
+                }`}
+              >
+                Premium
+              </span>
+            ) : null}
           </button>
         );
       })}
@@ -140,7 +159,6 @@ export function CampaignWizard({
   );
   const [formats, setFormats] = useState<string[]>(initial?.formats ?? [FORMAT_PRESETS[0], FORMAT_PRESETS[1], FORMAT_PRESETS[2]]);
   const [kpis, setKpis] = useState<string[]>(initial?.kpis ?? [KPI_PRESETS[0], KPI_PRESETS[2]]);
-  const [constraints, setConstraints] = useState<string[]>(initial?.constraints ?? [CONSTRAINT_PRESETS[0], CONSTRAINT_PRESETS[2]]);
   const [notes, setNotes] = useState(initial?.notes ?? "");
 
   const days = durationDaysBetween(startDate, endDate);
@@ -167,7 +185,6 @@ export function CampaignWizard({
     setCorridors(corridorsForCity(defaultCity).slice(0, 3));
     setFormats([FORMAT_PRESETS[0], FORMAT_PRESETS[1], FORMAT_PRESETS[2]]);
     setKpis(["Maximum Reach & Impressions", "Corridor Dominance & Impact"]);
-    setConstraints(["High Visibility Score (> 75) Only", "Night Illumination Required"]);
     setNotes("Prioritize junctions with evening traffic and unobstructed approach.");
     setStepError("");
   }
@@ -185,7 +202,7 @@ export function CampaignWizard({
       durationDays: days,
       maxLocations,
       kpis,
-      constraints,
+      constraints: [],
       additionalNotes: notes.trim() || undefined,
     };
   }
@@ -208,7 +225,6 @@ export function CampaignWizard({
       `**Geographic Corridors**: ${corridors.join(", ") || "Citywide"}`,
       `**Preferred Media Formats**: ${formats.join(", ") || "All formats"}`,
       `**Core KPIs**: ${kpis.join(", ") || "Brand awareness"}`,
-      `**Constraints / Guardrails**: ${constraints.join(", ") || "None"}`,
       brief.additionalNotes ? `**Additional Notes**: ${brief.additionalNotes}` : "",
     ]
       .filter(Boolean)
@@ -465,7 +481,13 @@ export function CampaignWizard({
               <Layers className="w-3.5 h-3.5 text-primary" />
               Preferred formats
             </label>
-            <ChipGroup options={FORMAT_PRESETS} selected={formats} onToggle={(item) => toggle(item, formats, setFormats)} activeClass="bg-indigo-600 text-white border-indigo-600" />
+            <ChipGroup
+              options={FORMAT_PRESETS}
+              selected={formats}
+              onToggle={(item) => toggle(item, formats, setFormats)}
+              activeClass="bg-indigo-600 text-white border-indigo-600"
+              premiumOptions={isPremiumFormat}
+            />
           </div>
         </div>
       )}
@@ -478,10 +500,6 @@ export function CampaignWizard({
               Primary KPIs
             </label>
             <ChipGroup options={KPI_PRESETS} selected={kpis} onToggle={(item) => toggle(item, kpis, setKpis)} activeClass="bg-purple-700 text-white border-purple-700" />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">Guardrails</label>
-            <ChipGroup options={CONSTRAINT_PRESETS} selected={constraints} onToggle={(item) => toggle(item, constraints, setConstraints)} activeClass="bg-amber-600 text-white border-amber-600" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Additional notes</label>

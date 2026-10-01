@@ -6,6 +6,7 @@ import {
   parseOrganizationCommercial,
   resolveMarginPercent,
   isVendorUser,
+  isSuperAdmin,
   sanitizeOrgCommercialViewForUser,
   sanitizeOrganizationCommercialForUser,
 } from "@skyarc/shared";
@@ -20,7 +21,7 @@ import {
 } from "@skyarc/validation";
 import { prisma } from "../../lib/prisma.js";
 import { loadPlatformConfig } from "../../lib/commercial-config.js";
-import { forbidden, notFound } from "../../lib/errors.js";
+import { forbidden, notFound, validationError } from "../../lib/errors.js";
 import { canManageOrganizations, isReadOnly } from "../../lib/rbac.js";
 import { success, listMeta } from "../../lib/response.js";
 
@@ -288,6 +289,51 @@ export async function organizationRoutes(fastify: FastifyInstance) {
       });
 
       return success(serializeOrganization(org));
+    }
+  );
+
+  /** Super Admin only — remove vendor org with no inventory attached. */
+  fastify.delete(
+    "/organizations/:id",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      if (!isSuperAdmin(request.user)) throw forbidden();
+      const id = uuidSchema.parse((request.params as { id: string }).id);
+      const org = await prisma.organization.findUnique({
+        where: { id },
+        include: { _count: { select: { members: true, locations: true } } },
+      });
+      if (!org) throw notFound("Organization not found");
+      if (org.type !== OrganizationType.VENDOR) {
+        throw validationError("Only vendor organizations can be removed here");
+      }
+      if (org._count.locations > 0) {
+        throw validationError(
+          `Cannot remove ${org.name}: ${org._count.locations} inventory site(s) still attached. Reassign or archive sites first, or Suspend instead.`
+        );
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.refreshToken.updateMany({
+          where: { user: { organizationId: id }, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+        await tx.user.updateMany({
+          where: { organizationId: id },
+          data: {
+            deactivatedAt: new Date(),
+            organizationId: null,
+          },
+        });
+        await tx.organization.delete({ where: { id } });
+      });
+
+      return success({
+        id,
+        removed: true,
+        name: org.name,
+        message: `Removed vendor ${org.name}. ${org._count.members} account(s) deactivated.`,
+      });
     }
   );
 
