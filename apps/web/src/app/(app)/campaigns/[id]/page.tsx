@@ -21,6 +21,13 @@ import { CampaignSummary } from "@/components/campaign-summary";
 import { PageHeaderSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
+import {
+  workspaceAsidePanel,
+  workspaceBodyGrid,
+  workspacePageRoot,
+  workspacePanel,
+  workspacePanelScroll,
+} from "@/lib/page-layout";
 import { ConfirmModal } from "@/components/confirm-modal";
 
 interface MediaPlanRow {
@@ -322,7 +329,7 @@ export default function CampaignDetailPage() {
   }
 
   return (
-    <div className="-mx-3.5 -mt-3.5 flex h-[calc(100dvh-3.5rem-5.25rem)] flex-col sm:-mx-6 sm:-mt-6 md:h-[calc(100dvh-2rem)] lg:-mx-8 lg:-mt-8">
+    <div className={workspacePageRoot}>
       <div className="shrink-0 border-b border-primary/15 bg-white/90 px-3 py-2 backdrop-blur-md sm:px-4">
         <div className="flex flex-wrap items-center gap-2">
           <Link
@@ -406,7 +413,7 @@ export default function CampaignDetailPage() {
         ) : null}
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-3 p-3 md:grid-cols-[1fr_270px] md:p-4">
+      <div className={workspaceBodyGrid("md:grid-cols-[1fr_270px]")}>
         {canEdit && !isSiteRequest && !isClient ? (
           <section className="rounded-xl border border-primary/20 bg-violet-50/50 px-3 py-2.5 md:col-span-2">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -465,7 +472,7 @@ export default function CampaignDetailPage() {
           </section>
         ) : null}
 
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-primary/15 bg-white/95">
+        <section className={workspacePanel}>
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-primary/10 px-3 py-2.5">
             <div>
               <h2 className="text-sm font-bold text-slate-900">
@@ -474,7 +481,7 @@ export default function CampaignDetailPage() {
               <p className="text-[10px] text-muted">Open a plan to score, swap, and export.</p>
             </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className={workspacePanelScroll}>
             {plans.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-muted">
                 No plan yet. Use Generate plan pack above to build against this budget.
@@ -521,13 +528,13 @@ export default function CampaignDetailPage() {
           </div>
         </section>
 
-        <aside className="hidden min-h-0 flex-col overflow-hidden rounded-xl border border-primary/15 bg-primary/5 md:flex">
+        <aside className={workspaceAsidePanel}>
           <div className="shrink-0 border-b border-primary/10 px-3 py-2">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">
               Campaign brief
             </p>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <div className={cn(workspacePanelScroll, "p-3")}>
             <CampaignSummary brief={brief} variant="embedded" />
           </div>
         </aside>

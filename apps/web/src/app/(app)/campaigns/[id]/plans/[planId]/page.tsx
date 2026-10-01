@@ -30,6 +30,12 @@ import { MediaPlanDetailSkeleton } from "@/components/ui/skeleton";
 import { SiteDemandSignals } from "@/components/site-demand-signals";
 import { ConfirmModal } from "@/components/confirm-modal";
 import { cn } from "@/lib/utils";
+import {
+  workspaceBodyGrid,
+  workspacePageRoot,
+  workspacePanel,
+  workspacePanelScroll,
+} from "@/lib/page-layout";
 
 interface PlanItemRow {
   id: string;
@@ -779,7 +785,7 @@ export default function MediaPlanDetailPage() {
 
   function renderSiteList() {
     return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-primary/15 bg-white/95">
+    <div className={workspacePanel}>
       <div className="shrink-0 border-b border-primary/10 px-3 py-2">
         <div className="flex items-center justify-between gap-2">
           <div>
@@ -829,7 +835,7 @@ export default function MediaPlanDetailPage() {
           </p>
         ) : null}
       </div>
-      <ul className="min-h-0 flex-1 overflow-y-auto divide-y divide-violet-50">
+      <ul className={cn(workspacePanelScroll, "divide-y divide-violet-50")}>
         {planItems.map((item, idx) => {
           const score = item.skyarcIndex?.overallScore ?? item.insights?.overallScore;
           const on = selectedItem?.id === item.id;
@@ -906,7 +912,7 @@ export default function MediaPlanDetailPage() {
     const canEditMix = isAdmin;
 
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-primary/15 bg-white shadow-sm">
+      <div className={cn(workspacePanel, "rounded-2xl shadow-sm")}>
         {/* Hero photo — dominant visual for pitch */}
         <div className="relative h-44 shrink-0 bg-slate-200 sm:h-52">
           {selectedItem.location?.coverImageUrl ? (
@@ -938,7 +944,7 @@ export default function MediaPlanDetailPage() {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className={workspacePanelScroll}>
           {/* Rate + Index — only customer-safe numbers */}
           <div className="grid grid-cols-2 gap-px border-b border-violet-100 bg-violet-100">
             <div className="bg-white px-4 py-3">
@@ -1074,7 +1080,7 @@ export default function MediaPlanDetailPage() {
   }
 
   return (
-    <div className="-mx-3.5 -mt-3.5 flex h-[calc(100dvh-3.5rem-5.25rem)] flex-col sm:-mx-6 sm:-mt-6 md:h-[calc(100dvh-2rem)] lg:-mx-8 lg:-mt-8">
+    <div className={workspacePageRoot}>
       <div className="shrink-0 border-b border-primary/15 bg-white/90 px-3 py-2 backdrop-blur-md sm:px-4">
         <div className="flex flex-wrap items-center gap-2">
           <Link
@@ -1157,8 +1163,8 @@ export default function MediaPlanDetailPage() {
       </div>
 
       {/* Fixed-height master–detail: list scrolls left, scoring/swap stay on the right */}
-      <div className="grid min-h-0 flex-1 gap-3 p-3 md:grid-cols-[minmax(240px,34%)_1fr] md:p-4">
-        <div className="flex min-h-0 flex-col">{renderSiteList()}</div>
+      <div className={workspaceBodyGrid("md:grid-cols-[minmax(240px,34%)_1fr]")}>
+        <div className="flex flex-col md:min-h-0">{renderSiteList()}</div>
         <div className="hidden min-h-0 flex-col md:flex">{renderDetailPane()}</div>
       </div>
 
@@ -1182,7 +1188,9 @@ export default function MediaPlanDetailPage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-hidden p-2">{renderDetailPane()}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+              {renderDetailPane()}
+            </div>
           </div>
         </>
       ) : null}

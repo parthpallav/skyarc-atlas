@@ -1,0 +1,31 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const root = join(__dirname, "..");
+
+function readSrc(rel: string) {
+  return readFileSync(join(root, rel), "utf8");
+}
+
+describe("workspace page layout (mobile scroll)", () => {
+  it("shared layout module avoids mobile viewport lock", () => {
+    const layout = readSrc("lib/page-layout.ts");
+    expect(layout).toContain("md:h-[calc(100dvh-2rem)]");
+    expect(layout).not.toMatch(/h-\[calc\(100dvh-3\.5rem/);
+  });
+
+  it("campaign and plan pages use workspacePageRoot not legacy mobile calc", () => {
+    const campaign = readSrc("app/(app)/campaigns/[id]/page.tsx");
+    const plan = readSrc("app/(app)/campaigns/[id]/plans/[planId]/page.tsx");
+    expect(campaign).toContain("workspacePageRoot");
+    expect(plan).toContain("workspacePageRoot");
+    expect(campaign).not.toMatch(/h-\[calc\(100dvh-3\.5rem/);
+    expect(plan).not.toMatch(/h-\[calc\(100dvh-3\.5rem/);
+  });
+
+  it("mobile detail sheet scrolls site workspace", () => {
+    const plan = readSrc("app/(app)/campaigns/[id]/plans/[planId]/page.tsx");
+    expect(plan).toMatch(/overflow-y-auto overscroll-contain/);
+  });
+});
