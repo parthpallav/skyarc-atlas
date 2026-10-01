@@ -34,10 +34,15 @@ interface MediaPlanRow {
   _count?: { items: number };
 }
 
+function isActiveMediaPlan(plan: MediaPlanRow): boolean {
+  return Boolean(plan.isPrimary) || plan.status === "APPROVED";
+}
+
 interface CampaignDetail {
   id: string;
   name: string;
   createdAt: string;
+  lifecycleStatus?: string;
   startDate?: string | null;
   endDate?: string | null;
   createdByUserId?: string | null;
@@ -77,9 +82,9 @@ function isSiteRequestCampaign(campaign: CampaignDetail): boolean {
 }
 
 function planStatusPill(plan: MediaPlanRow) {
-  if (plan.isPrimary || plan.status === "APPROVED") {
+  if (isActiveMediaPlan(plan)) {
     return {
-      label: "Live / primary",
+      label: "Active",
       className: "border-emerald-200 bg-emerald-50 text-emerald-800",
     };
   }
@@ -106,7 +111,7 @@ export default function CampaignDetailPage() {
   const id = params.id;
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { canMutateCampaign } = usePermissions();
+  const { canMutateCampaign, isClient, isInternal, isAdmin } = usePermissions();
   const [error, setError] = useState("");
   const [briefOpen, setBriefOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -230,9 +235,52 @@ export default function CampaignDetailPage() {
   const days = durationDaysBetweenIso(campaign.startDate, campaign.endDate) ?? brief?.durationDays;
   const plans = [...(campaign.mediaPlans ?? [])].sort((a, b) => {
     const rank = (p: MediaPlanRow) =>
-      p.isPrimary || p.status === "APPROVED" ? 0 : p.status === "PROPOSED" ? 1 : 2;
+      isActiveMediaPlan(p) ? 0 : p.status === "PROPOSED" ? 1 : 2;
     return rank(a) - rank(b);
   });
+  const activePlans = plans.filter(isActiveMediaPlan);
+  const otherPlans = plans.filter((p) => !isActiveMediaPlan(p));
+  const hasApprovedOrPrimary = activePlans.length > 0;
+  const showPlanHierarchy =
+    otherPlans.length > 0 &&
+    hasApprovedOrPrimary &&
+    (campaign.lifecycleStatus === "ACTIVE" || hasApprovedOrPrimary);
+  const otherPlansDisclosureOpen = isInternal || isAdmin;
+
+  function renderPlanRow(plan: MediaPlanRow, emphasized: boolean, campaignId: string) {
+    const pill = planStatusPill(plan);
+    return (
+      <li key={plan.id}>
+        <Link
+          href={`/campaigns/${campaignId}/plans/${plan.id}`}
+          className={cn(
+            "flex items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-violet-50/80",
+            emphasized && "border-l-[3px] border-l-primary bg-emerald-50/30"
+          )}
+        >
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="truncate text-sm font-semibold text-slate-900">{plan.name}</h3>
+              <span
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                  pill.className
+                )}
+              >
+                {pill.label}
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-muted">
+              {plan._count?.items ?? 0} sites · {formatInr(Number(plan.totalBudget) || 0)}
+            </p>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-0.5 text-xs font-semibold text-primary">
+            Open <ChevronRight className="h-4 w-4" />
+          </span>
+        </Link>
+      </li>
+    );
+  }
 
   if (isSiteRequest && campaign.mediaPlans?.[0]?.id) {
     return <div className="py-12 text-center text-sm text-muted">Opening request…</div>;
@@ -349,42 +397,43 @@ export default function CampaignDetailPage() {
               <p className="px-4 py-10 text-center text-sm text-muted">
                 No plan yet. Create one to pack sites against this budget.
               </p>
+            ) : showPlanHierarchy && otherPlans.length > 0 ? (
+              <div className="divide-y divide-violet-50">
+                <div>
+                  <p className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+                    Active plan
+                  </p>
+                  <ul>
+                    {activePlans.map((plan) => renderPlanRow(plan, true, campaign.id))}
+                  </ul>
+                </div>
+                <details
+                  className="group"
+                  open={otherPlansDisclosureOpen || undefined}
+                >
+                  <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-semibold text-slate-700 hover:bg-violet-50/60 [&::-webkit-details-marker]:hidden">
+                    <span className="inline-flex items-center gap-1.5">
+                      <ChevronRight
+                        className="h-4 w-4 text-primary transition-transform group-open:rotate-90"
+                      />
+                      Other proposed plans ({otherPlans.length})
+                    </span>
+                    {isClient ? (
+                      <span className="mt-0.5 block text-[10px] font-normal text-muted">
+                        Expand to compare alternatives
+                      </span>
+                    ) : null}
+                  </summary>
+                  <ul className="border-t border-violet-50/80">
+                    {otherPlans.map((plan) => renderPlanRow(plan, false, campaign.id))}
+                  </ul>
+                </details>
+              </div>
             ) : (
               <ul className="divide-y divide-violet-50">
-                {plans.map((plan) => {
-                  const pill = planStatusPill(plan);
-                  return (
-                    <li key={plan.id}>
-                      <Link
-                        href={`/campaigns/${campaign.id}/plans/${plan.id}`}
-                        className="flex items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-violet-50/80"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="truncate text-sm font-semibold text-slate-900">
-                              {plan.name}
-                            </h3>
-                            <span
-                              className={cn(
-                                "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                                pill.className
-                              )}
-                            >
-                              {pill.label}
-                            </span>
-                          </div>
-                          <p className="mt-0.5 text-xs text-muted">
-                            {plan._count?.items ?? 0} sites ·{" "}
-                            {formatInr(Number(plan.totalBudget) || 0)}
-                          </p>
-                        </div>
-                        <span className="inline-flex shrink-0 items-center gap-0.5 text-xs font-semibold text-primary">
-                          Open <ChevronRight className="h-4 w-4" />
-                        </span>
-                      </Link>
-                    </li>
-                  );
-                })}
+                {plans.map((plan) =>
+                  renderPlanRow(plan, isActiveMediaPlan(plan), campaign.id)
+                )}
               </ul>
             )}
           </div>
@@ -392,19 +441,12 @@ export default function CampaignDetailPage() {
 
         <aside className="hidden min-h-0 flex-col overflow-hidden rounded-xl border border-primary/15 bg-primary/5 md:flex">
           <div className="shrink-0 border-b border-primary/10 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-              Brief
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">
+              Campaign brief
             </p>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            <CampaignSummary
-              advertiserName={campaign.advertiser?.name}
-              startDate={campaign.startDate}
-              endDate={campaign.endDate}
-              budget={budget}
-              brief={brief}
-              variant="embedded"
-            />
+            <CampaignSummary brief={brief} variant="embedded" />
           </div>
         </aside>
 
@@ -419,14 +461,7 @@ export default function CampaignDetailPage() {
           </button>
           {briefOpen ? (
             <div className="rounded-xl border border-primary/15 bg-white p-3">
-              <CampaignSummary
-                advertiserName={campaign.advertiser?.name}
-                startDate={campaign.startDate}
-                endDate={campaign.endDate}
-                budget={budget}
-                brief={brief}
-                variant="embedded"
-              />
+              <CampaignSummary brief={brief} variant="embedded" />
             </div>
           ) : null}
         </div>
