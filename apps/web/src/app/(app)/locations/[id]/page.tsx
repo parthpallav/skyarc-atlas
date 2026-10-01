@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useParams, useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   CalendarDays,
@@ -11,7 +11,6 @@ import {
   Pencil,
   Ruler,
   Send,
-  Trash2,
 } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -21,17 +20,20 @@ import { LocationOrbitTab } from "@/components/location-orbit-tab";
 import { showOrbitUi } from "@/lib/feature-flags";
 import { LocationCommercialPanel } from "@/components/location-commercial-panel";
 import { LocationSkyarcPricingPanel } from "@/components/location-skyarc-pricing-panel";
-import { canViewClientPricing, formatInventoryType } from "@skyarc/shared";
+import { formatInventoryType } from "@skyarc/shared";
 import { trackEntityView } from "@/lib/clarity-telemetry";
 import { useEffect, useMemo, useState } from "react";
 import { LocationDetailSkeleton } from "@/components/ui/skeleton";
 import { SlotIndicators, liveStatusBadge } from "@/components/slot-indicators";
 import { SiteDemandSignals } from "@/components/site-demand-signals";
 import { LocationScoreIntel } from "@/components/location-score-intel";
-import { LocationScoreEditor } from "@/components/location-score-editor";
 import { LocationCampaignProof } from "@/components/location-campaign-proof";
 import { CampaignSiteDestination } from "@/components/campaign-site-destination";
 import { formatInr } from "@/lib/format";
+import {
+  resolveLocationUiGates,
+  type DetailTabId,
+} from "@/lib/location-ui-gates";
 
 interface AssetRow {
   id: string;
@@ -43,8 +45,6 @@ interface AssetRow {
   contentType?: string;
   uploadStatus: string;
 }
-
-type DetailTab = "overview" | "index" | "rates" | "faces" | "orbit" | "admin";
 
 function isoDateLocal(d: Date) {
   const y = d.getFullYear();
@@ -66,8 +66,6 @@ export default function LocationDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const searchParams = useSearchParams();
-  const router = useRouter();
-  const queryClient = useQueryClient();
   const {
     canEditLocation,
     isVendor,
@@ -76,6 +74,7 @@ export default function LocationDetailPage() {
     isInternal,
     isAdmin,
     authUser,
+    canViewClientPricing,
   } = usePermissions();
 
   const flight = useMemo(() => {
@@ -195,18 +194,6 @@ export default function LocationDetailPage() {
     staleTime: 60_000,
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: async () => {
-      const client = createWebApiClient();
-      return client.deleteLocation(id);
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["locations"] });
-      await queryClient.invalidateQueries({ queryKey: ["locations-map"] });
-      router.push("/locations");
-    },
-  });
-
   const locationRecord = location
     ? {
         id: String(location.id ?? id),
@@ -227,46 +214,49 @@ export default function LocationDetailPage() {
   const isNetworkSite = isVendor && !isOwned;
   const demandAudience = isClient ? "client" : isVendor ? "vendor" : "internal";
 
-  // Platform showcase flag (API strips vendor fields when false for internal users)
   const showVendorDetailsFlag =
     (location?.showVendorDetails as boolean | undefined) !== false;
 
-  const showVendorCommercial =
-    showVendorDetailsFlag && !isClient && isOwned && (isVendor || isInternal);
-  const canManageSkyarcPricing = authUser ? canViewClientPricing(authUser) : false;
-  const canEditSkyarcPricing = canManageSkyarcPricing && !isClient && !isReadOnly;
-  const showInventory = (isOwned || isInternal) && !isClient;
+  const gates = useMemo(
+    () =>
+      resolveLocationUiGates({
+        isClient,
+        isVendor,
+        isInternal,
+        isAdmin,
+        isReadOnly,
+        isOwned,
+        canEdit,
+        showVendorDetails: showVendorDetailsFlag,
+        canViewClientPricing: Boolean(authUser && canViewClientPricing),
+        orbitUiEnabled: showOrbitUi(),
+      }),
+    [
+      isClient,
+      isVendor,
+      isInternal,
+      isAdmin,
+      isReadOnly,
+      isOwned,
+      canEdit,
+      showVendorDetailsFlag,
+      authUser,
+      canViewClientPricing,
+    ]
+  );
+
+  const showVendorCommercial = gates.showVendorCommercial;
   const showInternalIntel = isInternal && !isClient;
-  const showSkyarcIndex = Boolean(score?.overallScore != null) || showInternalIntel;
-  // Admins / planners manually set scores on any site they can access
-  const canEditScoreInputs = showInternalIntel && !isReadOnly && (canEdit || isAdmin || isInternal);
-  const showIndexTab = showInternalIntel;
-  const showRatesTab = showVendorCommercial || canManageSkyarcPricing;
-  const showAdminTab = isAdmin;
-  const showOrbitTab = showOrbitUi() && showInventory;
+  const showSkyarcIndex =
+    Boolean(score?.overallScore != null) || gates.showSkyarcIndexOnOverview;
+  const canEditScoreInputs = gates.canEditScoreInputs;
   const showMediaOwner =
     showVendorDetailsFlag && isInternal && Boolean(location?.mediaOwner);
   const showVendorMediaCode =
     showVendorDetailsFlag && isInternal && Boolean(location?.vendorMediaCode);
 
-  const tabs = useMemo(() => {
-    const list: Array<{ id: DetailTab; label: string }> = [
-      { id: "overview", label: "Overview" },
-    ];
-    if (showIndexTab) {
-      list.push({
-        id: "index",
-        label: score?.overallScore != null ? `Index ${Math.round(Number(score.overallScore))}` : "Index",
-      });
-    }
-    if (showRatesTab) list.push({ id: "rates", label: "Rates" });
-    if (showInventory) list.push({ id: "faces", label: "Faces" });
-    if (showOrbitTab) list.push({ id: "orbit", label: "Orbit" });
-    if (showAdminTab) list.push({ id: "admin", label: "Admin" });
-    return list;
-  }, [showIndexTab, showRatesTab, showInventory, showOrbitTab, showAdminTab, score?.overallScore]);
-
-  const [tab, setTab] = useState<DetailTab>("overview");
+  const tabs = gates.detailTabs;
+  const [tab, setTab] = useState<DetailTabId>("overview");
   const [destinationOpen, setDestinationOpen] = useState(false);
 
   useEffect(() => {
@@ -314,7 +304,7 @@ export default function LocationDetailPage() {
         | undefined)
     : undefined;
 
-  const skyarcCommercialView = canManageSkyarcPricing
+  const skyarcCommercialView = gates.showSkyarcPricing
     ? (location.skyarcCommercialView as
         | {
             clientRateAmount: number | null;
@@ -399,7 +389,10 @@ export default function LocationDetailPage() {
       Send request
     </button>
   ) : canEdit ? (
-    <Link href={`/locations/${id}/edit`} className="btn-primary w-full justify-center gap-2 py-3 text-sm sm:w-auto">
+    <Link
+      href={`/locations/${id}/edit?tab=photos`}
+      className="btn-primary w-full justify-center gap-2 py-3 text-sm sm:w-auto"
+    >
       <Pencil className="h-4 w-4" />
       Edit
     </Link>
@@ -564,16 +557,6 @@ export default function LocationDetailPage() {
                   <MapPin className="h-4 w-4" />
                   Map
                 </Link>
-                {canEditScoreInputs ? (
-                  <button
-                    type="button"
-                    className="btn-secondary justify-center gap-2 py-3 text-sm sm:py-2.5"
-                    onClick={() => setTab("index")}
-                  >
-                    <Gauge className="h-4 w-4" />
-                    {scoreNum != null ? "Edit Index score" : "Set Index score"}
-                  </button>
-                ) : null}
                 {showRequestBesideEdit ? (
                   <button
                     type="button"
@@ -584,33 +567,7 @@ export default function LocationDetailPage() {
                     Send request
                   </button>
                 ) : null}
-                {canEdit ? (
-                  <button
-                    type="button"
-                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-800"
-                    disabled={deleteMutation.isPending}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `Delete "${String(location.name)}"? This removes it from the map and lists.`
-                        )
-                      ) {
-                        deleteMutation.mutate();
-                      }
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    {deleteMutation.isPending ? "Deleting…" : "Delete"}
-                  </button>
-                ) : null}
               </div>
-              {deleteMutation.isError ? (
-                <p className="text-xs text-red-600">
-                  {deleteMutation.error instanceof Error
-                    ? deleteMutation.error.message
-                    : "Failed to delete location"}
-                </p>
-              ) : null}
             </div>
           </div>
         </div>
@@ -670,15 +627,15 @@ export default function LocationDetailPage() {
                     customerFacing={isClient || !isInternal}
                   />
                   {canEditScoreInputs ? (
-                    <button
-                      type="button"
-                      className="w-full rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-left text-sm font-semibold text-violet-900 hover:bg-violet-100"
-                      onClick={() => setTab("index")}
+                    <Link
+                      href={`/locations/${id}/edit?tab=index`}
+                      className="inline-flex w-full items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-900 hover:bg-violet-100"
                     >
+                      <Gauge className="h-4 w-4" />
                       {scoreNum != null
-                        ? "Open Index tab to change this site’s manual scores →"
-                        : "Open Index tab to set this site’s scores manually →"}
-                    </button>
+                        ? "Edit Index in workspace →"
+                        : "Set Index scores in workspace →"}
+                    </Link>
                   ) : null}
                 </div>
               ) : null}
@@ -779,73 +736,79 @@ export default function LocationDetailPage() {
           </section>
         ) : null}
 
-        {tab === "index" && showIndexTab ? (
+        {tab === "availability" ? (
           <section className="space-y-4">
-            <div className="rounded-2xl border border-violet-100 bg-violet-50/60 px-4 py-3 sm:px-5">
-              <p className="text-sm font-semibold text-slate-900">
-                Manual Skyarc Index for this location
+            <div className="rounded-2xl border border-violet-100 bg-white p-5 shadow-card sm:p-6">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                Flight window
               </p>
-              <p className="mt-1 text-xs leading-relaxed text-muted">
-                You set the factor scores yourself for this site (Visibility, Awareness, Audience,
-                Brand recall, etc.). They are stored on this location only — not a shared profile.
-                Current stored Index:{" "}
-                <span className="font-semibold text-slate-800">
-                  {scoreNum != null ? `${Math.round(scoreNum)} / 100` : "not set yet"}
+              <h2 className="mt-1 text-sm font-semibold text-slate-900">
+                {formatFlightLabel(flight.from, flight.to)}
+              </h2>
+              <p className="mt-3 text-sm text-slate-700">
+                Status:{" "}
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}>
+                  {badge.label}
                 </span>
               </p>
+              {isDigital && slotCapacity != null ? (
+                <div className="mt-4">
+                  <SlotIndicators
+                    indicators={live?.indicators ?? []}
+                    capacity={slotCapacity}
+                    used={slotUsed}
+                    label={
+                      liveStatus === "UNAVAILABLE"
+                        ? live?.earliestVacancyDate
+                          ? `Fully booked · next opening ${live.earliestVacancyDate}`
+                          : "Fully booked for these dates"
+                        : `${slotOpen} of ${slotCapacity} ad places open`
+                    }
+                  />
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-muted">
+                  {liveStatus === "UNAVAILABLE"
+                    ? "Exclusive face is booked for this window."
+                    : "Exclusive face available for this window."}
+                </p>
+              )}
             </div>
-            <LocationScoreIntel
-              overallScore={scoreNum}
-              overallConfidence={
-                score?.overallConfidence != null ? Number(score.overallConfidence) : null
-              }
-              status={score?.status ? String(score.status) : null}
-              components={score?.components ?? null}
-              methodology={score?.methodology}
-              scenario={score?.scenario ?? null}
-              configName={score?.configName ?? null}
-              customerFacing={false}
-            />
-            {canEditScoreInputs ? (
-              <LocationScoreEditor locationId={id} />
-            ) : (
-              <p className="text-sm text-muted">You have view-only access to this site’s Index.</p>
-            )}
           </section>
         ) : null}
 
-        {tab === "rates" && showRatesTab ? (
+        {tab === "rates" && gates.showRatesTab ? (
           <div className="space-y-4">
             {showVendorCommercial ? (
               <LocationCommercialPanel
                 locationId={id}
-                canWrite={canEdit}
+                canWrite={false}
                 commercialView={commercialView}
               />
             ) : null}
-            {canManageSkyarcPricing ? (
+            {gates.showSkyarcPricing ? (
               <LocationSkyarcPricingPanel
                 locationId={id}
-                canWrite={canEditSkyarcPricing}
+                canWrite={false}
                 skyarcCommercialView={skyarcCommercialView}
               />
             ) : null}
           </div>
         ) : null}
 
-        {tab === "faces" && showInventory ? (
+        {tab === "faces" && gates.showFacesTab ? (
           <LocationInventoryPanel
             locationId={id}
             canWrite={false}
-            showVendorRates={showVendorDetailsFlag}
+            showVendorRates={gates.showVendorCommercial}
           />
         ) : null}
 
-        {tab === "orbit" && showOrbitTab ? (
-          <LocationOrbitTab locationId={id} canWrite={canEdit} />
+        {tab === "orbit" && gates.showOrbitTab ? (
+          <LocationOrbitTab locationId={id} canWrite={false} />
         ) : null}
 
-        {tab === "admin" && showAdminTab ? (
+        {tab === "admin" && gates.showAdminTab ? (
           <section className="rounded-2xl border border-violet-100 bg-white p-5 shadow-card sm:p-6">
             <h2 className="mb-4 font-semibold text-slate-900">Admin metadata</h2>
             <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">

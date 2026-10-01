@@ -1,23 +1,45 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { PageHeader } from "@/components/page-header";
 import { LocationPhotoEditor } from "@/components/location-photo-editor";
 import { LocationInventoryPanel } from "@/components/location-inventory-panel";
 import { LocationInventoryWizard } from "@/components/location-inventory-wizard";
+import { LocationScoreEditor } from "@/components/location-score-editor";
+import { LocationScoreIntel } from "@/components/location-score-intel";
+import { LocationCommercialPanel } from "@/components/location-commercial-panel";
+import { LocationSkyarcPricingPanel } from "@/components/location-skyarc-pricing-panel";
+import { LocationOrbitTab } from "@/components/location-orbit-tab";
+import { showOrbitUi } from "@/lib/feature-flags";
+import {
+  resolveEditTab,
+  resolveLocationUiGates,
+  type EditTabId,
+} from "@/lib/location-ui-gates";
+import { cn } from "@/lib/utils";
 
 export default function LocationEditPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const { canEditLocation, isInternal } = usePermissions();
+  const {
+    canEditLocation,
+    isInternal,
+    isVendor,
+    isClient,
+    isAdmin,
+    isReadOnly,
+    canViewClientPricing,
+    authUser,
+  } = usePermissions();
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
 
@@ -30,22 +52,120 @@ export default function LocationEditPage() {
     },
   });
 
+  const { data: score } = useQuery({
+    queryKey: ["location-score", id],
+    queryFn: async () => {
+      const client = createWebApiClient();
+      const result = await client.getLocationScore(id);
+      return result.data as {
+        overallScore?: number;
+        overallConfidence?: number;
+        status?: string;
+        components?: Array<{
+          factor: string;
+          score: number;
+          confidence: number;
+          status?: string;
+          evidence?: string[];
+        }>;
+        methodology?: unknown;
+        scenario?: {
+          scenarioTitle?: string;
+          scenarioSummary?: string;
+          trustNotes?: string[];
+        };
+        configName?: string;
+      } | null;
+    },
+    enabled: Boolean(id) && isInternal,
+  });
+
+  const locationRecord = location
+    ? {
+        id: String(location.id ?? id),
+        createdByUserId: String(location.createdByUserId ?? ""),
+        organizationId:
+          location.organizationId != null ? String(location.organizationId) : null,
+        archivedAt: location.archivedAt as Date | null | undefined,
+      }
+    : null;
+
+  const isOwned = location
+    ? (location.isOwned as boolean | undefined) !== false
+    : true;
+  const canEdit =
+    Boolean(locationRecord) &&
+    canEditLocation(locationRecord!) &&
+    (isOwned || isInternal);
+
+  const showVendorDetailsFlag =
+    (location?.showVendorDetails as boolean | undefined) !== false;
+
+  const gates = useMemo(
+    () =>
+      resolveLocationUiGates({
+        isClient,
+        isVendor,
+        isInternal,
+        isAdmin,
+        isReadOnly,
+        isOwned,
+        canEdit,
+        showVendorDetails: showVendorDetailsFlag,
+        canViewClientPricing: Boolean(authUser && canViewClientPricing),
+        orbitUiEnabled: showOrbitUi(),
+      }),
+    [
+      isClient,
+      isVendor,
+      isInternal,
+      isAdmin,
+      isReadOnly,
+      isOwned,
+      canEdit,
+      showVendorDetailsFlag,
+      authUser,
+      canViewClientPricing,
+    ]
+  );
+
+  const requestedTab = searchParams.get("tab");
+  const activeTab: EditTabId = resolveEditTab(requestedTab, gates);
+
+  const setTab = (tab: EditTabId) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    router.replace(`${url.pathname}?${url.searchParams.toString()}`, { scroll: false });
+  };
+
   useEffect(() => {
     if (!location) return;
-    const record = {
-      id: String(location.id ?? id),
-      createdByUserId: String(location.createdByUserId ?? ""),
-      organizationId:
-        location.organizationId != null ? String(location.organizationId) : null,
-      archivedAt: location.archivedAt as Date | null | undefined,
-    };
-    const isOwned = (location.isOwned as boolean | undefined) !== false;
-    if (!canEditLocation(record) || !(isOwned || isInternal)) {
+    if (!gates.canOpenEdit) {
       router.replace(`/locations/${id}`);
       return;
     }
     setReady(true);
-  }, [location, canEditLocation, isInternal, id, router]);
+  }, [location, gates.canOpenEdit, id, router]);
+
+  useEffect(() => {
+    if (!ready || !gates.editTabs.length) return;
+    if (requestedTab !== activeTab) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", activeTab);
+      router.replace(`${url.pathname}?${url.searchParams.toString()}`, { scroll: false });
+    }
+  }, [ready, requestedTab, activeTab, gates.editTabs.length, router]);
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const client = createWebApiClient();
+      await client.deleteLocation(id);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["locations"] });
+      router.push("/locations");
+    },
+  });
 
   if (isLoading || !ready) {
     return (
@@ -67,8 +187,40 @@ export default function LocationEditPage() {
     );
   }
 
-  const showVendorRates =
-    (location.showVendorDetails as boolean | undefined) !== false;
+  const commercialView = gates.showVendorCommercial
+    ? (location.commercialView as
+        | {
+            marginPercent: number | null;
+            defaultRateAmount: number | null;
+            ratePeriod: string | null;
+            currency: string;
+            paymentTermsDays: number | null;
+            notes: string | null;
+            usesOrgDefaultMargin: boolean;
+          }
+        | undefined)
+    : undefined;
+  const skyarcCommercialView = gates.showSkyarcPricing
+    ? (location.skyarcCommercialView as
+        | {
+            clientRateAmount: number | null;
+            ratePeriod: string | null;
+            currency: string;
+            notes: string | null;
+          }
+        | undefined)
+    : undefined;
+
+  const scoreNum = score?.overallScore != null ? Number(score.overallScore) : null;
+
+  const invalidateAll = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["location", id] });
+    await queryClient.invalidateQueries({ queryKey: ["locations"] });
+    await queryClient.invalidateQueries({ queryKey: ["location-screens", id] });
+    await queryClient.invalidateQueries({ queryKey: ["screen-inventories"] });
+    await queryClient.invalidateQueries({ queryKey: ["location-assets", id] });
+    await queryClient.invalidateQueries({ queryKey: ["location-score", id] });
+  };
 
   return (
     <div className="mx-auto w-full max-w-4xl pb-16">
@@ -82,7 +234,7 @@ export default function LocationEditPage() {
 
       <PageHeader
         title="Edit location"
-        description="Site & market → format class → production specs (same flow as Add)"
+        description="Photos first, then site details — each tab edits one slice"
       />
 
       {error ? (
@@ -91,50 +243,158 @@ export default function LocationEditPage() {
         </p>
       ) : null}
 
-      <section className="card-surface mb-4 p-5 sm:p-6">
-        <h2 className="mb-4 font-semibold text-slate-900">Site photos</h2>
-        <LocationPhotoEditor locationId={id} />
-      </section>
+      {gates.editTabs.length > 1 ? (
+        <div className="mb-4 flex gap-1 overflow-x-auto border-b border-violet-100 pb-px">
+          {gates.editTabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={cn(
+                "shrink-0 rounded-t-lg px-4 py-2.5 text-sm font-semibold transition-colors",
+                activeTab === t.id
+                  ? "border-b-2 border-primary bg-violet-50/80 text-primary"
+                  : "text-muted hover:bg-violet-50/50 hover:text-slate-800"
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
-      <section className="card-surface mb-4 p-5 sm:p-6">
-        <h2 className="mb-1 font-semibold text-slate-900">Site, class & specs</h2>
-        <p className="mb-4 text-sm text-muted">
-          Update market geo and optionally add another face with production specs. Leave product
-          code blank to save site details only.
-        </p>
-        <LocationInventoryWizard
-          mode="edit"
-          allowSiteOnlySave
-          initial={{
-            id,
-            name: String(location.name ?? ""),
-            latitude: location.latitude as number,
-            longitude: location.longitude as number,
-            address: location.address ? String(location.address) : "",
-            road: location.road ? String(location.road) : "",
-            junction: location.junction ? String(location.junction) : "",
-            city: location.city ? String(location.city) : "",
-            district: location.district ? String(location.district) : "",
-            state: location.state ? String(location.state) : "",
-            mountingType: location.mountingType ? String(location.mountingType) : "",
-            mountingNotes: location.mountingNotes ? String(location.mountingNotes) : "",
-          }}
-          onError={setError}
-          onSuccess={async () => {
-            await queryClient.invalidateQueries({ queryKey: ["location", id] });
-            await queryClient.invalidateQueries({ queryKey: ["locations"] });
-            await queryClient.invalidateQueries({ queryKey: ["location-screens", id] });
-            await queryClient.invalidateQueries({ queryKey: ["screen-inventories"] });
-            router.push(`/locations/${id}`);
-          }}
-        />
-      </section>
+      <div className="min-h-[12rem]">
+        {activeTab === "photos" && gates.showEditPhotos ? (
+          <section className="card-surface p-5 sm:p-6">
+            <h2 className="mb-4 font-semibold text-slate-900">Site photos</h2>
+            <LocationPhotoEditor locationId={id} />
+          </section>
+        ) : null}
 
-      <LocationInventoryPanel
-        locationId={id}
-        canWrite
-        showVendorRates={showVendorRates}
-      />
+        {activeTab === "site" && gates.showEditSite ? (
+          <section className="card-surface p-5 sm:p-6">
+            <h2 className="mb-1 font-semibold text-slate-900">Site & market</h2>
+            <p className="mb-4 text-sm text-muted">
+              Update geo and mounting. Leave product code blank to save site details only.
+            </p>
+            <LocationInventoryWizard
+              mode="edit"
+              allowSiteOnlySave
+              initial={{
+                id,
+                name: String(location.name ?? ""),
+                latitude: location.latitude as number,
+                longitude: location.longitude as number,
+                address: location.address ? String(location.address) : "",
+                road: location.road ? String(location.road) : "",
+                junction: location.junction ? String(location.junction) : "",
+                city: location.city ? String(location.city) : "",
+                district: location.district ? String(location.district) : "",
+                state: location.state ? String(location.state) : "",
+                mountingType: location.mountingType ? String(location.mountingType) : "",
+                mountingNotes: location.mountingNotes ? String(location.mountingNotes) : "",
+              }}
+              onError={setError}
+              onSuccess={async () => {
+                await invalidateAll();
+                setError("");
+              }}
+            />
+          </section>
+        ) : null}
+
+        {activeTab === "faces" && gates.showEditFaces ? (
+          <LocationInventoryPanel
+            locationId={id}
+            canWrite
+            showVendorRates={gates.showVendorCommercial}
+          />
+        ) : null}
+
+        {activeTab === "index" && gates.showEditIndex ? (
+          <section className="space-y-4">
+            <div className="rounded-2xl border border-violet-100 bg-violet-50/60 px-4 py-3 sm:px-5">
+              <p className="text-sm font-semibold text-slate-900">Manual Skyarc Index</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted">
+                Factor scores for this location only. Current Index:{" "}
+                <span className="font-semibold text-slate-800">
+                  {scoreNum != null ? `${Math.round(scoreNum)} / 100` : "not set yet"}
+                </span>
+              </p>
+            </div>
+            <LocationScoreIntel
+              overallScore={scoreNum}
+              overallConfidence={
+                score?.overallConfidence != null ? Number(score.overallConfidence) : null
+              }
+              status={score?.status ? String(score.status) : null}
+              components={score?.components ?? null}
+              methodology={score?.methodology}
+              scenario={score?.scenario ?? null}
+              configName={score?.configName ?? null}
+              customerFacing={false}
+            />
+            <LocationScoreEditor locationId={id} />
+          </section>
+        ) : null}
+
+        {activeTab === "pricing" && gates.showEditPricing ? (
+          <div className="space-y-4">
+            {gates.showVendorCommercial ? (
+              <LocationCommercialPanel
+                locationId={id}
+                canWrite
+                commercialView={commercialView}
+              />
+            ) : null}
+            {gates.showSkyarcPricing ? (
+              <LocationSkyarcPricingPanel
+                locationId={id}
+                canWrite={gates.canEditSkyarcPricing}
+                skyarcCommercialView={skyarcCommercialView}
+              />
+            ) : null}
+          </div>
+        ) : null}
+
+        {activeTab === "orbit" && gates.showEditOrbit ? (
+          <LocationOrbitTab locationId={id} canWrite />
+        ) : null}
+
+        {activeTab === "danger" && gates.showEditDanger ? (
+          <section className="card-surface space-y-4 border-rose-100 p-5 sm:p-6">
+            <h2 className="font-semibold text-rose-900">Danger zone</h2>
+            <p className="text-sm text-muted">
+              Deleting removes this site from the map and lists. Prefer Hide from the catalog when you
+              only need it off discovery.
+            </p>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-800"
+              disabled={deleteMutation.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Delete "${String(location.name)}"? This removes it from the map and lists.`
+                  )
+                ) {
+                  deleteMutation.mutate();
+                }
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              {deleteMutation.isPending ? "Deleting…" : "Delete location"}
+            </button>
+            {deleteMutation.isError ? (
+              <p className="text-xs text-red-600">
+                {deleteMutation.error instanceof Error
+                  ? deleteMutation.error.message
+                  : "Failed to delete location"}
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+      </div>
     </div>
   );
 }
