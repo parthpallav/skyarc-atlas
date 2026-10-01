@@ -348,4 +348,27 @@ export async function assetRoutes(
       return success(await serializeAsset(asset, env, storage));
     }
   );
+
+  fastify.delete(
+    "/locations/:id/assets/:assetId",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      const locationId = uuidSchema.parse((request.params as { id: string }).id);
+      const assetId = uuidSchema.parse((request.params as { assetId: string }).assetId);
+      const location = await prisma.location.findUnique({ where: { id: locationId } });
+      if (!location) throw notFound("Location not found");
+      if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
+        throw forbidden();
+      }
+
+      const asset = await prisma.locationAsset.findFirst({
+        where: { id: assetId, locationId },
+      });
+      if (!asset) throw notFound("Asset not found");
+
+      await prisma.locationAsset.delete({ where: { id: assetId } });
+      invalidateLocationCaches(locationId);
+      return success({ id: assetId, view: asset.view, removed: true });
+    }
+  );
 }

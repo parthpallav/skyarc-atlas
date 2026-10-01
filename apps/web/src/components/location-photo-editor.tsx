@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Loader2, RefreshCw, Video } from "lucide-react";
+import { Camera, Loader2, RefreshCw, Trash2, Video } from "lucide-react";
+import { ConfirmModal } from "@/components/confirm-modal";
 import {
   PHOTO_VIEW_LABELS,
   PhotoView,
@@ -44,6 +45,12 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
   const queryClient = useQueryClient();
   const fileInputs = useRef<Partial<Record<PhotoView, HTMLInputElement | null>>>({});
   const [uploadingView, setUploadingView] = useState<PhotoView | null>(null);
+  const [removingView, setRemovingView] = useState<PhotoView | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<{
+    view: PhotoView;
+    assetId: string;
+    label: string;
+  } | null>(null);
   const [error, setError] = useState("");
 
   const { data: assets, isLoading } = useQuery({
@@ -80,6 +87,29 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
     },
     onSettled: () => {
       setUploadingView(null);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async ({ assetId }: { assetId: string; view: PhotoView }) => {
+      const client = createWebApiClient();
+      return client.deleteLocationAsset(locationId, assetId);
+    },
+    onMutate: ({ view }: { assetId: string; view: PhotoView }) => {
+      setRemovingView(view);
+      setError("");
+    },
+    onSuccess: async () => {
+      setRemoveTarget(null);
+      await queryClient.invalidateQueries({ queryKey: ["location-assets", locationId] });
+      await queryClient.invalidateQueries({ queryKey: ["location", locationId] });
+      await queryClient.invalidateQueries({ queryKey: ["locations"] });
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Could not remove photo");
+    },
+    onSettled: () => {
+      setRemovingView(null);
     },
   });
 
@@ -133,8 +163,8 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        Tap a slot to add or replace a photo or video. Use video for digital screen
-        captures (MP4, MOV, or WebM up to 200 MB).
+        Tap a slot to add or replace a photo or video, or remove one you no longer need.
+        Use video for digital screen captures (MP4, MOV, or WebM up to 200 MB).
       </p>
 
       {error && (
@@ -147,6 +177,7 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
         {SURVEY_PHOTO_VIEWS.map((view) => {
           const asset = assetsByView.get(view);
           const isUploading = uploadingView === view;
+          const isRemoving = removingView === view;
           const label = PHOTO_VIEW_LABELS[view];
           const isVideo = asset?.contentType
             ? isVideoContentType(asset.contentType)
@@ -157,16 +188,16 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
               key={view}
               className={cn(
                 "card-surface overflow-hidden",
-                isUploading && "ring-2 ring-primary/40"
+                (isUploading || isRemoving) && "ring-2 ring-primary/40"
               )}
             >
-              <button
-                type="button"
-                onClick={() => openPicker(view)}
-                disabled={isUploading}
-                className="w-full text-left group"
-              >
-                <div className="relative">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => openPicker(view)}
+                  disabled={isUploading || isRemoving}
+                  className="w-full text-left group"
+                >
                   <LocationImage
                     src={asset?.url}
                     alt={`${label} view`}
@@ -182,6 +213,11 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           Uploading…
                         </>
+                      ) : isRemoving ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Removing…
+                        </>
                       ) : asset?.url ? (
                         <>
                           <RefreshCw className="w-3.5 h-3.5" />
@@ -195,15 +231,28 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
                       )}
                     </span>
                   </div>
-                </div>
-                <div className="px-3 py-2 border-t border-violet-100">
-                  <p className="text-xs font-semibold text-slate-800 flex items-center gap-1">
-                    {label}
-                    {isVideo && <Video className="w-3 h-3 text-primary" />}
-                  </p>
-                  <p className="text-[11px] text-muted truncate">{VIEW_HINTS[view]}</p>
-                </div>
-              </button>
+                </button>
+                {asset?.url && asset.id ? (
+                  <button
+                    type="button"
+                    className="absolute right-2 top-2 z-10 inline-flex items-center gap-1 rounded-lg border border-white/80 bg-black/55 px-2 py-1 text-[10px] font-semibold text-white shadow-sm hover:bg-rose-700/90 disabled:opacity-50"
+                    disabled={isUploading || isRemoving || deleteMutation.isPending}
+                    onClick={() =>
+                      setRemoveTarget({ view, assetId: asset.id, label })
+                    }
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+              <div className="border-t border-violet-100 px-3 py-2">
+                <p className="flex items-center gap-1 text-xs font-semibold text-slate-800">
+                  {label}
+                  {isVideo && <Video className="h-3 w-3 text-primary" />}
+                </p>
+                <p className="truncate text-[11px] text-muted">{VIEW_HINTS[view]}</p>
+              </div>
               <input
                 ref={(el) => {
                   fileInputs.current[view] = el;
@@ -220,6 +269,30 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
           );
         })}
       </div>
+
+      <ConfirmModal
+        open={Boolean(removeTarget)}
+        title="Remove photo"
+        description={
+          removeTarget
+            ? `Remove the ${removeTarget.label.toLowerCase()} photo from this site? You can upload a new one anytime.`
+            : undefined
+        }
+        confirmLabel="Remove"
+        danger
+        busy={deleteMutation.isPending}
+        onClose={() => {
+          if (!deleteMutation.isPending) setRemoveTarget(null);
+        }}
+        onConfirm={() => {
+          if (removeTarget) {
+            deleteMutation.mutate({
+              assetId: removeTarget.assetId,
+              view: removeTarget.view,
+            });
+          }
+        }}
+      />
     </div>
   );
 }

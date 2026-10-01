@@ -542,6 +542,13 @@ export class ApiClient {
     return this.request<unknown[]>(`/locations/${locationId}/assets`);
   }
 
+  deleteLocationAsset(locationId: string, assetId: string) {
+    return this.request<{ id: string; view: string; removed: boolean }>(
+      `/locations/${locationId}/assets/${assetId}`,
+      { method: "DELETE" }
+    );
+  }
+
   async uploadLocationPhoto(
     locationId: string,
     view: string,
