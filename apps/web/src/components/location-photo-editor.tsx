@@ -173,6 +173,7 @@ export function LocationPhotoEditor({ locationId }: LocationPhotoEditorProps) {
                     aspect="video"
                     className="rounded-none border-0"
                     contentType={asset?.contentType}
+                    fit="contain"
                   />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/35 transition-colors flex items-center justify-center pointer-events-none">
                     <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1.5 text-white text-xs font-semibold bg-black/50 px-2.5 py-1.5 rounded-full">

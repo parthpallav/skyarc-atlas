@@ -10,6 +10,10 @@ interface LocationImageProps {
   className?: string;
   aspect?: "video" | "square" | "wide";
   contentType?: string | null;
+  /** cover fills the frame; contain shows full portrait/landscape without cropping */
+  fit?: "cover" | "contain";
+  /** When true, fills a positioned parent (no fixed aspect box on this node). */
+  fill?: boolean;
 }
 
 const aspectClass = {
@@ -24,14 +28,20 @@ export function LocationImage({
   className,
   aspect = "video",
   contentType,
+  fit,
+  fill = false,
 }: LocationImageProps) {
   const isVideo = contentType ? isVideoContentType(contentType) : false;
+  const objectFit = fit ?? (isVideo ? "contain" : "cover");
+  const mediaClass =
+    objectFit === "contain" ? "object-contain object-center" : "object-cover object-center";
 
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-lg bg-slate-100 border border-slate-200",
-        aspectClass[aspect],
+        "relative overflow-hidden rounded-lg border border-slate-200",
+        isVideo || objectFit === "contain" ? "bg-slate-950" : "bg-slate-100",
+        fill ? "absolute inset-0" : aspectClass[aspect],
         className
       )}
     >
@@ -39,7 +49,7 @@ export function LocationImage({
         isVideo ? (
           <video
             src={src}
-            className="absolute inset-0 h-full w-full object-cover"
+            className={cn("absolute inset-0 h-full w-full", mediaClass)}
             controls
             playsInline
             preload="metadata"
@@ -50,7 +60,7 @@ export function LocationImage({
           <img
             src={src}
             alt={alt}
-            className="absolute inset-0 h-full w-full object-cover"
+            className={cn("absolute inset-0 h-full w-full", mediaClass)}
             loading="lazy"
           />
         )

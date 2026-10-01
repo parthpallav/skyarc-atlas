@@ -42,6 +42,7 @@ export function ImageGallery({ images, altPrefix }: ImageGalleryProps) {
           aspect="wide"
           className="w-full"
           contentType={active?.contentType}
+          fit="contain"
         />
         {active?.viewLabel && (
           <p className="text-sm font-medium text-slate-700 mt-2">{active.viewLabel} view</p>
@@ -63,8 +64,9 @@ export function ImageGallery({ images, altPrefix }: ImageGalleryProps) {
                 src={img.url}
                 alt={`${altPrefix} — ${img.viewLabel ?? "thumbnail"}`}
                 aspect="video"
-                className="w-28 rounded-t-lg rounded-b-none"
+                className="w-28 rounded-t-lg rounded-b-none border-0"
                 contentType={img.contentType}
+                fit="contain"
               />
               {img.viewLabel && (
                 <span className="block text-[10px] font-semibold text-center py-1 bg-white text-slate-600 truncate px-1">

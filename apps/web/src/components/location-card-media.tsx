@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { LocationImage } from "@/components/location-image";
+import { isVideoContentType } from "@skyarc/shared";
 
 export interface PreviewMediaItem {
   id: string;
@@ -54,30 +54,41 @@ export function LocationCardMedia({
     setIndex((i) => (i + dir + items.length) % items.length);
   };
 
+  const activeIsVideo = active?.contentType
+    ? isVideoContentType(active.contentType)
+    : false;
+
   return (
     <div
-      className={`relative aspect-[16/9] overflow-hidden bg-slate-100 ${className ?? ""}`}
+      className={`relative aspect-[16/9] overflow-hidden ${
+        activeIsVideo ? "bg-slate-950" : "bg-slate-100"
+      } ${className ?? ""}`}
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
     >
-      {active?.contentType?.startsWith("video/") ? (
-        <video
-          key={active.id}
-          src={active.url}
-          className="h-full w-full object-cover"
-          muted
-          playsInline
-          autoPlay={hovering}
-          loop
-        />
-      ) : (
-        <LocationImage
-          src={active?.url ?? null}
-          alt={name}
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-          contentType={active?.contentType}
-        />
-      )}
+      {active?.url ? (
+        activeIsVideo ? (
+          <video
+            key={active.id}
+            src={active.url}
+            className="absolute inset-0 h-full w-full object-contain object-center"
+            muted
+            playsInline
+            autoPlay={hovering}
+            loop
+            preload="metadata"
+          />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={active.id}
+            src={active.url}
+            alt={name}
+            className="absolute inset-0 h-full w-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.02]"
+            loading="lazy"
+          />
+        )
+      ) : null}
 
       {multi ? (
         <>
