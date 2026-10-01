@@ -10,15 +10,29 @@ export function hashPasswordResetToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+/** API hostnames must never be used for browser reset links. */
+export function isLikelyApiOrigin(origin: string): boolean {
+  try {
+    const u = new URL(origin);
+    if (u.port === "3001" || u.port === "3002") return true;
+    if (u.pathname.startsWith("/api")) return true;
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 export function resolveWebAppOrigin(env: Env, requestOrigin?: string | null): string {
   if (env.WEB_APP_URL) return env.WEB_APP_URL.replace(/\/$/, "");
-  if (requestOrigin) {
+  if (requestOrigin && !isLikelyApiOrigin(requestOrigin)) {
     const allowed = parseCorsOrigins(env.CORS_ORIGINS);
     if (allowed.includes("*") || allowed.includes(requestOrigin)) {
       return requestOrigin.replace(/\/$/, "");
     }
   }
-  const first = parseCorsOrigins(env.CORS_ORIGINS).find((o) => o !== "*" && !o.includes("*"));
+  const first = parseCorsOrigins(env.CORS_ORIGINS).find(
+    (o) => o !== "*" && !o.includes("*") && !isLikelyApiOrigin(o)
+  );
   return (first ?? "http://localhost:3000").replace(/\/$/, "");
 }
 
