@@ -51,6 +51,20 @@ export interface EffectiveLocationCommercial {
   usesOrgDefaultMargin: boolean;
 }
 
+/** Default premium badges on campaign brief format chips (admin can override in platform settings). */
+export const DEFAULT_PREMIUM_MEDIA_FORMATS: readonly string[] = [
+  "Digital Billboard (DOOH)",
+  "Unipole",
+  "Gantry / Overbridge",
+];
+
+export function isPremiumMediaFormat(
+  format: string,
+  premiumFormats: readonly string[]
+): boolean {
+  return premiumFormats.includes(format);
+}
+
 export interface PlatformConfigData {
   defaultSkyarcMarginPercent: number;
   currency: string;
@@ -60,12 +74,15 @@ export interface PlatformConfigData {
    * Vendors still see their own commercial data.
    */
   showVendorDetailsOnLocationPage: boolean;
+  /** Campaign brief format labels that show the Premium badge. */
+  premiumFormats: string[];
 }
 
 export const DEFAULT_PLATFORM_CONFIG: PlatformConfigData = {
   defaultSkyarcMarginPercent: DEFAULT_SKYARC_MARGIN_PERCENT,
   currency: DEFAULT_CURRENCY,
   showVendorDetailsOnLocationPage: true,
+  premiumFormats: [...DEFAULT_PREMIUM_MEDIA_FORMATS],
 };
 
 export function parseOrganizationCommercial(
@@ -203,6 +220,11 @@ export function parsePlatformConfig(value: unknown): PlatformConfigData {
       typeof raw.showVendorDetailsOnLocationPage === "boolean"
         ? raw.showVendorDetailsOnLocationPage
         : DEFAULT_PLATFORM_CONFIG.showVendorDetailsOnLocationPage,
+    premiumFormats: Array.isArray(raw.premiumFormats)
+      ? raw.premiumFormats.filter(
+          (item): item is string => typeof item === "string" && item.trim().length > 0
+        )
+      : [...DEFAULT_PLATFORM_CONFIG.premiumFormats],
   };
 }
 

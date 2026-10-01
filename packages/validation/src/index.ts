@@ -205,6 +205,7 @@ export const platformConfigBodySchema = z.object({
   defaultSkyarcMarginPercent: marginPercentSchema.optional(),
   currency: z.string().min(3).max(3).optional(),
   showVendorDetailsOnLocationPage: z.boolean().optional(),
+  premiumFormats: z.array(z.string().min(1).max(120)).max(32).optional(),
 });
 
 export const locationSchema = z.object({

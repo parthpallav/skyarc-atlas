@@ -712,11 +712,16 @@ export class ApiClient {
     });
   }
 
+  getPlatformPremiumFormats() {
+    return this.request<{ premiumFormats: string[] }>("/platform/premium-formats");
+  }
+
   getPlatformConfig() {
     return this.request<{
       defaultSkyarcMarginPercent: number;
       currency: string;
       showVendorDetailsOnLocationPage: boolean;
+      premiumFormats: string[];
     }>("/platform/config");
   }
 
@@ -724,6 +729,7 @@ export class ApiClient {
     defaultSkyarcMarginPercent?: number;
     currency?: string;
     showVendorDetailsOnLocationPage?: boolean;
+    premiumFormats?: string[];
   }) {
     return this.request<unknown>("/platform/config", {
       method: "PATCH",

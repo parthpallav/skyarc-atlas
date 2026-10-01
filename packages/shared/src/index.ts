@@ -528,6 +528,8 @@ export {
   parseLocationCommercial,
   parseSkyarcLocationCommercial,
   parsePlatformConfig,
+  DEFAULT_PREMIUM_MEDIA_FORMATS,
+  isPremiumMediaFormat,
   resolveMarginPercent,
   resolveEffectiveLocationCommercial,
   resolveEffectiveSkyarcLocationCommercial,

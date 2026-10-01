@@ -6,12 +6,14 @@ import { createWebApiClient } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
 import { usePermissions } from "@/hooks/use-permissions";
 import { AdminSkyarcIndexSettings } from "@/components/admin-skyarc-index-settings";
+import { FORMAT_PRESETS } from "@/components/campaign-brief-form";
 
 export default function AdminSettingsPage() {
   const queryClient = useQueryClient();
   const { isSuperAdmin, isAdmin } = usePermissions();
   const [margin, setMargin] = useState("15");
   const [showVendorDetails, setShowVendorDetails] = useState(true);
+  const [premiumFormats, setPremiumFormats] = useState<string[]>([]);
   const [message, setMessage] = useState("");
 
   const { data, isLoading } = useQuery({
@@ -27,6 +29,7 @@ export default function AdminSettingsPage() {
     if (!data) return;
     setMargin(String(data.defaultSkyarcMarginPercent));
     setShowVendorDetails(data.showVendorDetailsOnLocationPage !== false);
+    setPremiumFormats(Array.isArray(data.premiumFormats) ? data.premiumFormats : []);
   }, [data]);
 
   useEffect(() => {
@@ -42,11 +45,13 @@ export default function AdminSettingsPage() {
       return client.updatePlatformConfig({
         defaultSkyarcMarginPercent: Number(margin),
         showVendorDetailsOnLocationPage: showVendorDetails,
+        premiumFormats,
       });
     },
     onSuccess: async () => {
       setMessage("Platform settings saved.");
       await queryClient.invalidateQueries({ queryKey: ["platform-config"] });
+      await queryClient.invalidateQueries({ queryKey: ["platform-premium-formats"] });
       await queryClient.invalidateQueries({ queryKey: ["location"] });
       await queryClient.invalidateQueries({ queryKey: ["locations"] });
       await queryClient.invalidateQueries({ queryKey: ["screen-inventories"] });
@@ -117,6 +122,42 @@ export default function AdminSettingsPage() {
                 Showcase mode is on — vendor identity and vendor rates are hidden for internal users.
               </p>
             ) : null}
+          </div>
+
+          <div className="rounded-xl border border-violet-100 bg-white p-4">
+            <p className="text-sm font-semibold text-slate-900">Premium media formats</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted">
+              Formats selected here show a Premium badge on campaign briefs and wizards. Clients and
+              planners see the same labels.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {FORMAT_PRESETS.map((format) => {
+                const on = premiumFormats.includes(format);
+                return (
+                  <button
+                    key={format}
+                    type="button"
+                    onClick={() => {
+                      setPremiumFormats((prev) =>
+                        on ? prev.filter((f) => f !== format) : [...prev, format]
+                      );
+                    }}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                      on
+                        ? "border-amber-300 bg-amber-50 text-amber-950"
+                        : "border-violet-200 bg-white text-slate-700 hover:bg-violet-50"
+                    }`}
+                  >
+                    {format}
+                    {on ? (
+                      <span className="rounded bg-amber-200 px-1 py-px text-[9px] font-bold uppercase text-amber-900">
+                        Premium
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {message ? (

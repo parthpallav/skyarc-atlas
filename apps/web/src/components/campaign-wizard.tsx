@@ -25,9 +25,9 @@ import {
   FORMAT_PRESETS,
   KPI_PRESETS,
   OBJECTIVE_OPTIONS,
-  isPremiumFormat,
   type StructuredBriefState,
 } from "@/components/campaign-brief-form";
+import { usePremiumFormats } from "@/hooks/use-premium-formats";
 
 const inputClass =
   "w-full rounded-lg border border-violet-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30";
@@ -140,6 +140,7 @@ export function CampaignWizard({
   submitLabel?: string;
   onSubmit: (payload: CampaignWizardPayload) => void;
 }) {
+  const { isPremiumFormat } = usePremiumFormats();
   const [step, setStep] = useState(1);
   const [stepError, setStepError] = useState("");
   const [name, setName] = useState(initial?.name ?? "");

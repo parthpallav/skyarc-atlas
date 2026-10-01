@@ -19,6 +19,7 @@ import {
   listMarketCities,
   listStates,
 } from "@skyarc/shared";
+import { usePremiumFormats } from "@/hooks/use-premium-formats";
 
 export interface StructuredBriefState {
   objective?: string;
@@ -98,17 +99,6 @@ export const FORMAT_PRESETS = [
   "Transit / Bus Wrap",
 ];
 
-/** Formats highlighted with a Premium badge in the campaign brief UI. */
-export const PREMIUM_FORMATS = new Set([
-  "Digital Billboard (DOOH)",
-  "Unipole",
-  "Gantry / Overbridge",
-]);
-
-export function isPremiumFormat(format: string): boolean {
-  return PREMIUM_FORMATS.has(format);
-}
-
 export const BUDGET_PRESETS = [
   { label: "₹2 Lakh", value: 200000 },
   { label: "₹5 Lakh", value: 500000 },
@@ -143,6 +133,7 @@ export function CampaignBriefBuilder({
   initialValues,
   onChange,
 }: CampaignBriefBuilderProps) {
+  const { isPremiumFormat } = usePremiumFormats();
   const [mode, setMode] = useState<"guided" | "raw">("guided");
 
   const [objective, setObjective] = useState(

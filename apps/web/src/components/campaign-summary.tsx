@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { formatDateIn, durationDaysBetweenIso } from "@/lib/dates";
 import { formatInr } from "@/lib/format";
-import { isPremiumFormat } from "@/components/campaign-brief-form";
+import { usePremiumFormats } from "@/hooks/use-premium-formats";
 
 export interface CampaignSummaryBrief {
   objective?: string;
@@ -61,6 +61,7 @@ function ChipList({
 }
 
 function EmbeddedBriefLayers({ brief }: { brief?: CampaignSummaryBrief | null }) {
+  const { isPremiumFormat } = usePremiumFormats();
   const hasMore =
     Boolean(brief?.kpis?.length) ||
     Boolean(brief?.additionalNotes) ||
