@@ -11,6 +11,8 @@ import {
   bulkApplyLocationCommercialBodySchema,
   updateSkyarcLocationCommercialBodySchema,
   bulkLocationActionBodySchema,
+  locationAvailabilityPreviewBodySchema,
+  locationAvailabilityReleaseBodySchema,
   siteInterestBodySchema,
   locationPresenceBodySchema,
   uuidSchema,
@@ -38,6 +40,7 @@ import {
   listMarketCities,
   corridorsForCity,
   corridorSearchVariants,
+  isAdminRole,
 } from "@skyarc/shared";
 import { prisma } from "../../lib/prisma.js";
 import { success, listMeta, toIso } from "../../lib/response.js";
@@ -58,7 +61,11 @@ import {
 } from "../../lib/org-scope.js";
 import { loadPlatformConfig } from "../../lib/commercial-config.js";
 import { forbidden, notFound } from "../../lib/errors.js";
-import { coverUrlsForLocations } from "../../lib/asset-url.js";
+import { coverUrlsForLocations, previewMediaForLocations } from "../../lib/asset-url.js";
+import {
+  buildAvailabilityReleasePreview,
+  releaseAvailabilityForWindow,
+} from "../../lib/availability-release.js";
 import {
   customerRateForInventory,
   loadEligibleInventory,
@@ -403,16 +410,24 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
     const filters: Record<string, unknown>[] = [...geoFilterClauses(query)];
 
     if (query.q) {
-      filters.push({
-        OR: [
-          { name: { contains: query.q, mode: "insensitive" as const } },
-          { road: { contains: query.q, mode: "insensitive" as const } },
-          { address: { contains: query.q, mode: "insensitive" as const } },
-          { junction: { contains: query.q, mode: "insensitive" as const } },
-          { city: { contains: query.q, mode: "insensitive" as const } },
-          { skyarcSiteCode: { contains: query.q, mode: "insensitive" as const } },
-        ],
-      });
+      const q = query.q.trim();
+      const or: Record<string, unknown>[] = [
+        { name: { contains: q, mode: "insensitive" as const } },
+        { road: { contains: q, mode: "insensitive" as const } },
+        { address: { contains: q, mode: "insensitive" as const } },
+        { junction: { contains: q, mode: "insensitive" as const } },
+        { city: { contains: q, mode: "insensitive" as const } },
+        { skyarcSiteCode: { contains: q, mode: "insensitive" as const } },
+        { vendorMediaCode: { contains: q, mode: "insensitive" as const } },
+      ];
+      const uuidOk =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          q
+        );
+      if (uuidOk) {
+        or.push({ id: q });
+      }
+      filters.push({ OR: or });
     }
 
     if (query.status && query.status !== "ALL") {
@@ -455,6 +470,11 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
     const covers = await coverUrlsForLocations(
       env,
       locations.map((l) => l.id)
+    );
+    const previewMedia = await previewMediaForLocations(
+      env,
+      locations.map((l) => l.id),
+      6
     );
 
     const flightFrom = query.from
@@ -529,6 +549,7 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
         return {
           ...base,
           liveInventory,
+          previewMedia: previewMedia.get(l.id) ?? [],
           flight: {
             from: flightFrom.toISOString().slice(0, 10),
             to: flightTo.toISOString().slice(0, 10),
@@ -1319,6 +1340,53 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
       }
 
       return success({ updated: ids.length, action: body.action });
+    }
+  );
+
+  fastify.post(
+    "/locations/availability/preview-release",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      if (isReadOnly(request.user)) throw forbidden();
+      if (!isAdminRole(request.user)) throw forbidden();
+      const body = locationAvailabilityPreviewBodySchema.parse(request.body);
+      if (body.from > body.to) throw forbidden("Invalid flight window");
+      const preview = await buildAvailabilityReleasePreview(
+        prisma,
+        body.locationIds,
+        body.from,
+        body.to
+      );
+      return success(preview);
+    }
+  );
+
+  fastify.post(
+    "/locations/availability/release",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      if (isReadOnly(request.user)) throw forbidden();
+      if (!isAdminRole(request.user)) throw forbidden();
+      const body = locationAvailabilityReleaseBodySchema.parse(request.body);
+      if (body.from > body.to) throw forbidden("Invalid flight window");
+
+      const result = await releaseAvailabilityForWindow(prisma, {
+        locationIds: body.locationIds,
+        from: body.from,
+        to: body.to,
+        reason: body.reason.trim(),
+        actorUserId: request.user.id,
+      });
+
+      for (const id of result.locationIds) {
+        invalidateLocationCaches(id);
+      }
+
+      return success({
+        releasedWindows: result.releasedWindows,
+        updated: result.locationIds.length,
+        preview: result.preview,
+      });
     }
   );
 }

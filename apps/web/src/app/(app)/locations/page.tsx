@@ -23,7 +23,8 @@ import { FileSpreadsheet } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { PageHeader } from "@/components/page-header";
-import { LocationImage } from "@/components/location-image";
+import { LocationCardMedia } from "@/components/location-card-media";
+import { ConfirmModal } from "@/components/confirm-modal";
 import {
   formatInventoryType,
   inventoryTypeBucket,
@@ -42,6 +43,14 @@ import {
   type SiteInterest,
 } from "@/components/site-demand-signals";
 
+interface PreviewMediaItem {
+  id: string;
+  url: string;
+  contentType?: string;
+  kind?: string;
+  sortOrder?: number;
+}
+
 interface Location {
   id: string;
   skyarcSiteCode?: string | null;
@@ -53,6 +62,7 @@ interface Location {
   district?: string | null;
   state?: string | null;
   coverImageUrl?: string;
+  previewMedia?: PreviewMediaItem[];
   inventoryTypes?: string[];
   bookingStatus?: "AVAILABLE" | "UNAVAILABLE" | "ON_HOLD" | null;
   createdAt?: string;
@@ -188,7 +198,7 @@ function formatFlightLabel(from: string, to: string) {
 }
 
 export default function LocationsPage() {
-  const { isVendor, isReadOnly, isClient, isInternal } = usePermissions();
+  const { isVendor, isReadOnly, isClient, isInternal, isAdmin } = usePermissions();
   const audience = isClient ? "client" : isVendor ? "vendor" : "internal";
   const queryClient = useQueryClient();
   const defaults = useMemo(() => defaultFlight(), []);
@@ -199,7 +209,7 @@ export default function LocationsPage() {
   const [cityFilters, setCityFilters] = useState<Set<string>>(new Set());
   const [stateFilters, setStateFilters] = useState<Set<string>>(new Set());
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
-  const [availFilter, setAvailFilter] = useState<AvailFilter>("ALL");
+  const [availFilter, setAvailFilter] = useState<AvailFilter>("BOOKABLE");
   const [sortBy, setSortBy] = useState<SortKey>("name");
   const [flightFrom, setFlightFrom] = useState(defaults.from);
   const [flightTo, setFlightTo] = useState(defaults.to);
@@ -211,6 +221,23 @@ export default function LocationsPage() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [destinationOpen, setDestinationOpen] = useState(false);
   const [visibility, setVisibility] = useState<"active" | "hidden">("active");
+  const [confirmAction, setConfirmAction] = useState<
+    null | "UNAVAILABLE" | "ARCHIVE" | "UNARCHIVE"
+  >(null);
+  const [releaseOpen, setReleaseOpen] = useState(false);
+  const [releaseReason, setReleaseReason] = useState("");
+  const [releasePreview, setReleasePreview] = useState<{
+    totalOverlappingWindows: number;
+    locations: Array<{
+      locationId: string;
+      overlappingWindows: Array<{ id: string; status: string }>;
+      affectedCampaigns: Array<{ id: string; name: string; lifecycleStatus: string }>;
+      affectedMediaPlans: Array<{ id: string; name: string; status: string }>;
+    }>;
+  } | null>(null);
+  const [releaseError, setReleaseError] = useState("");
+  const [simpleAvailableOpen, setSimpleAvailableOpen] = useState(false);
+  const [blockedBookedOpen, setBlockedBookedOpen] = useState(false);
 
   const { data: geoFacets } = useQuery({
     queryKey: ["location-geo-facets"],
@@ -435,9 +462,64 @@ export default function LocationsPage() {
       };
       setBulkMessage(`${labels[result.data.action] ?? result.data.action} · ${result.data.updated} site(s)`);
       setSelected(new Set());
+      setConfirmAction(null);
+      setSimpleAvailableOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["locations"] });
     },
   });
+
+  const releaseMutation = useMutation({
+    mutationFn: async () => {
+      const client = createWebApiClient();
+      return client.releaseAvailabilityWindow(
+        Array.from(selected),
+        flightFrom,
+        flightTo,
+        releaseReason.trim()
+      );
+    },
+    onSuccess: async (result) => {
+      setBulkMessage(
+        `Freed ${result.data.releasedWindows} window(s) · ${result.data.updated} site(s) for ${flightFrom}–${flightTo}`
+      );
+      setSelected(new Set());
+      setReleaseOpen(false);
+      setReleasePreview(null);
+      setReleaseReason("");
+      await queryClient.invalidateQueries({ queryKey: ["locations"] });
+    },
+    onError: (err) => {
+      setReleaseError(err instanceof Error ? err.message : "Release failed");
+    },
+  });
+
+  const openMarkAvailable = async () => {
+    const selectedLocs = (data ?? []).filter((l) => selected.has(l.id));
+    const bookedIds = selectedLocs.filter((l) => isFullyUnavailable(l)).map((l) => l.id);
+    if (bookedIds.length === 0) {
+      setSimpleAvailableOpen(true);
+      return;
+    }
+    if (!isAdmin) {
+      setBlockedBookedOpen(true);
+      return;
+    }
+    setReleaseError("");
+    setReleaseReason("");
+    try {
+      const client = createWebApiClient();
+      const preview = await client.previewAvailabilityRelease(
+        Array.from(selected),
+        flightFrom,
+        flightTo
+      );
+      setReleasePreview(preview.data);
+      setReleaseOpen(true);
+    } catch (err) {
+      setReleaseError(err instanceof Error ? err.message : "Could not load impact preview");
+      setReleaseOpen(true);
+    }
+  };
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -580,7 +662,7 @@ export default function LocationsPage() {
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-              placeholder="Search name, road, Skyarc ID…"
+              placeholder="Search name, Skyarc ID, vendor code…"
               className="w-full rounded-lg border border-violet-200 bg-white py-2 pl-8 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
             />
             {searchTerm ? (
@@ -898,8 +980,8 @@ export default function LocationsPage() {
                   <button
                     type="button"
                     className="btn-secondary text-xs py-1.5 px-2.5"
-                    disabled={governMutation.isPending}
-                    onClick={() => governMutation.mutate("AVAILABLE")}
+                    disabled={governMutation.isPending || releaseMutation.isPending}
+                    onClick={() => void openMarkAvailable()}
                   >
                     Mark available
                   </button>
@@ -907,7 +989,7 @@ export default function LocationsPage() {
                     type="button"
                     className="btn-secondary text-xs py-1.5 px-2.5"
                     disabled={governMutation.isPending}
-                    onClick={() => governMutation.mutate("UNAVAILABLE")}
+                    onClick={() => setConfirmAction("UNAVAILABLE")}
                   >
                     Mark unavailable
                   </button>
@@ -915,11 +997,7 @@ export default function LocationsPage() {
                     type="button"
                     className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-800"
                     disabled={governMutation.isPending}
-                    onClick={() => {
-                      if (window.confirm(`Hide ${selected.size} site(s) from the catalog?`)) {
-                        governMutation.mutate("ARCHIVE");
-                      }
-                    }}
+                    onClick={() => setConfirmAction("ARCHIVE")}
                   >
                     <EyeOff className="w-3.5 h-3.5" />
                     Hide
@@ -930,11 +1008,7 @@ export default function LocationsPage() {
                   type="button"
                   className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800"
                   disabled={governMutation.isPending}
-                  onClick={() => {
-                    if (window.confirm(`Restore ${selected.size} site(s) to the catalog?`)) {
-                      governMutation.mutate("UNARCHIVE");
-                    }
-                  }}
+                  onClick={() => setConfirmAction("UNARCHIVE")}
                 >
                   <Eye className="w-3.5 h-3.5" />
                   Unhide
@@ -1033,14 +1107,14 @@ export default function LocationsPage() {
                 } ${full || viewingHidden ? "opacity-60" : ""}`}
               >
                 <div
-                  className={`relative aspect-[16/9] bg-slate-100 overflow-hidden ${
+                  className={`relative overflow-hidden ${
                     full || viewingHidden ? "grayscale" : ""
                   }`}
                 >
-                  <LocationImage
-                    src={loc.coverImageUrl}
-                    alt={loc.name}
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                  <LocationCardMedia
+                    name={loc.name}
+                    coverImageUrl={loc.coverImageUrl}
+                    previewMedia={loc.previewMedia}
                   />
                   {viewingHidden ? (
                     <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white/95 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm">
@@ -1255,6 +1329,134 @@ export default function LocationsPage() {
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
       />
+
+      <ConfirmModal
+        open={simpleAvailableOpen}
+        title="Mark available"
+        description={`Set inventory status to AVAILABLE for ${selected.size} selected site(s). Flight window is unchanged for any remaining bookings outside soft inventory status.`}
+        confirmLabel="Mark available"
+        busy={governMutation.isPending}
+        onClose={() => setSimpleAvailableOpen(false)}
+        onConfirm={() => governMutation.mutate("AVAILABLE")}
+      />
+
+      <ConfirmModal
+        open={blockedBookedOpen}
+        title="Fully booked in this window"
+        description="One or more selected sites are fully booked for the selected flight dates. Only an admin can free those windows (with a reason and campaign impact review)."
+        confirmLabel="Got it"
+        onClose={() => setBlockedBookedOpen(false)}
+        onConfirm={() => setBlockedBookedOpen(false)}
+      />
+
+      <ConfirmModal
+        open={confirmAction === "UNAVAILABLE"}
+        title="Mark unavailable"
+        description={`Mark ${selected.size} site(s) as UNAVAILABLE in inventory for governance.`}
+        confirmLabel="Mark unavailable"
+        danger
+        busy={governMutation.isPending}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={() => governMutation.mutate("UNAVAILABLE")}
+      />
+
+      <ConfirmModal
+        open={confirmAction === "ARCHIVE"}
+        title="Hide from catalog"
+        description={`Hide ${selected.size} site(s) from the active catalog. Soft holds may be released; BOOKED flights outside this action stay until admin release.`}
+        confirmLabel="Hide sites"
+        danger
+        busy={governMutation.isPending}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={() => governMutation.mutate("ARCHIVE")}
+      />
+
+      <ConfirmModal
+        open={confirmAction === "UNARCHIVE"}
+        title="Restore to catalog"
+        description={`Restore ${selected.size} hidden site(s) to the active catalog.`}
+        confirmLabel="Restore"
+        busy={governMutation.isPending}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={() => governMutation.mutate("UNARCHIVE")}
+      />
+
+      <ConfirmModal
+        open={releaseOpen}
+        title="Free availability for this flight"
+        description={`${flightFrom} → ${flightTo}. This clears only overlapping BOOKED/HELD/BLOCKED windows in that range.`}
+        confirmLabel="Free window"
+        danger
+        busy={releaseMutation.isPending}
+        confirmDisabled={releaseReason.trim().length < 8}
+        onClose={() => {
+          if (!releaseMutation.isPending) {
+            setReleaseOpen(false);
+            setReleasePreview(null);
+            setReleaseReason("");
+            setReleaseError("");
+          }
+        }}
+        onConfirm={() => releaseMutation.mutate()}
+      >
+        {releaseError ? (
+          <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+            {releaseError}
+          </p>
+        ) : null}
+        {releasePreview ? (
+          <div className="mb-3 max-h-56 space-y-3 overflow-y-auto rounded-lg border border-violet-100 bg-violet-50/50 p-3 text-xs">
+            <p className="font-semibold text-slate-800">
+              Overlapping windows: {releasePreview.totalOverlappingWindows}
+            </p>
+            {releasePreview.locations.map((loc) => {
+              if (
+                loc.overlappingWindows.length === 0 &&
+                loc.affectedCampaigns.length === 0
+              ) {
+                return null;
+              }
+              const name =
+                (data ?? []).find((l) => l.id === loc.locationId)?.name ?? loc.locationId.slice(0, 8);
+              return (
+                <div key={loc.locationId} className="space-y-1 border-t border-violet-100 pt-2 first:border-0 first:pt-0">
+                  <p className="font-semibold text-slate-900">{name}</p>
+                  {loc.affectedCampaigns.length > 0 ? (
+                    <p className="text-muted">
+                      Campaigns:{" "}
+                      {loc.affectedCampaigns
+                        .map((c) => `${c.name} (${c.lifecycleStatus})`)
+                        .join(", ")}
+                    </p>
+                  ) : null}
+                  {loc.affectedMediaPlans.length > 0 ? (
+                    <p className="text-muted">
+                      Plans:{" "}
+                      {loc.affectedMediaPlans
+                        .map((p) => `${p.name} (${p.status})`)
+                        .join(", ")}
+                    </p>
+                  ) : (
+                    <p className="text-muted">No linked media plans found for overlapping inventory.</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="mb-3 text-xs text-muted">Loading impact preview…</p>
+        )}
+        <label className="block text-xs font-semibold text-slate-700">
+          Reason (required)
+          <textarea
+            value={releaseReason}
+            onChange={(e) => setReleaseReason(e.target.value)}
+            rows={3}
+            className="mt-1 w-full rounded-lg border border-violet-200 px-3 py-2 text-sm text-slate-900"
+            placeholder="Why are these dates being freed? (min 8 characters)"
+          />
+        </label>
+      </ConfirmModal>
     </div>
   );
 }

@@ -901,6 +901,49 @@ export class ApiClient {
     });
   }
 
+  previewAvailabilityRelease(locationIds: string[], from: string, to: string) {
+    return this.request<{
+      from: string;
+      to: string;
+      totalOverlappingWindows: number;
+      locations: Array<{
+        locationId: string;
+        overlappingWindows: Array<{
+          id: string;
+          status: string;
+          startDate: string;
+          endDate: string;
+          inventoryId: string;
+        }>;
+        affectedCampaigns: Array<{ id: string; name: string; lifecycleStatus: string }>;
+        affectedMediaPlans: Array<{
+          id: string;
+          name: string;
+          status: string;
+          campaignId: string;
+        }>;
+      }>;
+    }>("/locations/availability/preview-release", {
+      method: "POST",
+      body: JSON.stringify({ locationIds, from, to }),
+    });
+  }
+
+  releaseAvailabilityWindow(
+    locationIds: string[],
+    from: string,
+    to: string,
+    reason: string
+  ) {
+    return this.request<{
+      releasedWindows: number;
+      updated: number;
+    }>("/locations/availability/release", {
+      method: "POST",
+      body: JSON.stringify({ locationIds, from, to, reason }),
+    });
+  }
+
   updateOrganizationMeCommercial(data: {
     defaultMarginPercent?: number;
     defaultRateAmount?: number;

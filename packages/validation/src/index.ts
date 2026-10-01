@@ -321,6 +321,17 @@ export const bulkLocationActionBodySchema = z.object({
   action: z.enum(["ARCHIVE", "UNARCHIVE", "AVAILABLE", "UNAVAILABLE"]),
 });
 
+export const locationAvailabilityPreviewBodySchema = z.object({
+  locationIds: z.array(uuidSchema).min(1).max(100),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+export const locationAvailabilityReleaseBodySchema =
+  locationAvailabilityPreviewBodySchema.extend({
+    reason: z.string().trim().min(8).max(2000),
+  });
+
 export const flightAvailabilityQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

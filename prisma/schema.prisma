@@ -619,3 +619,18 @@ model Recommendation {
   inventory Inventory? @relation(fields: [inventoryId], references: [id], onDelete: SetNull)
   analysis  AIAnalysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
 }
+
+/// Admin audit when force-freeing BOOKED/HELD windows for a flight range.
+model LocationAvailabilityRelease {
+  id           String   @id @default(uuid()) @db.Uuid
+  actorUserId  String   @db.Uuid
+  locationIds  Json
+  fromDate     DateTime @db.Date
+  toDate       DateTime @db.Date
+  reason       String
+  affectedJson Json     @default("{}")
+  createdAt    DateTime @default(now())
+
+  @@index([actorUserId])
+  @@index([createdAt])
+}
