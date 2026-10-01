@@ -18,6 +18,7 @@ import type { AIProvider } from "../../lib/ai/index.js";
 import { campaignBriefParseSchema } from "../../lib/ai/campaign-brief-parse.js";
 import {
   runMediaPlanOptimization,
+  getMediaPlanPlanningPreview,
   buildMediaPlanFromSelection,
   loadEligibleInventory,
   loadInventoriesByIds,
@@ -1085,6 +1086,23 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
         : undefined,
     };
   }
+
+  fastify.get(
+    "/campaigns/:id/media-plans/planning-preview",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      if (!canWriteCampaigns(request.user)) throw forbidden();
+      if (isVendorUser(request.user)) throw forbidden();
+      const campaignId = uuidSchema.parse((request.params as { id: string }).id);
+      const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+      if (!campaign) throw notFound("Campaign not found");
+      if (!canMutateCampaign(request.user, campaign)) throw forbidden();
+
+      const preview = await getMediaPlanPlanningPreview(prisma, campaignId);
+      if (!preview) throw notFound("Campaign not found");
+      return success(preview);
+    }
+  );
 
   fastify.post(
     "/campaigns/:id/media-plans/optimize",

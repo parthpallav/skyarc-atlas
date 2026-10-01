@@ -12,8 +12,10 @@ import { loadPlatformConfig } from "../commercial-config.js";
 import { isInventoryFreeForFlight, campaignWindowNote } from "./availability.js";
 import {
   assignGoalAlternatives,
+  matchesPlanningGeography,
   parseCampaignGoal,
   scoreGoalFit,
+  hasGeoConstraints,
   type GoalAlternative,
   type GoalFitSite,
 } from "./goal-fit.js";
@@ -120,32 +122,131 @@ const inventoryPlanningInclude = {
   rateCards: { take: 1, orderBy: { effectiveFrom: "desc" as const } },
 } as const;
 
-export async function loadEligibleInventory(
-  prisma: PrismaClient,
-  flight?: { startDate?: Date | null; endDate?: Date | null }
-) {
-  const inventories = await prisma.inventory.findMany({
+export type MediaPlanPlanningDiagnostics = {
+  catalogInventory: number;
+  skippedFlightWindow: number;
+  skippedGeography: number;
+  skippedNoScore: number;
+  availableInventory: number;
+  scoredInventory: number;
+  maxLocations: number;
+  minSkyarcBudgetMixPercent: number;
+  flightSet: boolean;
+  geographicFocus?: string[];
+  cityBookableCounts?: Array<{ city: string; bookable: number }>;
+};
+
+async function loadCatalogInventory(prisma: PrismaClient) {
+  return prisma.inventory.findMany({
     where: {
       status: "AVAILABLE",
-      // Hidden (archived) sites stay out of catalog, requests, and new plans
       screen: { location: { archivedAt: null } },
     },
     include: inventoryPlanningInclude,
   });
+}
 
-  return inventories.filter((inv) =>
-    isInventoryFreeForFlight(
-      {
-        status: inv.status,
-        screenStatus: inv.screen.inventoryStatus,
-        inventoryType: inv.inventoryType,
-        slotCapacity: inv.slotCapacity,
-        availabilityWindows: inv.availabilityWindows,
-      },
-      flight?.startDate,
-      flight?.endDate
-    )
+function isFreeForCampaignFlight(
+  inv: Awaited<ReturnType<typeof loadCatalogInventory>>[number],
+  flight?: { startDate?: Date | null; endDate?: Date | null }
+) {
+  return isInventoryFreeForFlight(
+    {
+      status: inv.status,
+      screenStatus: inv.screen.inventoryStatus,
+      inventoryType: inv.inventoryType,
+      slotCapacity: inv.slotCapacity,
+      availabilityWindows: inv.availabilityWindows,
+    },
+    flight?.startDate,
+    flight?.endDate
   );
+}
+
+export function partitionPlanningInventory(
+  inventories: Awaited<ReturnType<typeof loadCatalogInventory>>,
+  flight?: { startDate?: Date | null; endDate?: Date | null },
+  goal?: ReturnType<typeof parseCampaignGoal>
+) {
+  const catalogInventory = inventories.length;
+  const flightEligible = inventories.filter((inv) => isFreeForCampaignFlight(inv, flight));
+  const skippedFlightWindow = catalogInventory - flightEligible.length;
+
+  const geoEligible = flightEligible.filter((inv) => {
+    const site = inventoryToGoalFitSite(inv);
+    if (!site) return true;
+    return matchesPlanningGeography(site, goal ?? {});
+  });
+  const skippedGeography = flightEligible.length - geoEligible.length;
+
+  return {
+    catalogInventory,
+    skippedFlightWindow,
+    skippedGeography,
+    eligible: geoEligible,
+  };
+}
+
+export async function loadEligibleInventory(
+  prisma: PrismaClient,
+  flight?: { startDate?: Date | null; endDate?: Date | null },
+  goal?: ReturnType<typeof parseCampaignGoal>
+) {
+  const inventories = await loadCatalogInventory(prisma);
+  return partitionPlanningInventory(inventories, flight, goal).eligible;
+}
+
+export async function getMediaPlanPlanningPreview(prisma: PrismaClient, campaignId: string) {
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    select: {
+      startDate: true,
+      endDate: true,
+      brief: { select: { structuredRequirementsJson: true } },
+    },
+  });
+  if (!campaign) return null;
+
+  const brief = campaign.brief?.structuredRequirementsJson;
+  const goal = parseCampaignGoal(brief);
+  const flight = { startDate: campaign.startDate, endDate: campaign.endDate };
+  const inventories = await loadCatalogInventory(prisma);
+  const { eligible, catalogInventory, skippedFlightWindow, skippedGeography } =
+    partitionPlanningInventory(inventories, flight, goal);
+
+  const platform = await loadPlatformConfig();
+  const candidates = buildOptimizerCandidates(eligible, goal, {
+    premiumFormats: platform.premiumFormats,
+  });
+  const skippedNoScore = eligible.length - candidates.length;
+
+  const geoTokens = [
+    ...(goal.cities ?? []),
+    ...(goal.geographicFocus ?? []),
+  ].filter((v, i, arr) => arr.indexOf(v) === i);
+
+  const cityBookableCounts = geoTokens.map((city) => {
+    const token = city.trim().toLowerCase();
+    const bookable = eligible.filter((inv) => {
+      const c = (inv.screen.location.city ?? "").trim().toLowerCase();
+      return c === token || c.includes(token) || token.includes(c);
+    }).length;
+    return { city, bookable };
+  });
+
+  return {
+    catalogInventory,
+    skippedFlightWindow,
+    skippedGeography,
+    skippedNoScore,
+    availableInventory: eligible.length,
+    scoredInventory: candidates.length,
+    minSkyarcBudgetMixPercent: DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
+    flightSet: Boolean(campaign.startDate && campaign.endDate),
+    geographicFocus: goal.geographicFocus ?? goal.cities ?? [],
+    cityBookableCounts,
+    hasGeoConstraints: hasGeoConstraints(goal),
+  };
 }
 
 export async function loadInventoriesByIds(prisma: PrismaClient, ids: string[]) {
@@ -268,33 +369,45 @@ export async function runMediaPlanOptimization(
       brief: { select: { structuredRequirementsJson: true } },
     },
   });
-  const inventories = await loadEligibleInventory(prisma, {
-    startDate: campaign?.startDate,
-    endDate: campaign?.endDate,
-  });
   const goal = parseCampaignGoal(
     campaign?.brief?.structuredRequirementsJson,
     constraints.totalBudget,
     constraints.maxLocations ?? 10
   );
+  const flight = { startDate: campaign?.startDate, endDate: campaign?.endDate };
+  const catalog = await loadCatalogInventory(prisma);
+  const partitioned = partitionPlanningInventory(catalog, flight, goal);
+  const inventories = partitioned.eligible;
   const maxLocations = constraints.maxLocations ?? goal.maxLocations ?? 8;
   const platform = await loadPlatformConfig();
   const candidates = buildOptimizerCandidates(inventories, goal, {
     premiumFormats: platform.premiumFormats,
   });
 
-  const diagnostics = {
+  const diagnostics: MediaPlanPlanningDiagnostics = {
+    catalogInventory: partitioned.catalogInventory,
+    skippedFlightWindow: partitioned.skippedFlightWindow,
+    skippedGeography: partitioned.skippedGeography,
+    skippedNoScore: inventories.length - candidates.length,
     availableInventory: inventories.length,
     scoredInventory: candidates.length,
     maxLocations,
+    minSkyarcBudgetMixPercent: DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
+    flightSet: Boolean(campaign?.startDate && campaign?.endDate),
+    geographicFocus: goal.geographicFocus ?? goal.cities,
   };
 
   if (candidates.length === 0) {
+    const geoBlocked =
+      hasGeoConstraints(goal) && partitioned.skippedGeography > 0 && inventories.length === 0;
     return {
       ok: false as const,
       diagnostics,
-      message:
-        "No eligible inventory with location scores. Run: pnpm db:seed:media-planning",
+      message: geoBlocked
+        ? "No bookable inventory in the brief cities for this flight. Widen geography or dates."
+        : partitioned.skippedFlightWindow > 0 && inventories.length === 0
+          ? "No bookable inventory for this flight window (sites are held or full)."
+          : "No eligible inventory with location scores. Run: pnpm db:seed:media-planning",
     };
   }
 
@@ -573,10 +686,15 @@ export async function buildMediaPlanFromSelection(
       brief: { select: { structuredRequirementsJson: true } },
     },
   });
-  const eligible = await loadEligibleInventory(prisma, {
-    startDate: campaign?.startDate,
-    endDate: campaign?.endDate,
-  });
+  const goal = parseCampaignGoal(campaign?.brief?.structuredRequirementsJson);
+  const eligible = await loadEligibleInventory(
+    prisma,
+    {
+      startDate: campaign?.startDate,
+      endDate: campaign?.endDate,
+    },
+    goal
+  );
 
   let selectedIds = input.inventoryIds ?? [];
   if (input.locationIds?.length) {

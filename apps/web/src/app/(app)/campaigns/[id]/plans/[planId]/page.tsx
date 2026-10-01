@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -469,7 +469,10 @@ export default function MediaPlanDetailPage() {
   const campaignId = params.id;
   const planId = params.planId;
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const packReady = searchParams.get("packReady") === "1";
+  const skippedSites = searchParams.get("skipped");
   const { authUser, isClient, isVendor, isInternal } = usePermissions();
   const canExportPdf = Boolean(authUser);
 
@@ -1103,26 +1106,31 @@ export default function MediaPlanDetailPage() {
             {copiedLink ? "Copied" : "Share"}
           </button>
           {canExportPdf && (!isVendor || pricingReady) ? (
-            <>
-              <button
-                type="button"
-                className="btn-primary gap-1 px-2.5 py-1.5 text-xs"
-                disabled={exportMutation.isPending}
-                onClick={() => exportMutation.mutate()}
-              >
-                <Download className="h-3.5 w-3.5" />
-                PDF
-              </button>
-              <button
-                type="button"
-                className="btn-secondary gap-1 px-2.5 py-1.5 text-xs"
-                disabled={exportXlsxMutation.isPending}
-                onClick={() => exportXlsxMutation.mutate()}
-              >
-                <Download className="h-3.5 w-3.5" />
-                Excel
-              </button>
-            </>
+            <div className="inline-flex flex-col items-end gap-0.5">
+              <span className="text-[9px] font-semibold uppercase tracking-wide text-muted">
+                Export pitch pack
+              </span>
+              <div className="inline-flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  className="btn-primary gap-1 px-2.5 py-1.5 text-xs"
+                  disabled={exportMutation.isPending}
+                  onClick={() => exportMutation.mutate()}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  PDF
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary gap-1 px-2.5 py-1.5 text-xs"
+                  disabled={exportXlsxMutation.isPending}
+                  onClick={() => exportXlsxMutation.mutate()}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Excel
+                </button>
+              </div>
+            </div>
           ) : null}
           {isAdmin ? (
             <button
@@ -1137,6 +1145,14 @@ export default function MediaPlanDetailPage() {
           ) : null}
         </div>
         {goalLabel ? <p className="mt-0.5 text-[10px] text-muted">{goalLabel}</p> : null}
+        {packReady ? (
+          <p className="mt-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+            Plan pack ready — download PDF for the pitch or Excel for agency rework.
+            {skippedSites
+              ? ` ${skippedSites} site(s) were skipped (held, full, or outside brief geography).`
+              : ""}
+          </p>
+        ) : null}
         <div className="mt-1.5 space-y-1.5">{alerts}</div>
       </div>
 

@@ -69,13 +69,23 @@ function corridorMatch(site: GoalFitSite, focus: string[]): boolean {
   });
 }
 
-function hasGeoConstraints(goal: CampaignGoal): boolean {
+export function hasGeoConstraints(goal: CampaignGoal): boolean {
   return (
     (goal.cities?.length ?? 0) +
       (goal.states?.length ?? 0) +
       (goal.geographicFocus?.length ?? 0) >
     0
   );
+}
+
+/** Hard gate for optimizer pool when brief defines geography (inclusive OR). */
+export function matchesPlanningGeography(site: GoalFitSite, goal: CampaignGoal): boolean {
+  if (!hasGeoConstraints(goal)) return true;
+  if (listHas(goal.cities, site.city)) return true;
+  if (listHas(goal.states, site.state)) return true;
+  if (listHas(goal.geographicFocus, site.city)) return true;
+  if (corridorMatch(site, goal.geographicFocus ?? [])) return true;
+  return false;
 }
 
 /** Inclusive OR across city, state, and corridor tokens. */

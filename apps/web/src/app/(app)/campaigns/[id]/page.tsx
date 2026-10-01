@@ -38,6 +38,19 @@ function isActiveMediaPlan(plan: MediaPlanRow): boolean {
   return Boolean(plan.isPrimary) || plan.status === "APPROVED";
 }
 
+interface PlanningPreview {
+  catalogInventory: number;
+  availableInventory: number;
+  scoredInventory: number;
+  skippedFlightWindow: number;
+  skippedGeography: number;
+  flightSet: boolean;
+  minSkyarcBudgetMixPercent: number;
+  geographicFocus?: string[];
+  cityBookableCounts?: Array<{ city: string; bookable: number }>;
+  hasGeoConstraints?: boolean;
+}
+
 interface CampaignDetail {
   id: string;
   name: string;
@@ -148,10 +161,25 @@ export default function CampaignDetailPage() {
     }
   }, [campaign, router]);
 
+  const planningPreviewQuery = useQuery({
+    queryKey: ["campaign-planning-preview", id],
+    queryFn: async () => {
+      const client = createWebApiClient();
+      const result = await client.getMediaPlanPlanningPreview(id);
+      return result.data as PlanningPreview;
+    },
+    enabled: Boolean(campaign && !isSiteRequestCampaign(campaign) && (campaign.canEdit ?? canMutateCampaign(campaign))),
+  });
+
+  const planningPreview = planningPreviewQuery.data;
+
   const optimizeMutation = useMutation({
     mutationFn: async () => {
       const client = createWebApiClient();
       if (budget <= 0) throw new Error("This campaign has no budget yet");
+      if (!campaign?.startDate || !campaign?.endDate) {
+        throw new Error("Set campaign flight dates before generating a plan");
+      }
       return client.optimizeMediaPlan(id, {
         name: `${campaign?.name ?? "Campaign"} — Plan`,
         totalBudget: budget,
@@ -159,10 +187,17 @@ export default function CampaignDetailPage() {
       });
     },
     onSuccess: async (result) => {
-      const data = result.data as { plan?: { id?: string } };
+      const data = result.data as {
+        plan?: { id?: string };
+        diagnostics?: PlanningPreview & { skippedNoScore?: number };
+      };
       await queryClient.invalidateQueries({ queryKey: ["campaign", id] });
+      await queryClient.invalidateQueries({ queryKey: ["campaign-planning-preview", id] });
       if (data.plan?.id) {
-        router.push(`/campaigns/${id}/plans/${data.plan.id}`);
+        const skipped =
+          (data.diagnostics?.skippedFlightWindow ?? 0) + (data.diagnostics?.skippedGeography ?? 0);
+        const qs = skipped > 0 ? `?packReady=1&skipped=${skipped}` : "?packReady=1";
+        router.push(`/campaigns/${id}/plans/${data.plan.id}${qs}`);
       }
     },
     onError: (err) =>
@@ -372,6 +407,64 @@ export default function CampaignDetailPage() {
       </div>
 
       <div className="grid min-h-0 flex-1 gap-3 p-3 md:grid-cols-[1fr_270px] md:p-4">
+        {canEdit && !isSiteRequest && !isClient ? (
+          <section className="rounded-xl border border-primary/20 bg-violet-50/50 px-3 py-2.5 md:col-span-2">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-sm font-bold text-slate-900">Generate plan pack</h2>
+                <p className="mt-0.5 text-[10px] text-muted">
+                  Flight-aware sites, {planningPreview?.minSkyarcBudgetMixPercent ?? 60}%+ Skyarc mix,
+                  then export PDF or Excel.
+                </p>
+                <ul className="mt-2 space-y-0.5 text-[11px] text-slate-700">
+                  <li>
+                    {budget > 0 ? "✓" : "○"} Budget {budget > 0 ? formatInr(budget) : "not set"}
+                  </li>
+                  <li>
+                    {campaign.startDate && campaign.endDate ? "✓" : "○"} Flight dates{" "}
+                    {campaign.startDate && campaign.endDate ? "set" : "required"}
+                  </li>
+                  <li>
+                    {planningPreviewQuery.isLoading
+                      ? "…"
+                      : planningPreview
+                        ? `✓ ${planningPreview.scoredInventory} scored sites for this flight`
+                        : "○ Inventory preview"}
+                    {planningPreview && planningPreview.skippedFlightWindow > 0
+                      ? ` (${planningPreview.skippedFlightWindow} skipped — held/full)`
+                      : ""}
+                  </li>
+                </ul>
+                {planningPreview?.cityBookableCounts?.length ? (
+                  <p className="mt-1.5 text-[10px] text-slate-600">
+                    {planningPreview.cityBookableCounts
+                      .map((row) => `${row.city}: ${row.bookable} bookable`)
+                      .join(" · ")}
+                    {planningPreview.cityBookableCounts.some((row) => row.bookable === 0)
+                      ? " — widen dates or geography where a city shows 0."
+                      : ""}
+                  </p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="btn-primary shrink-0 gap-1.5 px-3 py-1.5 text-xs"
+                disabled={
+                  optimizeMutation.isPending ||
+                  budget <= 0 ||
+                  !campaign.startDate ||
+                  !campaign.endDate ||
+                  (planningPreview != null && planningPreview.scoredInventory === 0)
+                }
+                onClick={() => optimizeMutation.mutate()}
+              >
+                <Layers className="h-3.5 w-3.5" />
+                {optimizeMutation.isPending ? "Generating…" : "Generate plan"}
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-primary/15 bg-white/95">
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-primary/10 px-3 py-2.5">
             <div>
@@ -380,22 +473,11 @@ export default function CampaignDetailPage() {
               </h2>
               <p className="text-[10px] text-muted">Open a plan to score, swap, and export.</p>
             </div>
-            {!isSiteRequest ? (
-              <button
-                type="button"
-                className="btn-primary gap-1.5 px-3 py-1.5 text-xs"
-                disabled={optimizeMutation.isPending}
-                onClick={() => optimizeMutation.mutate()}
-              >
-                <Layers className="h-3.5 w-3.5" />
-                {optimizeMutation.isPending ? "Creating…" : "Create plan"}
-              </button>
-            ) : null}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {plans.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-muted">
-                No plan yet. Create one to pack sites against this budget.
+                No plan yet. Use Generate plan pack above to build against this budget.
               </p>
             ) : showPlanHierarchy && otherPlans.length > 0 ? (
               <div className="divide-y divide-violet-50">

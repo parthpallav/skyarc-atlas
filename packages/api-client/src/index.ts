@@ -381,6 +381,10 @@ export class ApiClient {
     });
   }
 
+  getMediaPlanPlanningPreview(campaignId: string) {
+    return this.request<unknown>(`/campaigns/${campaignId}/media-plans/planning-preview`);
+  }
+
   optimizeMediaPlan(
     campaignId: string,
     data: { name?: string; totalBudget: number; maxLocations?: number }

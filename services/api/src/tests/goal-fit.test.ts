@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { assignGoalAlternatives, pickGoalAlternatives, scoreGoalFit, type GoalFitSite } from "../lib/media-planning/goal-fit.js";
+import {
+  assignGoalAlternatives,
+  matchesPlanningGeography,
+  pickGoalAlternatives,
+  scoreGoalFit,
+  type GoalFitSite,
+} from "../lib/media-planning/goal-fit.js";
 
 function site(partial: Partial<GoalFitSite> & Pick<GoalFitSite, "inventoryId" | "locationId">): GoalFitSite {
   return {
@@ -154,5 +160,20 @@ describe("goal-fit alternatives", () => {
     });
     const picked = pickGoalAlternatives(current, [dearer, cheaper], { budget: 80_000, maxLocations: 2 }, 2);
     expect(picked[0]?.inventoryId).toBe("x");
+  });
+});
+
+describe("matchesPlanningGeography", () => {
+  it("allows any site when brief has no geography", () => {
+    const s = site({ inventoryId: "a", locationId: "l1", city: "Rajkot" });
+    expect(matchesPlanningGeography(s, {})).toBe(true);
+  });
+
+  it("matches city listed in geographicFocus", () => {
+    const s = site({ inventoryId: "a", locationId: "l1", city: "Ahmedabad" });
+    expect(
+      matchesPlanningGeography(s, { geographicFocus: ["Ahmedabad", "Rajkot"] })
+    ).toBe(true);
+    expect(matchesPlanningGeography(s, { geographicFocus: ["Rajkot"] })).toBe(false);
   });
 });
