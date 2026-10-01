@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Env } from "@skyarc/config";
-import { parseCorsOrigins } from "@skyarc/config";
+import { DEFAULT_PRODUCTION_WEB_APP_URL, parseCorsOrigins } from "@skyarc/config";
 import { prisma } from "./prisma.js";
 
 export const PASSWORD_RESET_DEVICE_LABEL = "__password_reset__";
@@ -33,7 +33,11 @@ export function resolveWebAppOrigin(env: Env, requestOrigin?: string | null): st
   const first = parseCorsOrigins(env.CORS_ORIGINS).find(
     (o) => o !== "*" && !o.includes("*") && !isLikelyApiOrigin(o)
   );
-  return (first ?? "http://localhost:3000").replace(/\/$/, "");
+  const fallback =
+    env.NODE_ENV === "production"
+      ? DEFAULT_PRODUCTION_WEB_APP_URL
+      : "http://localhost:3000";
+  return (first ?? fallback).replace(/\/$/, "");
 }
 
 export async function issuePasswordResetToken(userId: string): Promise<{

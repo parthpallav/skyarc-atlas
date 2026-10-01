@@ -57,6 +57,9 @@ export const envSchema = z.object({
   WEB_APP_URL: optionalUrl,
 });
 
+/** Canonical production web origin for emailed / admin-copied reset links. */
+export const DEFAULT_PRODUCTION_WEB_APP_URL = "https://atlas.skyarcads.com";
+
 export type Env = z.infer<typeof envSchema>;
 
 export function loadEnv(input: NodeJS.ProcessEnv = process.env): Env {

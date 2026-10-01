@@ -51,7 +51,7 @@ services:
       PORT: 3001
       NODE_ENV: production
       CORS_ORIGINS: ${CORS_ORIGINS}
-      WEB_APP_URL: ${WEB_APP_URL:-}
+      WEB_APP_URL: ${WEB_APP_URL:-https://atlas.skyarcads.com}
       ORBIT_CLOUD_URL: ${ORBIT_CLOUD_URL:-http://orbit-cloud:3002}
       ORBIT_SERVICE_TOKEN: ${ORBIT_SERVICE_TOKEN:-}
       ORBIT_WEBHOOK_SECRET: ${ORBIT_WEBHOOK_SECRET:-}
