@@ -35,6 +35,7 @@ import {
   workspacePageRoot,
   workspacePanel,
   workspacePanelScroll,
+  workspaceStickyHeader,
 } from "@/lib/page-layout";
 
 interface PlanItemRow {
@@ -1081,7 +1082,7 @@ export default function MediaPlanDetailPage() {
 
   return (
     <div className={workspacePageRoot}>
-      <div className="shrink-0 border-b border-primary/15 bg-white/90 px-3 py-2 backdrop-blur-md sm:px-4">
+      <div className={workspaceStickyHeader}>
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href={isDraftRequest || isVendor ? "/campaigns" : `/campaigns/${campaignId}`}

@@ -25,10 +25,19 @@ const checks = [
     mustInclude: ["md:h-[calc(100dvh-2rem)]"],
     mustExclude: ["h-[calc(100dvh-3.5rem"],
   },
+  {
+    file: "app/(app)/map/page.tsx",
+    mustInclude: ["workspacePageRoot"],
+    mustExclude: ["h-[calc(100dvh-3.5rem"],
+  },
+  {
+    file: "components/app-shell.tsx",
+    mustExclude: ["PwaInstallButton"],
+  },
 ];
 
 let failed = 0;
-for (const { file, mustInclude, mustExclude } of checks) {
+for (const { file, mustInclude = [], mustExclude = [] } of checks) {
   const text = readFileSync(join(src, file), "utf8");
   for (const needle of mustInclude) {
     if (!text.includes(needle)) {

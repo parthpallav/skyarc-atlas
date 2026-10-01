@@ -34,6 +34,11 @@ import {
   locationMatchesCorridor,
 } from "@skyarc/shared";
 import { cn } from "@/lib/utils";
+import {
+  workspaceMapStage,
+  workspacePageRoot,
+  workspaceStickyHeader,
+} from "@/lib/page-layout";
 
 type AvailFilter = "ALL" | "BOOKABLE" | "PARTIAL" | "HELD" | "FULL";
 
@@ -494,9 +499,9 @@ export default function MapPage() {
   );
 
   return (
-    <div className="-mx-3.5 -mt-3.5 flex h-[calc(100dvh-3.5rem-5.25rem)] flex-col sm:-mx-6 sm:-mt-6 md:h-[calc(100dvh-2rem)] lg:-mx-8 lg:-mt-8">
+    <div className={workspacePageRoot}>
       {/* Compact glass toolbar */}
-      <div className="z-20 shrink-0 border-b border-primary/15 bg-white/80 px-3 py-2 backdrop-blur-md sm:px-4">
+      <div className={cn(workspaceStickyHeader, "bg-white/80")}>
         <div className="flex flex-wrap items-center gap-2">
           <div className="mr-1 min-w-0">
             <h1 className="text-sm font-bold tracking-tight text-slate-900">Network Map</h1>
@@ -625,7 +630,7 @@ export default function MapPage() {
         </aside>
 
         {/* Map stage */}
-        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100">
+        <div className={workspaceMapStage}>
           {/* Desktop search when rail collapsed */}
           {railCollapsed ? (
             <div className="absolute left-3 top-3 z-20 hidden w-80 max-w-[calc(100%-5rem)] md:block">

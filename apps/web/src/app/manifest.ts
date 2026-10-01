@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "Atlas",
     description: "DOOH Location Intelligence, Vendor Management, and Media Planning Platform",
     start_url: "/",
-    display: "standalone",
+    display: "browser",
     background_color: "#000000",
     theme_color: "#000000",
     orientation: "portrait",

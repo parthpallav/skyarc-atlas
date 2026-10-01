@@ -27,6 +27,7 @@ import {
   workspacePageRoot,
   workspacePanel,
   workspacePanelScroll,
+  workspaceStickyHeader,
 } from "@/lib/page-layout";
 import { ConfirmModal } from "@/components/confirm-modal";
 
@@ -330,7 +331,7 @@ export default function CampaignDetailPage() {
 
   return (
     <div className={workspacePageRoot}>
-      <div className="shrink-0 border-b border-primary/15 bg-white/90 px-3 py-2 backdrop-blur-md sm:px-4">
+      <div className={workspaceStickyHeader}>
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/campaigns"

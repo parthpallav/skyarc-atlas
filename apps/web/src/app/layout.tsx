@@ -24,16 +24,8 @@ export const metadata: Metadata = {
   description: "DOOH Location Intelligence, Vendor Management, and Media Planning Platform",
   manifest: "/manifest.webmanifest",
   applicationName: "Atlas",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "Skyarc Atlas",
-  },
   formatDetection: {
     telephone: false,
-  },
-  other: {
-    "mobile-web-app-capable": "yes",
   },
 };
 

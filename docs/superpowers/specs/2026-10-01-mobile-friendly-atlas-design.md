@@ -6,11 +6,11 @@ Campaign detail and media plan detail (and similar “workspace” screens) used
 
 ## Principles
 
-1. **Mobile: one scroll surface** — the document (`<main>` + safe-area padding). Avoid nested `overflow-y-auto` below `md`.
-2. **Desktop (md+): keep master–detail** — fixed workspace height and independent list/detail panes.
-3. **Shared tokens** — `apps/web/src/lib/page-layout.ts` (`workspacePageRoot`, `workspaceBodyGrid`, `workspacePanel`, etc.).
-4. **Touch targets** — minimum 44×44px for primary actions; bottom nav already fixed with safe-area.
-5. **Map exception** — map page still needs a bounded map canvas on mobile; use flex `min-h` for map only, allow sheet/panel scroll separately (phase 2).
+1. **Mobile: app chrome** — fixed top bar + bottom tab bar; **scroll inside `<main>`** (not nested viewport locks). Avoid inner `overflow-y-auto` traps below `md` on workspace pages.
+2. **No install prompts** — in-browser mobile UX only; PWA “Install App” UI removed.
+3. **Desktop (md+): keep master–detail** — fixed workspace height and independent list/detail panes.
+4. **Shared tokens** — `apps/web/src/lib/page-layout.ts` (`workspacePageRoot`, `workspaceBodyGrid`, `workspacePanel`, etc.).
+5. **Touch targets** — minimum 44×44px; bottom tab bar with safe-area insets.
 
 ## Phased rollout
 

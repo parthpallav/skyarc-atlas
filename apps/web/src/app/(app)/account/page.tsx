@@ -5,8 +5,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createWebApiClient } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { PageHeader } from "@/components/page-header";
-import { PwaInstallButton } from "@/components/pwa-install-button";
-import { Smartphone, CheckCircle2 } from "lucide-react";
 
 export default function AccountPage() {
   const { user: authUser, setUser } = useAuth();
@@ -157,30 +155,6 @@ export default function AccountPage() {
           </button>
         </form>
       )}
-
-      {/* Mobile App & APK Setup Card */}
-      <div className="card-surface p-6 space-y-3 mt-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-slate-900 font-semibold text-base">
-            <Smartphone className="w-5 h-5 text-primary" />
-            <span>Mobile App Setup (APK Mode)</span>
-          </div>
-          <PwaInstallButton />
-        </div>
-        <p className="text-xs text-muted leading-relaxed">
-          Skyarc Atlas is optimized to run as a native mobile app without installing an APK from the app store. Add it to your phone’s home screen to launch in edge-to-edge standalone mode with offline shell caching.
-        </p>
-        <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-xs text-slate-700 space-y-1.5 font-medium">
-          <p className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span><strong>Android:</strong> Tap &ldquo;Install App&rdquo; or Chrome menu &rarr; &ldquo;Add to Home Screen / Install app&rdquo;.</span>
-          </p>
-          <p className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span><strong>iOS (Safari):</strong> Tap the Share button &rarr; &ldquo;Add to Home Screen&rdquo;.</span>
-          </p>
-        </div>
-      </div>
     </div>
   );
 }

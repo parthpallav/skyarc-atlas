@@ -64,9 +64,9 @@ export function MobileBottomNav() {
   return (
     <nav
       aria-label="Mobile navigation"
-      className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/80 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] pb-[env(safe-area-inset-bottom,0px)]"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-violet-100/90 bg-white/98 pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-8px_24px_rgba(76,29,149,0.08)] backdrop-blur-lg md:hidden"
     >
-      <div className="flex items-center justify-around h-14 px-2">
+      <div className="flex h-[3.75rem] items-stretch justify-around px-1">
         {navItems.map((item) => {
           const Icon = item.icon;
           return (
@@ -74,24 +74,33 @@ export function MobileBottomNav() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition-all active:scale-90",
+                "flex min-h-[44px] min-w-[44px] flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 transition-all active:scale-95",
                 item.active
-                  ? "text-primary font-bold"
-                  : "text-slate-500 hover:text-slate-900 font-medium"
+                  ? "text-primary"
+                  : "text-slate-500 hover:text-slate-800"
               )}
             >
-              <div className="relative">
+              <div
+                className={cn(
+                  "flex h-8 w-8 items-center justify-center rounded-xl transition-colors",
+                  item.active && "bg-primary/12"
+                )}
+              >
                 <Icon
                   className={cn(
-                    "w-5 h-5 transition-transform",
-                    item.active && "scale-110 stroke-[2.5]"
+                    "h-5 w-5",
+                    item.active ? "stroke-[2.5]" : "stroke-[2]"
                   )}
                 />
-                {item.active && (
-                  <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-primary rounded-full" />
-                )}
               </div>
-              <span className="text-[10px] mt-0.5 tracking-tight">{item.label}</span>
+              <span
+                className={cn(
+                  "text-[10px] leading-none tracking-tight",
+                  item.active ? "font-bold" : "font-medium"
+                )}
+              >
+                {item.label}
+              </span>
             </Link>
           );
         })}

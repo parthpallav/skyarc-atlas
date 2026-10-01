@@ -28,3 +28,15 @@ export const workspaceAsidePanel = cn(
   "hidden flex-col overflow-hidden rounded-xl border border-primary/15 bg-primary/5 md:flex",
   "md:min-h-0"
 );
+
+/** Sticky title bar inside scrolling workspace pages (mobile). */
+export const workspaceStickyHeader = cn(
+  "shrink-0 border-b border-primary/15 bg-white/90 px-3 py-2 backdrop-blur-md sm:px-4",
+  "max-md:sticky max-md:top-0 max-md:z-20"
+);
+
+/** Map stage height on phones when the shell main area scrolls. */
+export const workspaceMapStage = cn(
+  "relative min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100",
+  "max-md:min-h-[min(62dvh,520px)]"
+);

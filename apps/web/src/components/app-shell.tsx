@@ -5,7 +5,6 @@ import { Menu, X } from "lucide-react";
 import { SidebarNav } from "./sidebar";
 import { SkyarcLogo } from "./skyarc-logo";
 import { MobileBottomNav } from "./mobile-bottom-nav";
-import { PwaInstallButton } from "./pwa-install-button";
 import { cn } from "@/lib/utils";
 import { safeGetItem, safeSetItem } from "@/lib/safe-storage";
 
@@ -83,26 +82,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
       </aside>
 
-      <div className="flex flex-1 flex-col min-w-0 min-h-screen">
-        <header className="md:hidden sticky top-0 z-30 flex items-center justify-between border-b border-violet-100 bg-white/95 backdrop-blur px-3 py-2.5 safe-top shadow-xs shrink-0">
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              aria-label="Open menu"
-              className="p-1.5 -ml-1 rounded-lg text-slate-700 hover:bg-violet-50 transition-colors"
-              onClick={() => setMobileOpen(true)}
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-            <SkyarcLogo height={30} />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <PwaInstallButton />
-          </div>
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 flex-col min-h-screen",
+          "max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:min-h-0 max-md:overflow-hidden"
+        )}
+      >
+        <header
+          className={cn(
+            "md:hidden z-30 flex shrink-0 items-center gap-2.5 border-b border-violet-100 bg-white/95 px-3 py-2.5 shadow-xs backdrop-blur-md safe-top"
+          )}
+        >
+          <button
+            type="button"
+            aria-label="Open menu"
+            className="-ml-1 rounded-lg p-2 text-slate-700 transition-colors hover:bg-violet-50 active:scale-95"
+            onClick={() => setMobileOpen(true)}
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <SkyarcLogo height={30} />
         </header>
 
-        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 overflow-x-hidden w-full max-w-[1600px] mx-auto pb-24 md:pb-8">
+        <main
+          className={cn(
+            "mx-auto w-full max-w-[1600px] flex-1 overflow-x-hidden p-3.5 sm:p-6 lg:p-8",
+            "max-md:min-h-0 max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))]",
+            "md:pb-8"
+          )}
+        >
           {children}
         </main>
 
