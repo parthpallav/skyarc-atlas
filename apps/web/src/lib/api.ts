@@ -1,5 +1,6 @@
 import { createApiClient } from "@skyarc/api-client";
 import { UserRole, type UserRole as UserRoleType } from "@skyarc/shared";
+import { safeGetItem, safeRemoveItem, safeSetItem } from "@/lib/safe-storage";
 
 export function getApiBaseUrl(): string {
   if (process.env.NEXT_PUBLIC_API_URL) {
@@ -29,21 +30,21 @@ export interface StoredUser {
 
 export function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("accessToken");
+  return safeGetItem("accessToken");
 }
 
 export function getStoredRefreshToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("refreshToken");
+  return safeGetItem("refreshToken");
 }
 
 export function storeTokens(access: string, refresh: string) {
-  localStorage.setItem("accessToken", access);
-  localStorage.setItem("refreshToken", refresh);
+  safeSetItem("accessToken", access);
+  safeSetItem("refreshToken", refresh);
 }
 
 export function storeUser(user: StoredUser) {
-  localStorage.setItem("user", JSON.stringify(user));
+  safeSetItem("user", JSON.stringify(user));
 }
 
 function parseRole(role: string | undefined): UserRoleType {
@@ -67,7 +68,7 @@ export function isTokenExpired(token: string | null): boolean {
 
 export function getStoredUser(): StoredUser | null {
   if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem("user");
+  const raw = safeGetItem("user");
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as StoredUser;
@@ -104,9 +105,9 @@ export function getStoredUser(): StoredUser | null {
 }
 
 export function clearTokens() {
-  localStorage.removeItem("accessToken");
-  localStorage.removeItem("refreshToken");
-  localStorage.removeItem("user");
+  safeRemoveItem("accessToken");
+  safeRemoveItem("refreshToken");
+  safeRemoveItem("user");
 }
 
 export function createWebApiClient() {

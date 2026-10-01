@@ -7,6 +7,7 @@ import { SkyarcLogo } from "./skyarc-logo";
 import { MobileBottomNav } from "./mobile-bottom-nav";
 import { PwaInstallButton } from "./pwa-install-button";
 import { cn } from "@/lib/utils";
+import { safeGetItem, safeSetItem } from "@/lib/safe-storage";
 
 const SIDEBAR_COLLAPSED_KEY = "skyarc-sidebar-collapsed";
 
@@ -17,14 +18,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setMounted(true);
-    const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+    const stored = safeGetItem(SIDEBAR_COLLAPSED_KEY);
     if (stored === "true") setCollapsed(true);
   }, []);
 
   function toggleCollapse() {
     setCollapsed((prev) => {
       const next = !prev;
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+      safeSetItem(SIDEBAR_COLLAPSED_KEY, String(next));
       return next;
     });
   }

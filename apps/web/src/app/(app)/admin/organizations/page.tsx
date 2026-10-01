@@ -32,7 +32,7 @@ export default function AdminOrganizationsPage() {
     tempPassword?: string;
   } | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error: listError } = useQuery({
     queryKey: ["organizations"],
     queryFn: async () => {
       const client = createWebApiClient();
@@ -151,6 +151,23 @@ export default function AdminOrganizationsPage() {
       {deleteError ? (
         <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {deleteError}
+          {deleteError.includes("404") || deleteError.toLowerCase().includes("not found") ? (
+            <span className="mt-1 block text-xs">
+              If this vendor was already removed, refresh the list. A 404 on DELETE often means the
+              API on the server has not been redeployed with vendor removal yet.
+            </span>
+          ) : null}
+        </p>
+      ) : null}
+
+      {isError ? (
+        <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {listError instanceof Error ? listError.message : "Could not load vendors."}
+          <span className="mt-1 block text-xs text-red-800/90">
+            Check that the Atlas API is running and <code className="text-[11px]">API_PROXY_TARGET</code>{" "}
+            on Vercel points to it. A 503 here is usually the API or proxy, not the vendor list page
+            itself.
+          </span>
         </p>
       ) : null}
 

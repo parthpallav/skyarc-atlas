@@ -1,4 +1,4 @@
-const CACHE_NAME = "skyarc-atlas-v11";
+const CACHE_NAME = "skyarc-atlas-v12";
 const STATIC_ASSETS = [
   "/",
   "/login",
@@ -36,6 +36,9 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   // Only handle GET requests
   if (event.request.method !== "GET") return;
+
+  // Full page loads must not get the offline 503 stub (confusing in DevTools vs real API errors).
+  if (event.request.mode === "navigate") return;
 
   let url;
   try {
