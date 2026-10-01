@@ -68,7 +68,12 @@ import {
   buildSiteCreativeSpec,
   stripVendorTokensFromText,
   skyarcRevenueFromRates,
+  budgetMixPercent,
+  DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
+  isSkyarcCatalogSite,
+  isPremiumPlanningSite,
 } from "@skyarc/shared";
+import { loadPlatformConfig } from "../../lib/commercial-config.js";
 
 function sanitizeAlternatives(raw: unknown, showScores: boolean, forCustomer: boolean) {
   if (!Array.isArray(raw)) return [];
@@ -156,6 +161,7 @@ function serializeMediaPlan(
     showScores?: boolean;
     forCustomer?: boolean;
     clientRateByLocation: Map<string, number>;
+    premiumFormats?: readonly string[];
   },
   demandByLocation?: Map<string, SiteDemandView>
 ) {
@@ -290,13 +296,36 @@ function serializeMediaPlan(
     };
   });
 
+  const premiumFormats = commercial?.premiumFormats ?? [];
+  const allocated = enrichedItems.reduce((sum, item) => sum + item.budgetAllocated, 0);
+  const skyarcBudgetPercent = budgetMixPercent(
+    plan.items.map((item) => ({
+      budgetAllocated: Number(item.budgetAllocated),
+      included: isSkyarcCatalogSite(item.inventory.screen.location.skyarcSiteCode),
+    }))
+  );
+  const premiumBudgetPercent = budgetMixPercent(
+    enrichedItems.map((item) => ({
+      budgetAllocated: item.budgetAllocated,
+      included:
+        item.isPremium ||
+        isPremiumPlanningSite({
+          inventoryType: item.inventoryType,
+          premiumFormats,
+        }),
+    }))
+  );
   const mix = {
     sites: enrichedItems.length,
     hoardings: enrichedItems.filter((item) => item.inventoryBucket === "hoarding").length,
     digital: enrichedItems.filter((item) => item.inventoryBucket === "digital").length,
     kiosks: enrichedItems.filter((item) => item.inventoryBucket === "kiosk").length,
     other: enrichedItems.filter((item) => item.inventoryBucket === "other").length,
-    allocated: enrichedItems.reduce((sum, item) => sum + item.budgetAllocated, 0),
+    allocated,
+    skyarcBudgetPercent,
+    premiumBudgetPercent,
+    minSkyarcBudgetMixPercent: DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
+    meetsSkyarcMixTarget: skyarcBudgetPercent >= DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
   };
 
   const siteInsights = enrichedItems.map((i) => i.insights);
@@ -892,6 +921,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
     const covers = await coverUrlsForLocations(env, locationIds);
     // Vendors see priced plan only after admin/planner approval
     const vendorSeesPrice = isVendorUser(user) && plan.status === "APPROVED";
+    const platform = await loadPlatformConfig();
     const commercial = await buildCommercialContext(user, locationIds, {
       revealPricing: vendorSeesPrice,
     });
@@ -910,6 +940,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       showScores: isInternalUser(user),
       forCustomer,
       clientRateByLocation: commercial?.clientRateByLocation ?? new Map(),
+      premiumFormats: platform.premiumFormats,
     }, demandByLocation);
     const hideVendorPricing = isVendorUser(user) && plan.status !== "APPROVED";
     const stripAltRates = <T extends { rateAmount?: number }>(alts: T[]): Omit<T, "rateAmount">[] =>

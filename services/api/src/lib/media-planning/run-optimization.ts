@@ -3,8 +3,12 @@ import {
   inventoryTypeBucket,
   parseSkyarcLocationCommercial,
   INVENTORY_HOLD_TTL_MINUTES,
+  isSkyarcCatalogSite,
+  isPremiumPlanningSite,
+  DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
 } from "@skyarc/shared";
 import { optimizeMediaPlan } from "./optimizer.js";
+import { loadPlatformConfig } from "../commercial-config.js";
 import { isInventoryFreeForFlight, campaignWindowNote } from "./availability.js";
 import {
   assignGoalAlternatives,
@@ -74,20 +78,29 @@ export function customerRateForInventory(inv: InventoryRow): number {
 
 export function buildOptimizerCandidates(
   inventories: InventoryRow[],
-  goal?: ReturnType<typeof parseCampaignGoal>
+  goal?: ReturnType<typeof parseCampaignGoal>,
+  options?: { premiumFormats?: readonly string[] }
 ) {
+  const premiumFormats = options?.premiumFormats ?? [];
   return inventories
     .filter((inv) => inv.screen.location.scores[0])
     .map((inv) => {
       const site = inventoryToGoalFitSite(inv);
+      const location = inv.screen.location;
       return {
         inventoryId: inv.id,
         locationId: inv.screen.locationId,
-        score: inv.screen.location.scores[0]!.overallScore,
+        score: location.scores[0]!.overallScore,
         rateAmount: customerRateForInventory(inv),
-        road: inv.screen.location.road,
+        road: location.road,
         inventoryType: inv.inventoryType ?? null,
         goalFit: site && goal ? scoreGoalFit(site, goal).score : undefined,
+        skyarcCatalog: isSkyarcCatalogSite(location.skyarcSiteCode),
+        premiumSite: isPremiumPlanningSite({
+          inventoryType: inv.inventoryType,
+          skyarcCommercialJson: location.skyarcCommercialJson,
+          premiumFormats,
+        }),
       };
     });
 }
@@ -265,7 +278,10 @@ export async function runMediaPlanOptimization(
     constraints.maxLocations ?? 10
   );
   const maxLocations = constraints.maxLocations ?? goal.maxLocations ?? 8;
-  const candidates = buildOptimizerCandidates(inventories, goal);
+  const platform = await loadPlatformConfig();
+  const candidates = buildOptimizerCandidates(inventories, goal, {
+    premiumFormats: platform.premiumFormats,
+  });
 
   const diagnostics = {
     availableInventory: inventories.length,
@@ -286,6 +302,7 @@ export async function runMediaPlanOptimization(
     totalBudget: constraints.totalBudget,
     maxLocations,
     minLocations: Math.min(3, maxLocations),
+    minSkyarcBudgetMixPercent: DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
   });
 
   if (optimized.items.length === 0) {
@@ -599,11 +616,15 @@ export async function buildMediaPlanFromSelection(
       input.totalBudget,
       selected.length
     );
-    const candidates = buildOptimizerCandidates(selected, goal);
+    const platform = await loadPlatformConfig();
+    const candidates = buildOptimizerCandidates(selected, goal, {
+      premiumFormats: platform.premiumFormats,
+    });
     const fitted = optimizeMediaPlan(candidates, {
       totalBudget: input.totalBudget,
       maxLocations: selected.length,
       minLocations: selected.length,
+      minSkyarcBudgetMixPercent: DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
     });
     if (fitted.items.length === 0) {
       return {

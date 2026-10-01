@@ -3,6 +3,7 @@ import {
   candidatesThatFitRemaining,
   optimizeMediaPlan,
 } from "../lib/media-planning/optimizer.js";
+import { budgetMixPercent } from "@skyarc/shared";
 import { customerRateForInventory } from "../lib/media-planning/run-optimization.js";
 
 describe("optimizeMediaPlan", () => {
@@ -143,6 +144,70 @@ describe("optimizeMediaPlan", () => {
         result.remainingBudget
       ).map((row) => row.inventoryId)
     ).toEqual(["cheap-1", "cheap-2"]);
+  });
+
+  it("keeps at least 60% of allocated budget on Skyarc-catalog sites when possible", () => {
+    const result = optimizeMediaPlan(
+      [
+        {
+          inventoryId: "vendor-a",
+          locationId: "l1",
+          score: 95,
+          rateAmount: 200_000,
+          road: "Corridor A",
+          inventoryType: "STATIC_BILLBOARD",
+          skyarcCatalog: false,
+        },
+        {
+          inventoryId: "vendor-b",
+          locationId: "l2",
+          score: 94,
+          rateAmount: 200_000,
+          road: "Corridor B",
+          inventoryType: "STATIC_BILLBOARD",
+          skyarcCatalog: false,
+        },
+        {
+          inventoryId: "skyarc-a",
+          locationId: "l3",
+          score: 88,
+          rateAmount: 200_000,
+          road: "Corridor C",
+          inventoryType: "DIGITAL_BILLBOARD",
+          skyarcCatalog: true,
+          premiumSite: true,
+        },
+        {
+          inventoryId: "skyarc-b",
+          locationId: "l4",
+          score: 86,
+          rateAmount: 200_000,
+          road: "Corridor D",
+          inventoryType: "UNIPOLE",
+          skyarcCatalog: true,
+          premiumSite: true,
+        },
+        {
+          inventoryId: "skyarc-c",
+          locationId: "l5",
+          score: 84,
+          rateAmount: 100_000,
+          road: "Corridor E",
+          inventoryType: "KIOSK",
+          skyarcCatalog: true,
+        },
+      ],
+      { totalBudget: 500_000, maxLocations: 4, minLocations: 3, minSkyarcBudgetMixPercent: 60 }
+    );
+
+    const mix = budgetMixPercent(
+      result.items.map((item) => ({
+        budgetAllocated: item.budgetAllocated,
+        included: item.inventoryId.startsWith("skyarc"),
+      }))
+    );
+    expect(mix).toBeGreaterThanOrEqual(60);
+    expect(result.items.every((item) => item.inventoryId.startsWith("skyarc"))).toBe(true);
   });
 
   it("does not spend the last slot on a dear site that would wipe leftover", () => {

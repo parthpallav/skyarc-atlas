@@ -1,7 +1,14 @@
+import {
+  DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
+  budgetMixPercent,
+} from "@skyarc/shared";
+
 export interface MediaPlanConstraints {
   totalBudget: number;
   minLocations?: number;
   maxLocations?: number;
+  /** Target minimum % of allocated budget on Skyarc-catalog (SKY-) sites. */
+  minSkyarcBudgetMixPercent?: number;
 }
 
 export interface InventoryCandidate {
@@ -12,6 +19,8 @@ export interface InventoryCandidate {
   road?: string | null;
   inventoryType?: string | null;
   goalFit?: number;
+  skyarcCatalog?: boolean;
+  premiumSite?: boolean;
 }
 
 export interface PlanAlternative {
@@ -73,7 +82,62 @@ function packScore(
   const bucket = bucketOf(candidate.inventoryType);
   const coverage = road && !usedRoads.has(road) ? 18 : 0;
   const mix = !usedBuckets.has(bucket) ? 12 : 0;
-  return quality * 0.7 + coverage + mix;
+  const premium = candidate.premiumSite ? 14 : 0;
+  const skyarc = candidate.skyarcCatalog ? 6 : 0;
+  return quality * 0.7 + coverage + mix + premium + skyarc;
+}
+
+function selectedMixPercent(selected: InventoryCandidate[]): number {
+  return budgetMixPercent(
+    selected.map((row) => ({
+      budgetAllocated: row.rateAmount,
+      included: row.skyarcCatalog === true,
+    }))
+  );
+}
+
+function enforceMinSkyarcBudgetMix(
+  selected: InventoryCandidate[],
+  pool: InventoryCandidate[],
+  totalBudget: number,
+  minPercent: number
+): InventoryCandidate[] {
+  if (minPercent <= 0 || selected.length === 0) return selected;
+
+  const working = [...selected];
+  let spare = pool.filter(
+    (row) => !working.some((pick) => pick.inventoryId === row.inventoryId)
+  );
+
+  const allocated = () => working.reduce((sum, row) => sum + row.rateAmount, 0);
+
+  for (let attempt = 0; attempt < 40 && selectedMixPercent(working) < minPercent; attempt++) {
+    const nonSkyarc = working
+      .filter((row) => !row.skyarcCatalog)
+      .sort(
+        (a, b) =>
+          (a.goalFit ?? a.score) - (b.goalFit ?? b.score) ||
+          a.rateAmount - b.rateAmount
+      );
+    if (nonSkyarc.length === 0) break;
+
+    const victim = nonSkyarc[0]!;
+    const currentTotal = allocated();
+    const replacement = spare
+      .filter((row) => row.skyarcCatalog && row.rateAmount > 0)
+      .filter((row) => currentTotal - victim.rateAmount + row.rateAmount <= totalBudget)
+      .sort((a, b) => (b.goalFit ?? b.score) - (a.goalFit ?? a.score))[0];
+
+    if (!replacement) break;
+
+    const victimIndex = working.findIndex((row) => row.inventoryId === victim.inventoryId);
+    if (victimIndex < 0) break;
+    working[victimIndex] = replacement;
+    spare = spare.filter((row) => row.inventoryId !== replacement.inventoryId);
+    spare.push(victim);
+  }
+
+  return working;
 }
 
 function roadKey(candidate: InventoryCandidate): string {
@@ -89,7 +153,12 @@ export function optimizeMediaPlan(
   candidates: InventoryCandidate[],
   constraints: MediaPlanConstraints
 ): OptimizerResult {
-  const remaining = [...candidates];
+  const normalized = candidates.map((row) => ({
+    ...row,
+    skyarcCatalog: row.skyarcCatalog === true,
+    premiumSite: row.premiumSite === true,
+  }));
+  const remaining = [...normalized];
   const selected: InventoryCandidate[] = [];
   let leftover = constraints.totalBudget;
   const maxLocations = Math.min(constraints.maxLocations ?? 8, 50);
@@ -141,7 +210,16 @@ export function optimizeMediaPlan(
     if (leftover <= 0) break;
   }
 
-  const items = selected.map((candidate, index) => ({
+  const minSkyarcMix =
+    constraints.minSkyarcBudgetMixPercent ?? DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT;
+  const balanced = enforceMinSkyarcBudgetMix(
+    selected,
+    normalized,
+    constraints.totalBudget,
+    minSkyarcMix
+  );
+
+  const items = balanced.map((candidate, index) => ({
     inventoryId: candidate.inventoryId,
     locationId: candidate.locationId,
     budgetAllocated: Math.max(0, candidate.rateAmount),

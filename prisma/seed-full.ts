@@ -12,7 +12,14 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { optimizeMediaPlan } from "../services/api/src/lib/media-planning/optimizer.ts";
-import { buildSkyarcSiteCode, getMarketCity } from "@skyarc/shared";
+import {
+  buildSkyarcSiteCode,
+  getMarketCity,
+  isSkyarcCatalogSite,
+  isPremiumPlanningSite,
+  DEFAULT_PREMIUM_MEDIA_FORMATS,
+} from "@skyarc/shared";
+import { seedMultiCityMarkets } from "./seed-multi-city-markets.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -641,6 +648,15 @@ async function main() {
     seededSites++;
   }
 
+  const multiCitySites = await seedMultiCityMarkets({
+    prisma,
+    brandalystOrgId: brandalystOrg.id,
+    apexOrgId: apexOrg.id,
+    adminUserId: admin.id,
+    scoringConfigId: scoringConfig.id,
+  });
+  console.log(`Multi-city catalog: ${multiCitySites} new locations (Ahmedabad, Surat, Vadodara)`);
+
   // 3. Demo FMCG Advertiser & Campaign with Pre-Generated Media Plan
   const advertiser = await prisma.advertiser.upsert({
     where: { id: "00000000-0000-4000-8000-000000000020" },
@@ -824,14 +840,23 @@ async function main() {
 
   const packedCandidates = availableInventories
     .filter((inv) => inv.screen.location.scores[0] && seedCustomerRate(inv) > 0)
-    .map((inv) => ({
-      inventoryId: inv.id,
-      locationId: inv.screen.locationId,
-      score: inv.screen.location.scores[0]!.overallScore,
-      rateAmount: seedCustomerRate(inv),
-      road: inv.screen.location.road,
-      inventoryType: inv.inventoryType,
-    }));
+    .map((inv) => {
+      const location = inv.screen.location;
+      return {
+        inventoryId: inv.id,
+        locationId: inv.screen.locationId,
+        score: location.scores[0]!.overallScore,
+        rateAmount: seedCustomerRate(inv),
+        road: location.road,
+        inventoryType: inv.inventoryType,
+        skyarcCatalog: isSkyarcCatalogSite(location.skyarcSiteCode),
+        premiumSite: isPremiumPlanningSite({
+          inventoryType: inv.inventoryType,
+          skyarcCommercialJson: location.skyarcCommercialJson,
+          premiumFormats: DEFAULT_PREMIUM_MEDIA_FORMATS,
+        }),
+      };
+    });
 
   async function seedPackedPlan(input: {
     id: string;
@@ -939,7 +964,7 @@ async function main() {
   console.log(`      • Vendor (Owner):  brandalyst@skyarcads.com, apex@skyarcads.com`);
   console.log(`      • Brand Customer:  customer@skyarcads.com`);
   console.log(`      • Field Operator:  operator@skyarcads.com`);
-  console.log(`  - Total Billboard Locations seeded: ${seededSites}`);
+  console.log(`  - Total Billboard Locations seeded: ${seededSites} (+ multi-city expansion)`);
   console.log(`  - Campaigns seeded: 2 live campaigns with guided briefs`);
   console.log(
     `  - ₹5L demo plan packed ${plan1Packed.items.length} sites · leftover ₹${plan1Packed.remainingBudget.toLocaleString("en-IN")}`
