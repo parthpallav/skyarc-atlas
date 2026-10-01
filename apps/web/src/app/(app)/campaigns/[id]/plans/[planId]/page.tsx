@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { createWebApiClient } from "@/lib/api";
+import { exportMediaPlanXlsx, shareMediaPlanWhatsApp } from "@/lib/pulse-api";
 import { formatInr } from "@/lib/format";
 import { usePermissions } from "@/hooks/use-permissions";
 import { formatInventoryType, formatLighting, siteLabelForAudience } from "@skyarc/shared";
@@ -474,6 +475,9 @@ export default function MediaPlanDetailPage() {
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [whatsappOpen, setWhatsappOpen] = useState(false);
+  const [whatsappPhone, setWhatsappPhone] = useState("");
+  const [includePdfOnWhatsApp, setIncludePdfOnWhatsApp] = useState(true);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
@@ -582,6 +586,34 @@ export default function MediaPlanDetailPage() {
       anchor.download = `${plan?.name ?? "media-plan"}.pdf`;
       anchor.click();
       URL.revokeObjectURL(url);
+    },
+  });
+
+  const exportXlsxMutation = useMutation({
+    mutationFn: async () => {
+      trackBusinessEvent("export_media_plan_xlsx", { planId, campaignId });
+      return exportMediaPlanXlsx(campaignId, planId);
+    },
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${plan?.name ?? "media-plan"}.xlsx`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    },
+  });
+
+  const whatsappShareMutation = useMutation({
+    mutationFn: async () => {
+      trackBusinessEvent("share_media_plan_whatsapp", { planId, campaignId });
+      return shareMediaPlanWhatsApp(campaignId, planId, {
+        toE164: whatsappPhone.trim(),
+        includePdf: includePdfOnWhatsApp,
+      });
+    },
+    onSuccess: () => {
+      setWhatsappOpen(false);
     },
   });
 
@@ -739,10 +771,22 @@ export default function MediaPlanDetailPage() {
           Approved — site rates visible for this flight.
         </div>
       ) : null}
-      {(exportMutation.isError || swapMutation.isError || addMutation.isError) && (
+      {(exportMutation.isError ||
+        exportXlsxMutation.isError ||
+        whatsappShareMutation.isError ||
+        swapMutation.isError ||
+        addMutation.isError) && (
         <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          {(exportMutation.error ?? swapMutation.error ?? addMutation.error) instanceof Error
-            ? ((exportMutation.error ?? swapMutation.error ?? addMutation.error) as Error).message
+          {(exportMutation.error ??
+            exportXlsxMutation.error ??
+            whatsappShareMutation.error ??
+            swapMutation.error ??
+            addMutation.error) instanceof Error
+            ? ((exportMutation.error ??
+                exportXlsxMutation.error ??
+                whatsappShareMutation.error ??
+                swapMutation.error ??
+                addMutation.error) as Error).message
             : "Something went wrong"}
         </p>
       )}
@@ -1078,15 +1122,34 @@ export default function MediaPlanDetailPage() {
             {copiedLink ? "Copied" : "Share"}
           </button>
           {canExportPdf && (!isVendor || pricingReady) ? (
-            <button
-              type="button"
-              className="btn-primary gap-1 px-2.5 py-1.5 text-xs"
-              disabled={exportMutation.isPending}
-              onClick={() => exportMutation.mutate()}
-            >
-              <Download className="h-3.5 w-3.5" />
-              PDF
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn-primary gap-1 px-2.5 py-1.5 text-xs"
+                disabled={exportMutation.isPending}
+                onClick={() => exportMutation.mutate()}
+              >
+                <Download className="h-3.5 w-3.5" />
+                PDF
+              </button>
+              <button
+                type="button"
+                className="btn-secondary gap-1 px-2.5 py-1.5 text-xs"
+                disabled={exportXlsxMutation.isPending}
+                onClick={() => exportXlsxMutation.mutate()}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Excel
+              </button>
+              <button
+                type="button"
+                className="btn-secondary gap-1 px-2.5 py-1.5 text-xs"
+                disabled={whatsappShareMutation.isPending}
+                onClick={() => setWhatsappOpen(true)}
+              >
+                WhatsApp
+              </button>
+            </>
           ) : null}
           {isAdmin ? (
             <button
@@ -1147,6 +1210,40 @@ export default function MediaPlanDetailPage() {
         }}
         onConfirm={() => deleteMutation.mutate()}
       />
+
+      <ConfirmModal
+        open={whatsappOpen}
+        title="Share plan on WhatsApp"
+        description="Send a client-safe summary to a WhatsApp number (E.164, e.g. +919876543210)."
+        confirmLabel="Send"
+        busy={whatsappShareMutation.isPending}
+        confirmDisabled={whatsappPhone.trim().length < 8}
+        onClose={() => {
+          if (!whatsappShareMutation.isPending) setWhatsappOpen(false);
+        }}
+        onConfirm={() => whatsappShareMutation.mutate()}
+      >
+        <div className="mt-3 space-y-3 text-sm">
+          <label className="block">
+            <span className="text-xs font-semibold text-slate-700">Phone number</span>
+            <input
+              className="mt-1 w-full rounded-lg border border-violet-200 px-3 py-2"
+              value={whatsappPhone}
+              onChange={(e) => setWhatsappPhone(e.target.value)}
+              placeholder="+91…"
+              autoComplete="tel"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-700">
+            <input
+              type="checkbox"
+              checked={includePdfOnWhatsApp}
+              onChange={(e) => setIncludePdfOnWhatsApp(e.target.checked)}
+            />
+            Attach proposal PDF (when WhatsApp is configured)
+          </label>
+        </div>
+      </ConfirmModal>
     </div>
   );
 }

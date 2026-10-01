@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("PULSE_DATABASE_URL")
+  schemas  = ["pulse"]
+}
+
+model ShareJob {
+  id              String   @id @default(uuid()) @db.Uuid
+  campaignId      String   @db.Uuid
+  planId          String   @db.Uuid
+  channel         String
+  toE164          String
+  status          String   @default("pending")
+  bridgeMessageId String?  @db.Uuid
+  error           String?
+  createdByUserId String   @db.Uuid
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([planId, createdAt(sort: Desc)])
+  @@schema("pulse")
+}
+
+model ExportArtifact {
+  id              String   @id @default(uuid()) @db.Uuid
+  planId          String   @db.Uuid
+  campaignId      String   @db.Uuid
+  kind            String
+  storageKey      String?
+  expiresAt       DateTime?
+  createdByUserId String   @db.Uuid
+  createdAt       DateTime @default(now())
+
+  @@index([planId, createdAt(sort: Desc)])
+  @@schema("pulse")
+}

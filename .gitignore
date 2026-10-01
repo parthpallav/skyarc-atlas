@@ -19,3 +19,5 @@ services/orbit-cloud/src/generated/
 
 .pnpm-store/
 services/orbit-cloud/src/generated/
+services/pulse/src/generated/
+services/bridge/src/generated/
