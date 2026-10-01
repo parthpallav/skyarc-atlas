@@ -23,6 +23,7 @@ import {
   type EditTabId,
 } from "@/lib/location-ui-gates";
 import { cn } from "@/lib/utils";
+import { ConfirmModal } from "@/components/confirm-modal";
 
 export default function LocationEditPage() {
   const params = useParams<{ id: string }>();
@@ -42,6 +43,7 @@ export default function LocationEditPage() {
   } = usePermissions();
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const { data: location, isLoading } = useQuery({
     queryKey: ["location", id],
@@ -372,15 +374,7 @@ export default function LocationEditPage() {
               type="button"
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-800"
               disabled={deleteMutation.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Delete "${String(location.name)}"? This removes it from the map and lists.`
-                  )
-                ) {
-                  deleteMutation.mutate();
-                }
-              }}
+              onClick={() => setDeleteOpen(true)}
             >
               <Trash2 className="h-4 w-4" />
               {deleteMutation.isPending ? "Deleting…" : "Delete location"}
@@ -395,6 +389,17 @@ export default function LocationEditPage() {
           </section>
         ) : null}
       </div>
+
+      <ConfirmModal
+        open={deleteOpen}
+        title="Delete location"
+        description={`Delete "${String(location.name)}"? This removes it from the map and lists.`}
+        confirmLabel="Delete location"
+        danger
+        busy={deleteMutation.isPending}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={() => deleteMutation.mutate()}
+      />
     </div>
   );
 }

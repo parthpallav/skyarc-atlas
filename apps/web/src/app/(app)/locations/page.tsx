@@ -1093,9 +1093,11 @@ export default function LocationsPage() {
             const forRequestPick =
               !viewingHidden &&
               (isClient || isInternal || (isVendor && scope === "discovery"));
-            const showSelect = forRequestPick || canBulkGovern;
-            // Request picks: only bookable. Bulk govern on own inventory can include any.
-            const allowPick = showSelect && (forRequestPick ? !full : true);
+            // Bulk govern must allow selecting FULL/booked sites (admin release).
+            // Campaign/request picks still exclude fully booked.
+            const allowPick = canBulkGovern
+              ? true
+              : Boolean(forRequestPick && !full);
             const detailHref = `/locations/${loc.id}?from=${flightFrom}&to=${flightTo}`;
             const interest = interestPayload?.byLocationId?.[loc.id];
 

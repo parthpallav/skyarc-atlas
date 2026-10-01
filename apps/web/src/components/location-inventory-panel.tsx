@@ -6,6 +6,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { formatInventoryType } from "@skyarc/shared";
+import { ConfirmModal } from "@/components/confirm-modal";
 
 interface ScreenRow {
   id: string;
@@ -71,6 +72,9 @@ export function LocationInventoryPanel({
   const queryClient = useQueryClient();
   const { isReadOnly } = usePermissions();
   const [screenLabel, setScreenLabel] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; productCode: string } | null>(
+    null
+  );
   const [expandedScreen, setExpandedScreen] = useState<string | null>(null);
   const [productCode, setProductCode] = useState("");
   const [inventoryType, setInventoryType] = useState("DIGITAL_BILLBOARD");
@@ -211,7 +215,10 @@ export function LocationInventoryPanel({
       const client = createWebApiClient();
       return client.deleteInventory(inventoryId);
     },
-    onSuccess: invalidateInventory,
+    onSuccess: async () => {
+      setDeleteTarget(null);
+      await invalidateInventory();
+    },
   });
 
   const startEdit = (inv: InventoryRow) => {
@@ -442,11 +449,9 @@ export function LocationInventoryPanel({
                                   aria-label="Delete product"
                                   className="p-1.5 text-slate-500 hover:text-red-600"
                                   disabled={deleteInventoryMutation.isPending}
-                                  onClick={() => {
-                                    if (window.confirm(`Delete ${inv.productCode}?`)) {
-                                      deleteInventoryMutation.mutate(inv.id);
-                                    }
-                                  }}
+                                  onClick={() =>
+                                    setDeleteTarget({ id: inv.id, productCode: inv.productCode })
+                                  }
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>
@@ -567,6 +572,25 @@ export function LocationInventoryPanel({
           </button>
         </div>
       )}
+
+      <ConfirmModal
+        open={Boolean(deleteTarget)}
+        title="Delete product"
+        description={
+          deleteTarget
+            ? `Delete ${deleteTarget.productCode}? This removes the product from this screen.`
+            : undefined
+        }
+        confirmLabel="Delete product"
+        danger
+        busy={deleteInventoryMutation.isPending}
+        onClose={() => {
+          if (!deleteInventoryMutation.isPending) setDeleteTarget(null);
+        }}
+        onConfirm={() => {
+          if (deleteTarget) deleteInventoryMutation.mutate(deleteTarget.id);
+        }}
+      />
     </section>
   );
 }
