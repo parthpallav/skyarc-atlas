@@ -26,8 +26,12 @@ chmod +x /app/scripts/apply-sql-migrations.sh
 /app/scripts/apply-sql-migrations.sh prisma/migrations prisma/schema.prisma
 
 if [ "${DATABASE_BOOTSTRAP:-auto}" != "never" ]; then
-  echo "Syncing Prisma schema (non-destructive, data preserved)..."
-  pnpm exec prisma db push --skip-generate
+  if should_bootstrap; then
+    echo "Syncing Prisma schema on fresh database..."
+    pnpm exec prisma db push --skip-generate
+  else
+    echo "Existing database — skipping prisma db push (SQL migration ledger + additive SQL migrations)."
+  fi
 fi
 
 if should_bootstrap; then

@@ -634,3 +634,11 @@ model LocationAvailabilityRelease {
   @@index([actorUserId])
   @@index([createdAt])
 }
+
+/// Ledger for prisma/migrations/*.sql — maintained by apply-sql-migrations.sh (not Prisma Migrate).
+model SkyarcSqlMigration {
+  id        String   @id
+  appliedAt DateTime @default(now()) @map("applied_at")
+
+  @@map("_skyarc_sql_migrations")
+}
