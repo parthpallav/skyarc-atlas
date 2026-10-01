@@ -17,7 +17,6 @@ import {
   Eye,
   ArrowUpDown,
   Filter,
-  Layers,
 } from "lucide-react";
 import { FileSpreadsheet } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
@@ -186,15 +185,6 @@ function locationBucket(loc: Location): InventoryTypeBucket {
   if (types.some((t) => inventoryTypeBucket(t) === "hoarding")) return "hoarding";
   if (types.some((t) => inventoryTypeBucket(t) === "kiosk")) return "kiosk";
   return inventoryTypeBucket(types[0]);
-}
-
-function formatFlightLabel(from: string, to: string) {
-  try {
-    const fmt = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" });
-    return `${fmt.format(new Date(`${from}T12:00:00`))} – ${fmt.format(new Date(`${to}T12:00:00`))}`;
-  } catch {
-    return `${from} → ${to}`;
-  }
 }
 
 export default function LocationsPage() {
@@ -568,7 +558,7 @@ export default function LocationsPage() {
         description={
           viewingHidden
             ? `${(data ?? []).length} hidden · restore to return them to pitching`
-            : `${bookableCount} bookable · ${formatFlightLabel(flightFrom, flightTo)}`
+            : `${bookableCount} bookable for selected dates`
         }
         action={
           <div className="flex items-center gap-1.5">
@@ -746,28 +736,9 @@ export default function LocationsPage() {
           </label>
         </div>
 
-        {/* Booking status — always visible, plain language + color dots */}
-        <div className="border-t border-violet-100 px-2.5 py-2 sm:px-3">
-          <div className="mb-1.5 flex items-baseline justify-between gap-2">
-            <p className="text-[11px] font-semibold text-slate-700">
-              Booking status
-              <span className="ml-1.5 font-normal text-muted">for your dates</span>
-            </p>
-            {availFilter !== "ALL" ? (
-              <button
-                type="button"
-                className="text-[11px] font-semibold text-primary hover:underline"
-                onClick={() => {
-                  setAvailFilter("ALL");
-                  setCurrentPage(1);
-                }}
-              >
-                Show all
-              </button>
-            ) : null}
-          </div>
+        <div className="flex items-center gap-2 border-t border-violet-100 px-2.5 py-2 sm:px-3">
           <div
-            className="flex gap-1 overflow-x-auto pb-0.5"
+            className="flex min-w-0 flex-1 gap-1 overflow-x-auto pb-0.5"
             role="group"
             aria-label="Filter by booking status"
           >
@@ -794,9 +765,18 @@ export default function LocationsPage() {
               );
             })}
           </div>
-          <p className="mt-1.5 text-[11px] text-muted">
-            {AVAIL_FILTERS.find((f) => f.value === availFilter)?.hint}
-          </p>
+          {availFilter !== "ALL" ? (
+            <button
+              type="button"
+              className="shrink-0 text-[11px] font-semibold text-primary hover:underline"
+              onClick={() => {
+                setAvailFilter("ALL");
+                setCurrentPage(1);
+              }}
+            >
+              Show all
+            </button>
+          ) : null}
         </div>
 
         {filtersOpen && (
@@ -924,42 +904,22 @@ export default function LocationsPage() {
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-2 px-0.5">
-        <p className="text-xs text-slate-600">
-          <strong className="text-slate-900">{totalItems}</strong>
-          {totalItems === 1 ? " site" : " sites"}
-          {typeFilter !== "ALL" ? (
-            <span className="text-muted">
-              {" "}
-              · {TYPE_FILTERS.find((t) => t.value === typeFilter)?.label}
-            </span>
-          ) : null}
-          {roadFilters.size > 0 ? (
-            <span className="text-muted">
-              {" "}
-              · {roadFilters.size} corridor{roadFilters.size === 1 ? "" : "s"}
-            </span>
-          ) : null}
-        </p>
-        <div className="hidden items-center gap-3 text-[10px] text-muted sm:flex">
-          <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            Open
+      <p className="px-0.5 text-xs text-slate-600">
+        <strong className="text-slate-900">{totalItems}</strong>
+        {totalItems === 1 ? " site" : " sites"}
+        {typeFilter !== "ALL" ? (
+          <span className="text-muted">
+            {" "}
+            · {TYPE_FILTERS.find((t) => t.value === typeFilter)?.label}
           </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-sky-500" />
-            Partial
+        ) : null}
+        {roadFilters.size > 0 ? (
+          <span className="text-muted">
+            {" "}
+            · {roadFilters.size} corridor{roadFilters.size === 1 ? "" : "s"}
           </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-amber-500" />
-            Hold
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-rose-500" />
-            Booked
-          </span>
-        </div>
-      </div>
+        ) : null}
+      </p>
 
       {selected.size > 0 && (
         <div className="sticky top-[3.25rem] z-20 flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-white/95 px-3 py-2 shadow-md backdrop-blur">
@@ -1143,7 +1103,7 @@ export default function LocationsPage() {
                   )}
                 </div>
 
-                <div className="flex flex-1 flex-col gap-2.5 p-3">
+                <div className="flex flex-1 flex-col gap-2 p-3">
                   <div className="flex items-start justify-between gap-2">
                     <span className="truncate font-mono text-[11px] font-bold text-primary">
                       {loc.skyarcSiteCode ?? `SKY-${loc.id.slice(0, 4).toUpperCase()}`}
@@ -1152,7 +1112,7 @@ export default function LocationsPage() {
                       className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}
                       title={badge.hint}
                     >
-                      {badge.label}
+                      {badge.short}
                     </span>
                   </div>
 
@@ -1164,95 +1124,48 @@ export default function LocationsPage() {
                       {loc.name}
                     </Link>
                     <p className="mt-0.5 truncate text-xs text-muted">
-                      {loc.road ?? loc.junction ?? loc.address ?? loc.city ?? "Site"}
+                      {[
+                        loc.road ?? loc.junction ?? loc.address ?? loc.city,
+                        formatLabel,
+                        face?.sizeLabel,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                   </div>
 
                   <SiteDemandSignals interest={interest} audience={audience} />
 
-                  <dl className="grid grid-cols-2 gap-2 rounded-lg bg-violet-50/70 px-2.5 py-2 text-xs">
-                    <div>
-                      <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                        Format
-                      </dt>
-                      <dd className="mt-0.5 font-medium text-slate-800 line-clamp-1">{formatLabel}</dd>
+                  {isDigital && slotCapacity != null ? (
+                    <div className="flex items-center gap-2">
+                      <SlotIndicators
+                        indicators={live?.indicators ?? []}
+                        capacity={slotCapacity}
+                        used={slotUsed}
+                        className="min-w-0 flex-1"
+                      />
+                      <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-700">
+                        {slotOpen}/{slotCapacity}
+                      </span>
                     </div>
-                    <div>
-                      <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                        Size
-                      </dt>
-                      <dd className="mt-0.5 font-medium tabular-nums text-slate-800">
-                        {face?.sizeLabel ?? "On request"}
-                      </dd>
-                    </div>
-                  </dl>
-
-                  <div className="rounded-lg border border-violet-100 px-2.5 py-2">
-                    {isDigital && slotCapacity != null ? (
-                      <>
-                        <div className="mb-1 flex items-baseline justify-between gap-2">
-                          <p className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
-                            <Layers className="h-3 w-3" />
-                            Ad places
-                          </p>
-                          <p className="text-xs font-bold tabular-nums text-slate-900">
-                            {slotOpen}/{slotCapacity} free
-                          </p>
-                        </div>
-                        <SlotIndicators
-                          indicators={live?.indicators ?? []}
-                          capacity={slotCapacity}
-                          used={slotUsed}
-                        />
-                      </>
-                    ) : (
-                      <div className="flex items-baseline justify-between gap-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                          Booking
-                        </p>
-                        <p className="text-xs font-medium text-slate-800">
-                          {full ? "Exclusive booked" : "1 exclusive face"}
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                  ) : null}
 
                   <div className="mt-auto flex items-center justify-between gap-2 border-t border-violet-100 pt-2.5">
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                        Rate
-                      </p>
-                      <p className="text-sm font-bold tabular-nums text-slate-900">
-                        {rate != null ? (
-                          <>
-                            {formatInr(rate)}
-                            <span className="text-[11px] font-normal text-muted">
-                              /{loc.skyarcCommercialView?.ratePeriod?.toLowerCase() ?? "mo"}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="text-xs font-normal text-muted">On request</span>
-                        )}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Link href={detailHref} className="btn-secondary text-xs py-1.5 px-2.5">
-                        Details
-                      </Link>
-                      {allowPick && (
-                        <button
-                          type="button"
-                          onClick={() => toggle(loc.id)}
-                          className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                            isSelected
-                              ? "border-primary bg-primary text-white"
-                              : "border-primary/40 bg-violet-50 text-primary hover:bg-violet-100"
-                          }`}
-                        >
-                          {isSelected ? "Selected" : isClient ? "Add" : "Select"}
-                        </button>
+                    <p className="text-sm font-bold tabular-nums text-slate-900">
+                      {rate != null ? (
+                        <>
+                          {formatInr(rate)}
+                          <span className="text-[11px] font-normal text-muted">
+                            /{loc.skyarcCommercialView?.ratePeriod?.toLowerCase() ?? "mo"}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-xs font-normal text-muted">Rate on request</span>
                       )}
-                    </div>
+                    </p>
+                    <Link href={detailHref} className="btn-secondary text-xs py-1.5 px-2.5">
+                      Details
+                    </Link>
                   </div>
                 </div>
               </article>
