@@ -330,15 +330,6 @@ export default function LocationDetailPage() {
         | undefined)
     : undefined;
 
-  const adminImpliedMarginPercent =
-    adminCommercial?.defaultRateAmount != null &&
-    adminCommercial.defaultRateAmount > 0 &&
-    skyarcCommercialView?.clientRateAmount != null
-      ? ((skyarcCommercialView.clientRateAmount - adminCommercial.defaultRateAmount) /
-          adminCommercial.defaultRateAmount) *
-        100
-      : null;
-
   const live = location.liveInventory as
     | {
         status?: string;
@@ -871,14 +862,6 @@ export default function LocationDetailPage() {
                       : "—"}
                 </dd>
               </div>
-              {adminImpliedMarginPercent != null ? (
-                <div>
-                  <dt className="text-xs font-medium text-muted">Implied margin vs standard rate</dt>
-                  <dd className="mt-0.5 font-semibold tabular-nums text-slate-900">
-                    {adminImpliedMarginPercent.toFixed(1)}%
-                  </dd>
-                </div>
-              ) : null}
               <div>
                 <dt className="text-xs font-medium text-muted">Survey status</dt>
                 <dd className="mt-0.5 text-slate-900">{String(location.surveyStatus ?? "—")}</dd>
