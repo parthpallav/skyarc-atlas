@@ -304,6 +304,20 @@ export default function LocationDetailPage() {
         | undefined)
     : undefined;
 
+  // Admin metadata always surfaces vendor rate/margin when the API returns them.
+  const adminCommercial =
+    gates.showAdminTab
+      ? ((location.commercialView as
+          | {
+              marginPercent: number | null;
+              defaultRateAmount: number | null;
+              ratePeriod: string | null;
+              currency: string;
+              usesOrgDefaultMargin: boolean;
+            }
+          | undefined) ?? commercialView)
+      : undefined;
+
   const skyarcCommercialView = gates.showSkyarcPricing
     ? (location.skyarcCommercialView as
         | {
@@ -311,9 +325,19 @@ export default function LocationDetailPage() {
             ratePeriod: string | null;
             currency: string;
             notes: string | null;
+            premium?: boolean;
           }
         | undefined)
     : undefined;
+
+  const adminImpliedMarginPercent =
+    adminCommercial?.defaultRateAmount != null &&
+    adminCommercial.defaultRateAmount > 0 &&
+    skyarcCommercialView?.clientRateAmount != null
+      ? ((skyarcCommercialView.clientRateAmount - adminCommercial.defaultRateAmount) /
+          adminCommercial.defaultRateAmount) *
+        100
+      : null;
 
   const live = location.liveInventory as
     | {
@@ -779,7 +803,8 @@ export default function LocationDetailPage() {
 
         {tab === "rates" && gates.showRatesTab ? (
           <div className="space-y-4">
-            {showVendorCommercial ? (
+            {/* Vendors keep card rate on Rates; admins see vendor rate + margin under Admin. */}
+            {showVendorCommercial && !gates.showAdminTab ? (
               <LocationCommercialPanel
                 locationId={id}
                 canWrite={false}
@@ -823,6 +848,34 @@ export default function LocationDetailPage() {
                   <dt className="text-xs font-medium text-muted">Vendor media code</dt>
                   <dd className="mt-0.5 font-mono text-slate-900">
                     {String(location.vendorMediaCode)}
+                  </dd>
+                </div>
+              ) : null}
+              <div>
+                <dt className="text-xs font-medium text-muted">Vendor rate</dt>
+                <dd className="mt-0.5 font-semibold tabular-nums text-slate-900">
+                  {adminCommercial?.defaultRateAmount != null
+                    ? `${adminCommercial.currency} ${adminCommercial.defaultRateAmount.toLocaleString()} / ${adminCommercial.ratePeriod ?? "monthly"}`
+                    : "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-muted">Margin</dt>
+                <dd className="mt-0.5 font-semibold tabular-nums text-slate-900">
+                  {adminCommercial?.marginPercent != null
+                    ? `${adminCommercial.marginPercent}%${
+                        adminCommercial.usesOrgDefaultMargin ? " · org default" : ""
+                      }`
+                    : adminCommercial?.usesOrgDefaultMargin
+                      ? "Org default"
+                      : "—"}
+                </dd>
+              </div>
+              {adminImpliedMarginPercent != null ? (
+                <div>
+                  <dt className="text-xs font-medium text-muted">Implied margin vs standard rate</dt>
+                  <dd className="mt-0.5 font-semibold tabular-nums text-slate-900">
+                    {adminImpliedMarginPercent.toFixed(1)}%
                   </dd>
                 </div>
               ) : null}

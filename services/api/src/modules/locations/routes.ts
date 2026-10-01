@@ -1082,6 +1082,8 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
             ...rest,
             vendorMediaCode: null,
             organizationId: base.isOwned ? base.organizationId : null,
+            // Admins still need vendor rate + margin for Admin metadata.
+            ...(isAdminRole(request.user) && _cv ? { commercialView: _cv } : {}),
           };
         })();
     const response = success({

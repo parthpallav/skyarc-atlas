@@ -54,7 +54,7 @@ export function LocationSkyarcPricingPanel({
       });
     },
     onSuccess: async () => {
-      setMessage("Customer price saved.");
+      setMessage("Standard rate saved.");
       await queryClient.invalidateQueries({ queryKey: ["location", locationId] });
     },
   });
@@ -63,18 +63,18 @@ export function LocationSkyarcPricingPanel({
 
   return (
     <section className="card-surface p-5 sm:p-6 mb-4 border border-violet-200 bg-violet-50/30">
-      <h2 className="font-semibold text-slate-900 mb-1">Customer pricing</h2>
+      <h2 className="font-semibold text-slate-900 mb-1">Standard rate</h2>
       {canWrite && (
         <p className="text-sm text-muted mb-4">
-          Set the price shown to advertisers for this site. This is independent of the vendor&apos;s
-          rate card — Skyarc decides what the customer pays.
+          Rate shown on this site for pitching and media plans. Vendor card rate and margin live under
+          Admin metadata.
         </p>
       )}
 
       {skyarcCommercialView && !canWrite && (
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mt-3">
           <div>
-            <dt className="text-muted">Standard customer rate</dt>
+            <dt className="text-muted">Standard rate</dt>
             <dd className="font-bold text-lg text-slate-900 mt-1">
               {skyarcCommercialView.clientRateAmount != null
                 ? `${skyarcCommercialView.currency} ${skyarcCommercialView.clientRateAmount.toLocaleString()} / ${skyarcCommercialView.ratePeriod ?? "monthly"}`
@@ -101,7 +101,7 @@ export function LocationSkyarcPricingPanel({
         >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block text-sm">
-              <span className="text-muted font-medium">Customer rate (INR)</span>
+              <span className="text-muted font-medium">Standard rate (INR)</span>
               <input
                 type="number"
                 min={0}
@@ -157,7 +157,7 @@ export function LocationSkyarcPricingPanel({
             disabled={saveMutation.isPending || !clientRateAmount}
             className="btn-primary px-5 py-2.5 text-sm disabled:opacity-50"
           >
-            {saveMutation.isPending ? "Saving…" : "Save customer price"}
+            {saveMutation.isPending ? "Saving…" : "Save standard rate"}
           </button>
         </form>
       )}
