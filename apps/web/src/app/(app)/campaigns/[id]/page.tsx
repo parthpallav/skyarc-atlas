@@ -21,6 +21,7 @@ import { CampaignSummary } from "@/components/campaign-summary";
 import { PageHeaderSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
+import { ConfirmModal } from "@/components/confirm-modal";
 
 interface MediaPlanRow {
   id: string;
@@ -108,6 +109,7 @@ export default function CampaignDetailPage() {
   const { canMutateCampaign } = usePermissions();
   const [error, setError] = useState("");
   const [briefOpen, setBriefOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const {
     data: campaign,
@@ -168,6 +170,7 @@ export default function CampaignDetailPage() {
       return client.deleteCampaign(id);
     },
     onSuccess: async () => {
+      setDeleteOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["campaigns"] });
       router.push("/campaigns");
     },
@@ -263,15 +266,7 @@ export default function CampaignDetailPage() {
                 type="button"
                 className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
                 disabled={deleteMutation.isPending}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      `Delete "${campaign.name}"? This also removes its media plans.`
-                    )
-                  ) {
-                    deleteMutation.mutate();
-                  }
-                }}
+                onClick={() => setDeleteOpen(true)}
                 title="Delete campaign"
               >
                 <Trash2 className="h-4 w-4" />
@@ -436,6 +431,19 @@ export default function CampaignDetailPage() {
           ) : null}
         </div>
       </div>
+
+      <ConfirmModal
+        open={deleteOpen}
+        title="Delete campaign"
+        description={`Delete "${campaign.name}"? This also removes its media plans.`}
+        confirmLabel="Delete campaign"
+        danger
+        busy={deleteMutation.isPending}
+        onClose={() => {
+          if (!deleteMutation.isPending) setDeleteOpen(false);
+        }}
+        onConfirm={() => deleteMutation.mutate()}
+      />
     </div>
   );
 }

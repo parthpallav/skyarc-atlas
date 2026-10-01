@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -26,6 +26,7 @@ import {
   inventoryTypeBucket,
 } from "@skyarc/shared";
 import { MediaPlanDetailSkeleton } from "@/components/ui/skeleton";
+import { ConfirmModal } from "@/components/confirm-modal";
 
 interface RequestItem {
   id: string;
@@ -106,6 +107,7 @@ export default function RequestDetailPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { isClient, isVendor, isInternal } = usePermissions();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const {
     data: plan,
@@ -156,6 +158,7 @@ export default function RequestDetailPage() {
       return client.deleteMediaPlan(campaignId, planId);
     },
     onSuccess: async () => {
+      setDeleteOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["site-requests"] });
       router.push("/requests");
     },
@@ -341,11 +344,7 @@ export default function RequestDetailPage() {
                 type="button"
                 className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
                 disabled={deleteMutation.isPending}
-                onClick={() => {
-                  if (window.confirm(`Delete "${title}"? Holds will be released.`)) {
-                    deleteMutation.mutate();
-                  }
-                }}
+                onClick={() => setDeleteOpen(true)}
                 title="Delete request"
               >
                 <Trash2 className="h-4 w-4" />
@@ -468,6 +467,19 @@ export default function RequestDetailPage() {
           </Link>
         </p>
       ) : null}
+
+      <ConfirmModal
+        open={deleteOpen}
+        title="Delete request"
+        description={`Delete "${title}"? Holds will be released.`}
+        confirmLabel="Delete request"
+        danger
+        busy={deleteMutation.isPending}
+        onClose={() => {
+          if (!deleteMutation.isPending) setDeleteOpen(false);
+        }}
+        onConfirm={() => deleteMutation.mutate()}
+      />
     </div>
   );
 }

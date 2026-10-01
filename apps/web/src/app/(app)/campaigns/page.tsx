@@ -22,6 +22,7 @@ import { CampaignCardSkeleton } from "@/components/ui/skeleton";
 import { usePermissions } from "@/hooks/use-permissions";
 import { formatDateIn, durationDaysBetweenIso } from "@/lib/dates";
 import { formatInr, formatInrCompact } from "@/lib/format";
+import { ConfirmModal } from "@/components/confirm-modal";
 
 type ListFilter = "ALL" | "LIVE" | "DRAFT";
 
@@ -143,6 +144,7 @@ export default function CampaignsPage() {
   const { canMutateCampaign, isVendor, isClient, canWriteCampaigns } = usePermissions();
   const [searchTerm, setSearchTerm] = useState("");
   const [listFilter, setListFilter] = useState<ListFilter>("ALL");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   // Vendors use the dedicated Requests page
   useEffect(() => {
@@ -168,6 +170,7 @@ export default function CampaignsPage() {
       return client.deleteCampaign(campaignId);
     },
     onSuccess: async () => {
+      setDeleteTarget(null);
       await queryClient.invalidateQueries({ queryKey: ["campaigns"] });
     },
   });
@@ -461,15 +464,9 @@ export default function CampaignsPage() {
                       type="button"
                       className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-600 hover:bg-rose-50 hover:text-rose-700"
                       disabled={deleteMutation.isPending}
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            `Delete "${campaign.name}"? This also removes its media plans.`
-                          )
-                        ) {
-                          deleteMutation.mutate(campaign.id);
-                        }
-                      }}
+                      onClick={() =>
+                        setDeleteTarget({ id: campaign.id, name: campaign.name })
+                      }
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                       Delete
@@ -481,6 +478,25 @@ export default function CampaignsPage() {
           })}
         </div>
       ) : null}
+
+      <ConfirmModal
+        open={Boolean(deleteTarget)}
+        title="Delete campaign"
+        description={
+          deleteTarget
+            ? `Delete "${deleteTarget.name}"? This also removes its media plans.`
+            : undefined
+        }
+        confirmLabel="Delete campaign"
+        danger
+        busy={deleteMutation.isPending}
+        onClose={() => {
+          if (!deleteMutation.isPending) setDeleteTarget(null);
+        }}
+        onConfirm={() => {
+          if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+        }}
+      />
     </div>
   );
 }

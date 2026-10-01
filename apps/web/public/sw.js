@@ -1,4 +1,4 @@
-const CACHE_NAME = "skyarc-atlas-v3";
+const CACHE_NAME = "skyarc-atlas-v4";
 const STATIC_ASSETS = [
   "/",
   "/login",
