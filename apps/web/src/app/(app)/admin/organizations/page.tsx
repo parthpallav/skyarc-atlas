@@ -21,9 +21,10 @@ interface OrganizationRow {
 
 export default function AdminOrganizationsPage() {
   const queryClient = useQueryClient();
-  const { isSuperAdmin } = usePermissions();
+  const { isSuperAdmin, isAdmin, roleLabel } = usePermissions();
   const [name, setName] = useState("");
-  const [error, setError] = useState("");
+  const [createError, setCreateError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<OrganizationRow | null>(null);
   const [createdUserNotice, setCreatedUserNotice] = useState<{
     orgName: string;
@@ -47,7 +48,7 @@ export default function AdminOrganizationsPage() {
     },
     onSuccess: async (res) => {
       setName("");
-      setError("");
+      setCreateError("");
       const createdData = res.data as {
         name: string;
         createdUser?: { email: string; tempPassword?: string };
@@ -62,7 +63,7 @@ export default function AdminOrganizationsPage() {
       await queryClient.invalidateQueries({ queryKey: ["organizations"] });
     },
     onError: (err) => {
-      setError(err instanceof Error ? err.message : "Failed to create vendor");
+      setCreateError(err instanceof Error ? err.message : "Failed to create vendor");
     },
   });
 
@@ -73,11 +74,11 @@ export default function AdminOrganizationsPage() {
     },
     onSuccess: async () => {
       setDeleteTarget(null);
-      setError("");
+      setDeleteError("");
       await queryClient.invalidateQueries({ queryKey: ["organizations"] });
     },
     onError: (err) => {
-      setError(err instanceof Error ? err.message : "Failed to remove vendor");
+      setDeleteError(err instanceof Error ? err.message : "Failed to remove vendor");
     },
   });
 
@@ -85,7 +86,13 @@ export default function AdminOrganizationsPage() {
     <div>
       <PageHeader
         title="Vendor organizations"
-        description="Manage media owner accounts and vendor access"
+        description={
+          isSuperAdmin
+            ? "Manage media owner accounts and vendor access"
+            : isAdmin
+              ? `Signed in as ${roleLabel}. Only Super Admin can remove vendors.`
+              : "Manage media owner accounts and vendor access"
+        }
       />
 
       <section className="card-surface p-5 sm:p-6 mb-6 max-w-xl">
@@ -138,8 +145,14 @@ export default function AdminOrganizationsPage() {
           </div>
         )}
 
-        {error && <p className="text-sm text-red-700 mt-3">{error}</p>}
+        {createError ? <p className="mt-3 text-sm text-red-700">{createError}</p> : null}
       </section>
+
+      {deleteError ? (
+        <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {deleteError}
+        </p>
+      ) : null}
 
       {isLoading && <p className="text-muted text-sm">Loading vendors…</p>}
 
@@ -195,7 +208,10 @@ export default function AdminOrganizationsPage() {
                             ? "Reassign or archive sites before removing"
                             : "Remove vendor"
                         }
-                        onClick={() => setDeleteTarget(org)}
+                        onClick={() => {
+                          setDeleteError("");
+                          setDeleteTarget(org);
+                        }}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                         Remove
@@ -234,12 +250,24 @@ export default function AdminOrganizationsPage() {
         danger
         busy={deleteMutation.isPending}
         onClose={() => {
-          if (!deleteMutation.isPending) setDeleteTarget(null);
+          if (!deleteMutation.isPending) {
+            setDeleteTarget(null);
+            setDeleteError("");
+          }
         }}
         onConfirm={() => {
-          if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+          if (deleteTarget) {
+            setDeleteError("");
+            deleteMutation.mutate(deleteTarget.id);
+          }
         }}
-      />
+      >
+        {deleteError ? (
+          <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {deleteError}
+          </p>
+        ) : null}
+      </ConfirmModal>
     </div>
   );
 }

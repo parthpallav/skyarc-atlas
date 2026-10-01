@@ -25,6 +25,16 @@ import { forbidden, notFound, validationError } from "../../lib/errors.js";
 import { canManageOrganizations, isReadOnly } from "../../lib/rbac.js";
 import { success, listMeta } from "../../lib/response.js";
 
+/** Active inventory only — archived sites do not block vendor removal. */
+const organizationListCounts = {
+  _count: {
+    select: {
+      members: true,
+      locations: { where: { archivedAt: null } },
+    },
+  },
+} as const;
+
 function serializeOrganization(org: {
   id: string;
   name: string;
@@ -75,7 +85,7 @@ export async function organizationRoutes(fastify: FastifyInstance) {
 
     const org = await prisma.organization.findUnique({
       where: { id: request.user.organizationId },
-      include: { _count: { select: { members: true, locations: true } } },
+      include: organizationListCounts,
     });
     if (!org) throw notFound("Organization not found");
 
@@ -130,7 +140,7 @@ export async function organizationRoutes(fastify: FastifyInstance) {
       const org = await prisma.organization.update({
         where: { id: existing.id },
         data: { commercialJson: merged },
-        include: { _count: { select: { members: true, locations: true } } },
+        include: organizationListCounts,
       });
 
       return success({
@@ -153,7 +163,7 @@ export async function organizationRoutes(fastify: FastifyInstance) {
     const org = await prisma.organization.findUnique({
       where: { id },
       include: {
-        _count: { select: { members: true, locations: true } },
+        ...organizationListCounts,
         members: {
           select: {
             id: true,
@@ -195,7 +205,7 @@ export async function organizationRoutes(fastify: FastifyInstance) {
       const org = await prisma.organization.update({
         where: { id },
         data: { commercialJson: merged },
-        include: { _count: { select: { members: true, locations: true } } },
+        include: organizationListCounts,
       });
 
       return success({
@@ -218,7 +228,7 @@ export async function organizationRoutes(fastify: FastifyInstance) {
         skip,
         take: query.limit,
         orderBy: { createdAt: "desc" },
-        include: { _count: { select: { members: true, locations: true } } },
+        include: organizationListCounts,
       }),
       prisma.organization.count({ where }),
     ]);
@@ -239,7 +249,7 @@ export async function organizationRoutes(fastify: FastifyInstance) {
         type: OrganizationType.VENDOR,
         status: OrganizationStatus.ACTIVE,
       },
-      include: { _count: { select: { members: true, locations: true } } },
+      include: organizationListCounts,
     });
 
     const cleanSlug = body.name.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -285,7 +295,7 @@ export async function organizationRoutes(fastify: FastifyInstance) {
       const org = await prisma.organization.update({
         where: { id },
         data: { status: body.status },
-        include: { _count: { select: { members: true, locations: true } } },
+        include: organizationListCounts,
       });
 
       return success(serializeOrganization(org));
@@ -301,7 +311,7 @@ export async function organizationRoutes(fastify: FastifyInstance) {
       const id = uuidSchema.parse((request.params as { id: string }).id);
       const org = await prisma.organization.findUnique({
         where: { id },
-        include: { _count: { select: { members: true, locations: true } } },
+        include: organizationListCounts,
       });
       if (!org) throw notFound("Organization not found");
       if (org.type !== OrganizationType.VENDOR) {
@@ -314,6 +324,10 @@ export async function organizationRoutes(fastify: FastifyInstance) {
       }
 
       await prisma.$transaction(async (tx) => {
+        await tx.location.updateMany({
+          where: { organizationId: id },
+          data: { organizationId: null },
+        });
         await tx.refreshToken.updateMany({
           where: { user: { organizationId: id }, revokedAt: null },
           data: { revokedAt: new Date() },
