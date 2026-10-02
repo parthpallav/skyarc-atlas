@@ -4,7 +4,7 @@
 > Paste into draft PR #7 when repository access is available. Do **not** merge or deploy automatically.
 
 **Branch:** `feat/phase2-4-booking-scenarios`  
-**Hardened RC SHA:** `4677c26`  
+**Hardened RC SHA:** `4677c26` (tip with evidence stamp: `e095313`)  
 **Prior baseline:** `52a817d`  
 **Title:**
 
@@ -28,20 +28,21 @@ RC: Harden OIDC/MQTT/Pulse authz; local browser + MQTT 3.1.1/5 matrix; migration
 
 ## Validation summary
 
-```bash
-# On committed RC SHA:
-pnpm --filter @skyarc/api build && pnpm --filter @skyarc/api test:unit
-INTEGRATION_DATABASE_URL=… pnpm --filter @skyarc/api test:integration
+Recorded on tip `e095313` (hardening `4677c26`), local:
 
-pnpm --filter @skyarc/pulse test:unit
-PULSE_DATABASE_URL=… pnpm --filter @skyarc/pulse test:integration
-
-pnpm --filter @skyarc/orbit-cloud test:unit
-ORBIT_DATABASE_URL=… pnpm --filter @skyarc/orbit-cloud test:integration
-# Optional: MQTT5_BROKER_URL=… for Mosquitto MQTT 5 suite
+```text
+@skyarc/api build: PASS
+@skyarc/api test:unit: 165 passed
+@skyarc/api test:integration: 11 passed (pulse-quote 3 + google-oidc.protocol 1 + reservation 6 + oauth-pending 1)
+@skyarc/pulse build: PASS
+@skyarc/pulse test: 13 passed (incl. inbound-identity)
+@skyarc/pulse test:integration: 1 passed
+@skyarc/orbit-cloud build: PASS
+@skyarc/orbit-cloud test:unit: 22 passed
+@skyarc/orbit-cloud test:integration: 6 passed / 1 skipped (MQTT5 live Mosquitto skipped without MQTT5_BROKER_URL; doc assertion passed)
 ```
 
-Ensure CI includes the three integration suites **or** attach their evidence separately to the PR.
+**CI note:** No workflow under `.github/workflows` currently runs these integration suites. Treat the counts above as separate RC evidence until CI is extended.
 
 ## Test plan
 
