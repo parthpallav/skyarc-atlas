@@ -1,23 +1,30 @@
 /**
- * Authenticated MQTT consumer (optional dependency).
- * Topic identity must match registered device credentials.
- * Durable handoff: persist OrbitIngestInbox before MQTT ACK.
+ * Authenticated MQTT consumer for Lunar Spec v1.0 topics.
+ * skyarc/v1/orbit/{physicalDeviceId}/{channel}
  *
- * Live broker verification requires ORBIT_MQTT_URL. Without it, HTTPS
- * ingest + simulator cover the same contracts.
+ * Directional ACL (app-layer): devices publish telemetry|heartbeat|status|events|command-ack only.
+ * Tenant identity derived from device registry. messageId deduped per device.
+ *
+ * Durable handoff: persist OrbitIngestInbox before considering the message accepted.
+ * Broker QoS PUBACK ≠ normalized DB persistence.
+ *
+ * Live broker verification requires ORBIT_MQTT_URL + per-device broker ACLs.
+ * Without them, HTTPS Lunar ingest + simulator cover the same contracts.
  */
 import {
-  parseOrbitMqttTopic,
-  orbitMqttTopic,
+  parseOrbitLunarMqttTopic,
+  lunarDeviceMayPublish,
+  orbitLunarMqttTopic,
+  ORBIT_MQTT_DEVICE_PUBLISH_CHANNELS,
 } from "@skyarc/shared";
 import type { OrbitEnv } from "../env.js";
 import { prisma } from "../prisma.js";
 import { credentialsMatch } from "../crypto.js";
 import {
-  acceptIntoInbox,
-  processInboxItem,
-  validateTelemetryBytes,
+  acceptLunarEnvelope,
+  validateLunarMessageBytes,
 } from "../lib/ingest.js";
+import { scrubLunarSecrets } from "../lib/lunar-envelope.js";
 import { flushOutbox } from "../events.js";
 
 export type MqttConsumerHandle = {
@@ -31,8 +38,11 @@ export async function startMqttConsumer(env: OrbitEnv): Promise<MqttConsumerHand
     return null;
   }
 
-  let mqtt: typeof import("mqtt");
+  // mqtt is an optionalDependency — may be absent in typecheck environments.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mqtt: any;
   try {
+    // @ts-expect-error optional dependency; types may be absent when not installed
     mqtt = await import("mqtt");
   } catch {
     return null;
@@ -48,8 +58,9 @@ export async function startMqttConsumer(env: OrbitEnv): Promise<MqttConsumerHand
   });
 
   client.on("connect", () => {
-    client.subscribe("orbit/+/+/telemetry", { qos: 1 });
-    client.subscribe("orbit/+/+/heartbeat", { qos: 1 });
+    for (const channel of ORBIT_MQTT_DEVICE_PUBLISH_CHANNELS) {
+      client.subscribe(`skyarc/v1/orbit/+/${channel}`, { qos: 1 });
+    }
   });
 
   client.on("message", (topic: string, buf: Buffer) => {
@@ -67,21 +78,37 @@ export async function startMqttConsumer(env: OrbitEnv): Promise<MqttConsumerHand
 }
 
 async function handleMessage(env: OrbitEnv, topic: string, buf: Buffer) {
-  const parsedTopic = parseOrbitMqttTopic(topic);
+  const parsedTopic = parseOrbitLunarMqttTopic(topic);
   if (!parsedTopic) {
     await prisma.orbitIngestFailure.create({
-      data: { topic, reason: "Invalid topic shape", payloadPreview: buf.toString("utf8").slice(0, 120) },
+      data: {
+        topic,
+        reason: "Invalid Lunar topic shape (expected skyarc/v1/orbit/{deviceId}/{channel})",
+        payloadPreview: buf.toString("utf8").slice(0, 120),
+      },
     });
     return;
   }
 
-  const size = validateTelemetryBytes(buf);
+  const { physicalDeviceId, channel } = parsedTopic;
+
+  // Devices must not publish on commands/config
+  if (!lunarDeviceMayPublish(physicalDeviceId, physicalDeviceId, channel)) {
+    await prisma.orbitIngestFailure.create({
+      data: {
+        topic,
+        reason: `Directional ACL: devices cannot publish on channel ${channel}`,
+      },
+    });
+    return;
+  }
+
+  const size = validateLunarMessageBytes(buf);
   if (!size.ok) {
     await prisma.orbitIngestFailure.create({
       data: {
         topic,
-        tenantId: parsedTopic.tenantId,
-        deviceId: parsedTopic.deviceId,
+        deviceId: undefined,
         reason: size.reason,
       },
     });
@@ -93,70 +120,54 @@ async function handleMessage(env: OrbitEnv, topic: string, buf: Buffer) {
     json = JSON.parse(size.text);
   } catch {
     await prisma.orbitIngestFailure.create({
-      data: {
-        topic,
-        tenantId: parsedTopic.tenantId,
-        deviceId: parsedTopic.deviceId,
-        reason: "Invalid JSON",
-      },
+      data: { topic, reason: "Invalid JSON" },
     });
     return;
   }
 
-  const device = await prisma.orbitDevice.findUnique({ where: { id: parsedTopic.deviceId } });
+  const device = await prisma.orbitDevice.findUnique({
+    where: { physicalDeviceId },
+  });
   if (!device || device.revokedAt || !device.credentialHash) {
     await prisma.orbitIngestFailure.create({
       data: {
         topic,
-        tenantId: parsedTopic.tenantId,
-        deviceId: parsedTopic.deviceId,
-        reason: device?.revokedAt ? "Credential revoked" : "Unknown or unenrolled device",
-      },
-    });
-    return;
-  }
-  if (device.tenantId !== parsedTopic.tenantId) {
-    await prisma.orbitIngestFailure.create({
-      data: {
-        topic,
-        tenantId: parsedTopic.tenantId,
-        deviceId: parsedTopic.deviceId,
-        reason: "Topic tenant does not match device registry tenant (spoof blocked)",
+        reason: device?.revokedAt
+          ? "Credential revoked — active access terminated at app layer; broker session kill required in production ACL"
+          : "Unknown or unenrolled physical device",
       },
     });
     return;
   }
 
-  const payloadDeviceId =
+  const envelopeDeviceId =
     json && typeof json === "object" && typeof (json as { deviceId?: unknown }).deviceId === "string"
       ? (json as { deviceId: string }).deviceId
       : null;
-  if (payloadDeviceId !== device.id) {
+  if (envelopeDeviceId !== physicalDeviceId || envelopeDeviceId !== device.physicalDeviceId) {
     await prisma.orbitIngestFailure.create({
       data: {
         topic,
         tenantId: device.tenantId,
         deviceId: device.id,
-        reason: "Payload deviceId does not match topic deviceId",
+        reason: "Envelope/topic physical deviceId mismatch (spoof blocked)",
       },
     });
     return;
   }
 
-  const typed =
+  // App-layer device auth until broker per-device ACL + mTLS verified as sole auth.
+  const secret =
     json && typeof json === "object"
-      ? ((json as { typedValues?: Record<string, unknown> }).typedValues ?? {})
-      : {};
-  const mqttSecret = typeof typed.__mqttSecret === "string" ? typed.__mqttSecret : null;
-  // App-layer device auth is mandatory until broker per-device ACL + mTLS is verified.
-  // Do not accept topic-only identity.
-  if (!mqttSecret || !credentialsMatch(mqttSecret, device.credentialHash)) {
+      ? extractMqttSecret(json as Record<string, unknown>)
+      : null;
+  if (!secret || !credentialsMatch(secret, device.credentialHash)) {
     await prisma.orbitIngestFailure.create({
       data: {
         topic,
         tenantId: device.tenantId,
         deviceId: device.id,
-        reason: mqttSecret
+        reason: secret
           ? "MQTT device secret mismatch"
           : "MQTT device secret required (broker ACL/mTLS not yet verified as sole auth)",
       },
@@ -164,37 +175,31 @@ async function handleMessage(env: OrbitEnv, topic: string, buf: Buffer) {
     return;
   }
 
-  // Durable handoff: inbox insert before considering the message accepted.
-  // Note: mqtt.js default QoS1 may PUBACK on handler return; production should use
-  // manual ack after this await (ORBIT_MQTT_MANUAL_ACK) once broker ACLs are live.
-  const accepted = await acceptIntoInbox(prisma, {
+  const scrubbed = scrubLunarSecrets(json);
+  await acceptLunarEnvelope(prisma, {
     deviceId: device.id,
     tenantId: device.tenantId,
+    physicalDeviceId,
+    deviceType: device.deviceType,
     topic,
-    payload: json,
+    channel,
+    envelope: scrubbed,
+    maxSkewMs: env.ORBIT_MAX_CLOCK_SKEW_MS,
+    staleAfterMs: env.ORBIT_STALE_OBSERVATION_MS,
   });
-  if ("error" in accepted) {
-    await prisma.orbitIngestFailure.create({
-      data: {
-        topic,
-        tenantId: device.tenantId,
-        deviceId: device.id,
-        reason: accepted.error,
-      },
-    });
-    return;
-  }
-
-  if (!accepted.duplicate) {
-    await processInboxItem(prisma, accepted.inbox.id, {
-      authenticatedTenantId: device.tenantId,
-      deviceId: device.id,
-      deviceType: device.deviceType,
-    });
-    await flushOutbox(env);
-  }
+  await flushOutbox(env);
 }
 
-export function expectedPublishTopic(tenantId: string, deviceId: string) {
-  return orbitMqttTopic(tenantId, deviceId, "telemetry");
+function extractMqttSecret(json: Record<string, unknown>): string | null {
+  if (typeof json.__mqttSecret === "string") return json.__mqttSecret;
+  const payload = json.payload;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const p = payload as Record<string, unknown>;
+    if (typeof p.__mqttSecret === "string") return p.__mqttSecret;
+  }
+  return null;
+}
+
+export function expectedPublishTopic(physicalDeviceId: string) {
+  return orbitLunarMqttTopic(physicalDeviceId, "telemetry");
 }

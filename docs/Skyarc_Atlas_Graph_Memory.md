@@ -10,7 +10,7 @@ Living ownership map. Update as capabilities ship.
 **Phase 5 ops/billing:** ExecutionTask, CreativeVersion, ProofRecord, Invoice/Payment/CreditNote, vendor costs, Tally file export, ReminderJob; `docs/contracts/OPS_BILLING_API.md`
 **Phase 6 WhatsApp:** Atlas link+confirm; Pulse conversation; Bridge durable delivery/receipts; `docs/contracts/WHATSAPP_API.md`
 **Phase 7A recommendations:** Continuity + fill-rate via `CommercialRecommendation`; `docs/contracts/RECOMMENDATIONS_API.md`; Orbit intelligence deferred to 7B
-**Phase 7B telemetry:** Orbit MQTT/HTTPS contracts + durable inbox; Atlas `DeviceScreenMapping` + campaign evidence; `docs/contracts/ORBIT_TELEMETRY_API.md` (simulator-verified; live broker/hardware pending)
+**Phase 7B telemetry:** Lunar MQTT Spec v1.0 wire compatibility + durable inbox; Atlas `DeviceScreenMapping` + campaign evidence; `docs/contracts/ORBIT_TELEMETRY_API.md` + `ORBIT_MQTT_LUNAR_COMPATIBILITY.md` (simulator-verified; physical/live pending; §10 decisions open)
 
 ## Service ownership
 
@@ -111,16 +111,18 @@ Living ownership map. Update as capabilities ship.
 
 ## Phase 7B evidence (Orbit telemetry + associations)
 
-- Payload contracts `7b.v1` + capability profiles (Edge / Sense / player) in `@skyarc/shared`
-- Orbit: durable `OrbitIngestInbox` handoff, raw dedupe, measurements, separated state, incidents, aggregates, coverage gaps, retention
-- MQTT consumer (optional `ORBIT_MQTT_URL`) with topic/tenant/device binding + revoke; HTTPS ingest uses same schema
-- Simulator offline replay without hardware
-- Atlas: `DeviceScreenMapping` (`0015`), relocate API, `GET /campaigns/:id/orbit-evidence`, operational-risk snapshots
+- **Lunar Spec v1.0 wire:** `skyarc/v1/orbit/{physicalDeviceId}/{channel}` + envelope `messageId/deviceId/timestamp/type/version/payload`
+- Compatibility matrix: `docs/contracts/ORBIT_MQTT_LUNAR_COMPATIBILITY.md` (proposed additions explicit / unconfirmed)
+- Internal normalize → `7b.v1`; physical id → UUID + tenant via registry
+- Orbit: durable inbox (dedupe messageId/device), raw, measurements, separated state, incidents, aggregates, coverage, commands/config history, retention
+- MQTT consumer on Lunar topics; directional ACL helpers; HTTPS `/ingest/v1/lunar` simulator path
+- Offline baseline: events+acks queueable; telemetry/heartbeat gaps → unknown (no pretend offline telemetry summaries)
+- Does **not** infer screen power from voltage or playback from heartbeat
+- Atlas: `DeviceScreenMapping` (`0015`), relocate, `GET /campaigns/:id/orbit-evidence`, operational-risk snapshots
 - UI: `/campaigns/[id]/orbit-evidence`
-- Contract: `docs/contracts/ORBIT_TELEMETRY_API.md`
-- Unit: `phase7b-telemetry.test.ts` (Orbit), `phase7b-orbit-evidence.test.ts` (Atlas)
-- **Simulator-verified** vs **live broker/hardware** called out separately — missing MQTT/hardware blocks live verification only
-- Audience/impressions/reach/verified delivery: **still blocked** pending validated sensors + CMS
+- Unit: Orbit phase7b 22 tests; Atlas phase7b-orbit-evidence
+- **Backend implemented / Simulator verified** vs **Physical-device verified (blocked)** vs **Pending Lunar §10** vs **Pending production broker config** — reported separately
+- Audience/impressions/reach/verified delivery: **still blocked**
 
 ## Still open / blocked
 

@@ -758,11 +758,13 @@ export const orbitEventEnvelopeSchema = z.object({
   payload: z.record(z.unknown()),
 });
 
-/** Phase 7B versioned device telemetry payload (MQTT or HTTPS ingest). */
+/** Phase 7B versioned device telemetry payload (MQTT or HTTPS ingest).
+ * eventId may be a Lunar messageId (non-UUID). deviceId is internal Orbit UUID.
+ */
 export const orbitTelemetryPayloadV1Schema = z
   .object({
     schemaVersion: z.literal("7b.v1"),
-    eventId: uuidSchema,
+    eventId: z.string().min(1).max(128),
     deviceId: uuidSchema,
     bootId: z.string().min(1).max(64),
     sessionId: z.string().min(1).max(64),
@@ -775,7 +777,7 @@ export const orbitTelemetryPayloadV1Schema = z
     typedValues: z.record(z.union([z.number(), z.string(), z.boolean(), z.null()])).optional(),
     sensorModelVersion: z.string().max(64).nullable().optional(),
     confidence: z.number().min(0).max(1).nullable().optional(),
-    qualityFlags: z.array(z.string().max(32)).max(20).optional(),
+    qualityFlags: z.array(z.string().max(64)).max(20).optional(),
     creativeId: z.string().uuid().nullable().optional(),
     campaignId: z.string().uuid().nullable().optional(),
     /** Raw camera frames are disabled by default — only explicit false/omit allowed. */
@@ -794,3 +796,4 @@ export const orbitTelemetryPayloadV1Schema = z
   });
 
 export const MAX_ORBIT_TELEMETRY_BYTES = 16_384;
+export const MAX_ORBIT_LUNAR_MESSAGE_BYTES = 65_536;

@@ -86,7 +86,7 @@
 | Live paid checkout                 | —                                                   | Hold/payment/refund policy live    | Atlas        | payment      | **pending**     | blocked on credentials                                      |
 | WhatsApp production                | Bridge dry-run                                      | Signed webhooks + delivery jobs    | Bridge+Pulse | Meta creds   | **pending**     | live Meta + template catalog + signed webhooks              |
 | Live Tally synchronization         | File export only                                    | Live sync when contract verified   | Atlas        | Tally        | **pending**     | not complete from dry-run/file export                       |
-| MQTT telemetry (Phase 7B)          | Contracts + inbox/MQTT consumer + mappings (`0015`) | Auth MQTT + validated telemetry + associations | Orbit+Atlas | Phase 7B | **done (simulator slice)** | phase7b unit (Orbit+Atlas); live broker/hardware pending |
+| MQTT telemetry (Phase 7B)          | Lunar Spec v1.0 topics/envelope + inbox + mappings (`0015`); see `ORBIT_MQTT_LUNAR_COMPATIBILITY.md` | Auth MQTT + validated telemetry + associations | Orbit+Atlas | Phase 7B | **done (simulator / Lunar-compatible)** | Orbit 22 unit; live broker/hardware + Lunar §10 decisions pending |
 | Campaign intelligence (forecasts)  | —                                                   | Audience/impressions/reach         | Pulse        | validated sensors + CMS | **blocked** | deferred until evidence sources validated |
 
 
@@ -120,8 +120,9 @@
 - **Phase 5:** ✅ Ops tasks, creative, proof, invoices, vendor costs, Tally file export, reminders (`docs/contracts/OPS_BILLING_API.md`)
 - **Phase 6:** ✅ Adapters + linking + confirm + conversation slice (`docs/contracts/WHATSAPP_API.md`); ⏳ live Meta delivery
 - **Phase 7A:** ✅ Continuity + fill-rate recommendations (`docs/contracts/RECOMMENDATIONS_API.md`); no Orbit inference
-- **Phase 7B:** ✅ Simulator slice — MQTT contracts, durable ingest, storage, mappings, campaign evidence (`docs/contracts/ORBIT_TELEMETRY_API.md`); ⏳ live broker/hardware
-- **Orbit live verification:** Blocked on broker credentials + physical devices — does not block simulator contracts
+- **Phase 7B:** ✅ Lunar Spec v1.0–compatible MQTT/HTTPS ingest + durable storage + mappings + campaign evidence (`docs/contracts/ORBIT_TELEMETRY_API.md`, `ORBIT_MQTT_LUNAR_COMPATIBILITY.md`); ⏳ live broker/hardware; ⏳ Lunar §10 open decisions
+- **Orbit live verification:** Blocked on broker credentials + physical devices — does not block simulator / contract work
+- **Do not** contact Lunar or change the partner-facing PDF automatically from this workstream
 
 ---
 

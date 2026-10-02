@@ -16,6 +16,10 @@ model OrbitDevice {
   tenantId          String
   atlasScreenId     String    @db.Uuid
   skyarcScreenCode  String
+  /// Physical identity from Lunar firmware (e.g. ORBIT-0001). Never changes.
+  physicalDeviceId  String?   @unique
+  /// MQTT username proposal (orbit_ORBIT0001); optional until broker provisioning.
+  mqttUsername      String?
   deviceType        String
   status            String    @default("pending")
   credentialHash    String?
@@ -24,6 +28,8 @@ model OrbitDevice {
   lastSeenAt        DateTime?
   health            String    @default("unknown")
   firmwareVersion   String?
+  /// Last applied integer configVersion (Lunar). Ignore inbound ≤ current.
+  appliedConfigVersion Int    @default(0)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -40,6 +46,9 @@ model OrbitDevice {
   coverageGaps OrbitCoverageGap[]
   inbox        OrbitIngestInbox[]
   failures     OrbitIngestFailure[]
+  commands     OrbitCommand[]
+  commandAcks  OrbitCommandAck[]
+  configs      OrbitDeviceConfig[]
 
   @@index([tenantId, atlasScreenId])
   @@index([skyarcScreenCode])
@@ -109,19 +118,26 @@ model OrbitEventOutbox {
 }
 
 /// Durable MQTT/HTTPS handoff. Broker ACK only after inbox insert.
+/// Deduplicate messageId within device context (Lunar Spec §7).
 model OrbitIngestInbox {
   id           String    @id @default(uuid()) @db.Uuid
-  eventId      String    @unique
+  /// Idempotency key: Lunar messageId or internal 7b eventId
+  eventId      String
   deviceId     String    @db.Uuid
   tenantId     String
   topic        String?
+  channel      String?
+  schemaFamily String    @default("7b.v1") // "lunar.v1" | "7b.v1"
   payloadJson  Json
+  /// Original Lunar envelope when schemaFamily=lunar.v1 (investigation)
+  envelopeJson Json?
   receivedAt   DateTime  @default(now())
   processedAt  DateTime?
   processError String?
 
   device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
+  @@unique([deviceId, eventId])
   @@index([processedAt, receivedAt])
   @@index([deviceId, receivedAt])
   @@schema("orbit")
@@ -142,7 +158,7 @@ model OrbitIngestFailure {
   @@schema("orbit")
 }
 
-/// Deduplicated raw events (short retention).
+/// Deduplicated raw events (short retention). eventId = messageId (Lunar) or UUID (7b).
 model OrbitRawEvent {
   eventId          String   @id
   deviceId         String   @db.Uuid
@@ -156,6 +172,8 @@ model OrbitRawEvent {
   measurementType  String
   schemaVersion    String
   payloadJson      Json
+  /// Original wire envelope when available
+  envelopeJson     Json?
   createdAt        DateTime @default(now())
 
   device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
@@ -280,5 +298,70 @@ model OrbitCoverageGap {
   device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@index([deviceId, gapStart])
+  @@schema("orbit")
+}
+
+/// Atlas→device command history. PUBACK ≠ execution; correlate via commandId.
+model OrbitCommand {
+  id              String    @id @default(uuid()) @db.Uuid
+  commandId       String
+  deviceId        String    @db.Uuid
+  tenantId        String
+  command         String
+  parametersJson  Json      @default("{}")
+  messageId       String
+  /// accepted | executing | completed | failed | rejected | expired
+  outcome         String    @default("accepted")
+  expiresAt       DateTime?
+  issuedAt        DateTime  @default(now())
+  completedAt     DateTime?
+  /// For restart: COMPLETED expected after boot with same commandId
+  awaitBootCompletion Boolean @default(false)
+  detailJson      Json      @default("{}")
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  acks   OrbitCommandAck[]
+
+  @@unique([deviceId, commandId])
+  @@index([tenantId, issuedAt])
+  @@index([outcome, issuedAt])
+  @@schema("orbit")
+}
+
+model OrbitCommandAck {
+  id          String   @id @default(uuid()) @db.Uuid
+  commandId   String
+  deviceId    String   @db.Uuid
+  messageId   String
+  status      String
+  observedAt  DateTime
+  receivedAt  DateTime @default(now())
+  payloadJson Json     @default("{}")
+  commandRowId String? @db.Uuid
+
+  device  OrbitDevice   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  command OrbitCommand? @relation(fields: [commandRowId], references: [id], onDelete: SetNull)
+
+  @@unique([deviceId, messageId])
+  @@index([deviceId, commandId, receivedAt])
+  @@schema("orbit")
+}
+
+/// Config versions pushed to device. Ignore apply of version ≤ current.
+model OrbitDeviceConfig {
+  id            String   @id @default(uuid()) @db.Uuid
+  deviceId      String   @db.Uuid
+  configVersion Int
+  configJson    Json
+  messageId     String
+  issuedAt      DateTime @default(now())
+  /// pending | applied | rejected_stale | invalid
+  status        String   @default("pending")
+  appliedAt     DateTime?
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, configVersion])
+  @@index([deviceId, issuedAt])
   @@schema("orbit")
 }

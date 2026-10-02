@@ -8,6 +8,9 @@ const uuid = z.string().uuid();
 
 export const MAX_ORBIT_TELEMETRY_BYTES = 16_384;
 
+/** Lunar Spec default (64 KiB TBD) — use for Lunar envelope path. */
+export const MAX_ORBIT_LUNAR_MESSAGE_BYTES = 65_536;
+
 /** Remove auth material before durable persistence — never store device secrets. */
 export function scrubSecretsFromPayload(payload: unknown): unknown {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
@@ -24,10 +27,14 @@ export function scrubSecretsFromPayload(payload: unknown): unknown {
   return clone;
 }
 
+/**
+ * Internal normalized schema (7b.v1). eventId may be a Lunar messageId (non-UUID).
+ * deviceId is always the internal Orbit device UUID after registry mapping.
+ */
 export const orbitTelemetryPayloadV1Schema = z
   .object({
     schemaVersion: z.literal("7b.v1"),
-    eventId: uuid,
+    eventId: z.string().min(1).max(128),
     deviceId: uuid,
     bootId: z.string().min(1).max(64),
     sessionId: z.string().min(1).max(64),
@@ -40,7 +47,7 @@ export const orbitTelemetryPayloadV1Schema = z
     typedValues: z.record(z.union([z.number(), z.string(), z.boolean(), z.null()])).optional(),
     sensorModelVersion: z.string().max(64).nullable().optional(),
     confidence: z.number().min(0).max(1).nullable().optional(),
-    qualityFlags: z.array(z.string().max(32)).max(20).optional(),
+    qualityFlags: z.array(z.string().max(64)).max(20).optional(),
     creativeId: z.string().uuid().nullable().optional(),
     campaignId: z.string().uuid().nullable().optional(),
     includesImage: z.literal(false).optional(),

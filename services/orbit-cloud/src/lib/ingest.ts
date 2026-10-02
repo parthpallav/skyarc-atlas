@@ -1,6 +1,9 @@
 /**
  * Durable ingest handoff + normalization.
  * Broker/HTTP acceptance ≠ processed persistence; inbox is the crash boundary.
+ *
+ * Lunar Spec v1.0 envelopes are normalized into internal 7b.v1 for measurements.
+ * Offline baseline: events/acks may replay; telemetry/heartbeat gaps stay unknown.
  */
 import type { Prisma, PrismaClient } from "../generated/prisma/index.js";
 import {
@@ -10,6 +13,13 @@ import {
   ORBIT_PAYLOAD_VERSION,
 } from "@skyarc/shared";
 import { orbitTelemetryPayloadV1Schema, MAX_ORBIT_TELEMETRY_BYTES, scrubSecretsFromPayload } from "./payload.js";
+import {
+  normalizeLunarToInternal,
+  orbitLunarEnvelopeSchema,
+  scrubLunarSecrets,
+  validateLunarMessageBytes,
+} from "./lunar-envelope.js";
+import { applyCommandAck, applyLunarStatus, markConfigAppliedFromEvent } from "./commands.js";
 import { enqueueOrbitEvent } from "../events.js";
 import { OrbitEventType } from "@skyarc/shared";
 
@@ -33,13 +43,18 @@ export function validateTelemetryBytes(raw: string | Buffer): { ok: true; text: 
   return { ok: true, text };
 }
 
+export { validateLunarMessageBytes };
+
 export async function acceptIntoInbox(
   db: Db,
   input: {
     deviceId: string;
     tenantId: string;
     topic?: string | null;
+    channel?: string | null;
     payload: unknown;
+    envelopeJson?: unknown;
+    schemaFamily?: "7b.v1" | "lunar.v1";
     receivedAt?: Date;
   }
 ) {
@@ -49,9 +64,13 @@ export async function acceptIntoInbox(
     typeof scrubbed === "object" &&
     typeof (scrubbed as { eventId?: unknown }).eventId === "string"
       ? (scrubbed as { eventId: string }).eventId
-      : null;
+      : scrubbed &&
+          typeof scrubbed === "object" &&
+          typeof (scrubbed as { messageId?: unknown }).messageId === "string"
+        ? (scrubbed as { messageId: string }).messageId
+        : null;
   if (!eventId) {
-    return { error: "eventId required" as const };
+    return { error: "eventId/messageId required" as const };
   }
 
   try {
@@ -61,13 +80,22 @@ export async function acceptIntoInbox(
         deviceId: input.deviceId,
         tenantId: input.tenantId,
         topic: input.topic ?? null,
+        channel: input.channel ?? null,
+        schemaFamily: input.schemaFamily ?? "7b.v1",
         payloadJson: scrubbed as Prisma.InputJsonValue,
+        envelopeJson: (input.envelopeJson
+          ? scrubLunarSecrets(input.envelopeJson)
+          : undefined) as Prisma.InputJsonValue | undefined,
         receivedAt: input.receivedAt ?? new Date(),
       },
     });
     return { inbox: row, duplicate: false as const };
   } catch {
-    const existing = await db.orbitIngestInbox.findUnique({ where: { eventId } });
+    const existing = await db.orbitIngestInbox.findUnique({
+      where: {
+        deviceId_eventId: { deviceId: input.deviceId, eventId },
+      },
+    });
     if (existing) return { inbox: existing, duplicate: true as const };
     return { error: "Inbox insert failed" as const };
   }
@@ -87,6 +115,183 @@ function bucketStart(d: Date, bucket: "5m" | "1h" | "1d"): Date {
     t.setUTCHours(0, 0, 0, 0);
   }
   return t;
+}
+
+/**
+ * Accept a Lunar Spec v1.0 envelope on a device-publish channel.
+ * Telemetry/heartbeat are not expected to be queued offline (Spec §7) —
+ * missing history remains unknown; replayed events keep observation time.
+ */
+export async function acceptLunarEnvelope(
+  db: Db,
+  input: {
+    deviceId: string;
+    tenantId: string;
+    physicalDeviceId: string;
+    deviceType: string;
+    topic: string;
+    channel: string;
+    envelope: unknown;
+    receivedAt?: Date;
+    maxSkewMs?: number;
+    staleAfterMs?: number;
+    /** Baseline: telemetry/heartbeat offline queue not supported — mark coverage if flagged */
+    offlineTelemetryExtension?: boolean;
+  }
+) {
+  const receivedAt = input.receivedAt ?? new Date();
+  const parsed = orbitLunarEnvelopeSchema.safeParse(input.envelope);
+  if (!parsed.success) {
+    await db.orbitIngestFailure.create({
+      data: {
+        deviceId: input.deviceId,
+        tenantId: input.tenantId,
+        topic: input.topic,
+        reason: parsed.error.issues.map((i) => i.message).join("; "),
+        payloadPreview: JSON.stringify(input.envelope).slice(0, 200),
+        receivedAt,
+      },
+    });
+    return { rejected: true as const, reason: "invalid_lunar_envelope" as const };
+  }
+
+  const envelope = parsed.data;
+  if (envelope.deviceId !== input.physicalDeviceId) {
+    await db.orbitIngestFailure.create({
+      data: {
+        deviceId: input.deviceId,
+        tenantId: input.tenantId,
+        topic: input.topic,
+        reason: "Envelope deviceId does not match topic physical device id",
+        receivedAt,
+      },
+    });
+    return { rejected: true as const, reason: "device_mismatch" as const };
+  }
+
+  const normalized = normalizeLunarToInternal({
+    envelope,
+    internalDeviceId: input.deviceId,
+    channel: input.channel,
+  });
+
+  if (normalized.kind === "unsupported") {
+    await db.orbitIngestFailure.create({
+      data: {
+        deviceId: input.deviceId,
+        tenantId: input.tenantId,
+        topic: input.topic,
+        reason: normalized.reason ?? "unsupported",
+        receivedAt,
+      },
+    });
+    return { rejected: true as const, reason: "unsupported" as const };
+  }
+
+  if (normalized.kind === "command_ack" && normalized.commandAck) {
+    const inbox = await acceptIntoInbox(db, {
+      deviceId: input.deviceId,
+      tenantId: input.tenantId,
+      topic: input.topic,
+      channel: input.channel,
+      schemaFamily: "lunar.v1",
+      envelopeJson: envelope,
+      payload: {
+        eventId: envelope.messageId,
+        messageId: envelope.messageId,
+        kind: "command_ack",
+        ...normalized.commandAck,
+      },
+      receivedAt,
+    });
+    if ("error" in inbox) return { rejected: true as const, reason: inbox.error };
+    if (inbox.duplicate) return { duplicate: true as const, messageId: envelope.messageId };
+
+    await applyCommandAck(db, {
+      deviceId: input.deviceId,
+      messageId: envelope.messageId,
+      commandId: normalized.commandAck.commandId,
+      status: normalized.commandAck.status,
+      observedAt: new Date(normalized.observedAt),
+      receivedAt,
+      payload: normalized.commandAck.detail ?? {},
+    });
+    await db.orbitIngestInbox.update({
+      where: { id: inbox.inbox.id },
+      data: { processedAt: receivedAt },
+    });
+    return { accepted: true as const, kind: "command_ack" as const, messageId: envelope.messageId };
+  }
+
+  const isTelemetryOrHb = input.channel === "telemetry" || input.channel === "heartbeat";
+  const ageMs = receivedAt.getTime() - new Date(normalized.observedAt).getTime();
+  if (isTelemetryOrHb && ageMs > (input.staleAfterMs ?? 300_000) && !input.offlineTelemetryExtension) {
+    await db.orbitCoverageGap.create({
+      data: {
+        deviceId: input.deviceId,
+        tenantId: input.tenantId,
+        gapStart: new Date(normalized.observedAt),
+        gapEnd: receivedAt,
+        reason:
+          "Baseline Lunar offline queue does not include telemetry/heartbeat — historical gap remains unknown (extension pending confirmation)",
+      },
+    });
+  }
+
+  if (!normalized.measurement) {
+    return { rejected: true as const, reason: "no_measurement" as const };
+  }
+
+  const inbox = await acceptIntoInbox(db, {
+    deviceId: input.deviceId,
+    tenantId: input.tenantId,
+    topic: input.topic,
+    channel: input.channel,
+    schemaFamily: "lunar.v1",
+    envelopeJson: envelope,
+    payload: normalized.measurement,
+    receivedAt,
+  });
+  if ("error" in inbox) return { rejected: true as const, reason: inbox.error };
+  if (inbox.duplicate) return { duplicate: true as const, messageId: envelope.messageId };
+
+  const processed = await processInboxItem(db, inbox.inbox.id, {
+    authenticatedTenantId: input.tenantId,
+    deviceId: input.deviceId,
+    deviceType: input.deviceType,
+    topic: input.topic,
+    maxSkewMs: input.maxSkewMs,
+    staleAfterMs: input.staleAfterMs,
+    receivedAt,
+  });
+
+  if (normalized.kind === "status" && normalized.status) {
+    await applyLunarStatus(db, {
+      deviceId: input.deviceId,
+      tenantId: input.tenantId,
+      status: normalized.status,
+      observedAt: new Date(normalized.observedAt),
+      receivedAt,
+      messageId: envelope.messageId,
+      isLikelyLwt: normalized.status === "OFFLINE",
+    });
+  }
+
+  if (normalized.kind === "event" && normalized.eventType === "CONFIG_UPDATED") {
+    const ver =
+      typeof envelope.payload.configVersion === "number"
+        ? envelope.payload.configVersion
+        : null;
+    if (ver != null) {
+      await markConfigAppliedFromEvent(db, {
+        deviceId: input.deviceId,
+        configVersion: ver,
+        observedAt: new Date(normalized.observedAt),
+      });
+    }
+  }
+
+  return { ...processed, messageId: envelope.messageId, lunarKind: normalized.kind };
 }
 
 export async function processInboxItem(db: Db, inboxId: string, ctx: IngestContext) {
@@ -139,7 +344,6 @@ export async function processInboxItem(db: Db, inboxId: string, ctx: IngestConte
   const cap = capabilityStatus(ctx.deviceType, payload.measurementType);
   const observedAt = new Date(payload.observedAt);
 
-  // Deduped raw — unique on eventId
   try {
     await db.orbitRawEvent.create({
       data: {
@@ -155,6 +359,7 @@ export async function processInboxItem(db: Db, inboxId: string, ctx: IngestConte
         measurementType: payload.measurementType,
         schemaVersion: payload.schemaVersion ?? ORBIT_PAYLOAD_VERSION,
         payloadJson: payload as unknown as Prisma.InputJsonValue,
+        envelopeJson: (inbox.envelopeJson ?? undefined) as Prisma.InputJsonValue | undefined,
       },
     });
   } catch {
@@ -191,7 +396,6 @@ export async function processInboxItem(db: Db, inboxId: string, ctx: IngestConte
     },
   });
 
-  // Latest state only advances when observation is not older than current
   const priorState = await db.orbitMeasurementState.findUnique({
     where: {
       deviceId_measurementType: {
@@ -399,7 +603,6 @@ async function updateSeparatedState(
     return;
   }
 
-  // Unsupported capabilities must not mutate operational state flags
   if (input.capability !== "supported") {
     return;
   }
@@ -423,7 +626,7 @@ async function updateSeparatedState(
     await openOrExtendIncident(db, {
       deviceId: input.deviceId,
       tenantId: input.tenantId,
-      kind: "power_loss",
+      kind: "power_supply",
       severity: "warning",
       at: input.observedAt,
     });
@@ -485,6 +688,14 @@ export async function processPendingInbox(db: Db, limit = 50) {
         data: { processedAt: new Date(), processError: "revoked" },
       });
       results.push({ id: row.id, rejected: true, reason: "revoked" });
+      continue;
+    }
+    if (row.schemaFamily === "lunar.v1" && row.channel === "command-ack") {
+      await db.orbitIngestInbox.update({
+        where: { id: row.id },
+        data: { processedAt: new Date(), processError: null },
+      });
+      results.push({ id: row.id, skipped: true, reason: "command_ack_handled" });
       continue;
     }
     const r = await processInboxItem(db, row.id, {

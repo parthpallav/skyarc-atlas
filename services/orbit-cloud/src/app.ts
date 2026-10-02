@@ -10,13 +10,17 @@ import { applyHeartbeat } from "./state.js";
 import { flushOutbox } from "./events.js";
 import {
   acceptIntoInbox,
+  acceptLunarEnvelope,
   processInboxItem,
   processPendingInbox,
   validateTelemetryBytes,
+  validateLunarMessageBytes,
 } from "./lib/ingest.js";
 import { applyRetentionPolicies } from "./lib/retention.js";
 import { orbitTelemetryPayloadV1Schema } from "./lib/payload.js";
-import { OrbitDeviceCapabilityProfile } from "@skyarc/shared";
+import { orbitLunarEnvelopeSchema } from "./lib/lunar-envelope.js";
+import { issueCommand, issueConfig } from "./lib/commands.js";
+import { OrbitDeviceCapabilityProfile, lunarMqttUsername } from "@skyarc/shared";
 
 type DeviceAuthRequest = FastifyRequest & {
   orbitDevice?: {
@@ -74,14 +78,22 @@ export async function buildOrbitApp(env: OrbitEnv) {
         atlasScreenId: z.string().uuid(),
         skyarcScreenCode: z.string().min(3),
         deviceType: z.string().default("orbit_edge"),
+        /** Physical Lunar identity e.g. ORBIT-0001 */
+        physicalDeviceId: z.string().min(3).max(64).optional(),
       })
       .parse(request.body);
+
+    const physicalDeviceId =
+      body.physicalDeviceId?.toUpperCase() ??
+      `ORBIT-${body.skyarcScreenCode.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8)}`;
 
     const device = await prisma.orbitDevice.create({
       data: {
         tenantId: body.tenantId,
         atlasScreenId: body.atlasScreenId,
         skyarcScreenCode: body.skyarcScreenCode.toUpperCase(),
+        physicalDeviceId,
+        mqttUsername: lunarMqttUsername(physicalDeviceId),
         deviceType: body.deviceType,
         status: "pending",
       },
@@ -114,6 +126,8 @@ export async function buildOrbitApp(env: OrbitEnv) {
       claimCode,
       expiresAt: expiresAt.toISOString(),
       orbitDeviceId: device.id,
+      physicalDeviceId: device.physicalDeviceId,
+      mqttUsername: device.mqttUsername,
       tenantId: device.tenantId,
     };
   });
@@ -160,6 +174,8 @@ export async function buildOrbitApp(env: OrbitEnv) {
     return {
       orbitDeviceId: claim.deviceId,
       deviceSecret,
+      physicalDeviceId: claim.device.physicalDeviceId,
+      mqttUsername: claim.device.mqttUsername,
       skyarcScreenCode: claim.device.skyarcScreenCode,
       atlasScreenId: claim.device.atlasScreenId,
       tenantId: claim.device.tenantId,
@@ -173,7 +189,11 @@ export async function buildOrbitApp(env: OrbitEnv) {
       where: { id },
       data: { revokedAt: new Date(), status: "revoked", credentialHash: null },
     });
-    return { ok: true };
+    // App-layer terminate: future ingest rejected. Production must also revoke broker ACL/session.
+    return {
+      ok: true,
+      note: "Credential cleared — ingest rejected. Broker session kill / ACL revoke required for active MQTT connections (production config).",
+    };
   });
 
   /** Legacy heartbeat — connectivity only. Prefer /ingest/v1/events. */
@@ -347,6 +367,112 @@ export async function buildOrbitApp(env: OrbitEnv) {
     return { ok: true, results, note: "Offline replay batch — stale events do not mark online now" };
   });
 
+  /**
+   * Lunar Spec v1.0 envelope ingest (HTTPS simulator path — same contract as MQTT).
+   * Body: { channel, envelope } where envelope uses partner field names.
+   */
+  app.post("/ingest/v1/lunar", async (request) => {
+    await deviceAuth(request as DeviceAuthRequest);
+    const device = (request as DeviceAuthRequest).orbitDevice!;
+    if (!device || !(await prisma.orbitDevice.findUnique({ where: { id: device.id } }))?.physicalDeviceId) {
+      return { ok: false, ingestResult: "rejected", rejectReason: "Device missing physicalDeviceId registry mapping" };
+    }
+    const full = await prisma.orbitDevice.findUniqueOrThrow({ where: { id: device.id } });
+    const body = z
+      .object({
+        channel: z.enum(["telemetry", "heartbeat", "status", "events", "command-ack"]),
+        envelope: z.unknown(),
+      })
+      .parse(request.body);
+
+    const raw = JSON.stringify(body.envelope ?? {});
+    const size = validateLunarMessageBytes(raw);
+    if (!size.ok) {
+      return { ok: false, ingestResult: "rejected", rejectReason: size.reason };
+    }
+    const envParse = orbitLunarEnvelopeSchema.safeParse(body.envelope);
+    if (!envParse.success) {
+      return { ok: false, ingestResult: "rejected", rejectReason: "invalid_lunar_envelope" };
+    }
+
+    const result = await acceptLunarEnvelope(prisma, {
+      deviceId: full.id,
+      tenantId: full.tenantId,
+      physicalDeviceId: full.physicalDeviceId!,
+      deviceType: full.deviceType,
+      topic: `skyarc/v1/orbit/${full.physicalDeviceId}/${body.channel}`,
+      channel: body.channel,
+      envelope: body.envelope,
+      maxSkewMs: env.ORBIT_MAX_CLOCK_SKEW_MS,
+      staleAfterMs: env.ORBIT_STALE_OBSERVATION_MS,
+    });
+    await flushOutbox(env);
+    return {
+      ok: !("rejected" in result),
+      ...result,
+      receivedAt: new Date().toISOString(),
+      authenticatedTenantId: full.tenantId,
+      note: "Lunar wire contract; voltage/signalStrength not interpreted as screen power or cellular metric",
+    };
+  });
+
+  app.post("/devices/v1/:id/commands", async (request) => {
+    await serviceAuth(request);
+    const id = z.string().uuid().parse((request.params as { id: string }).id);
+    const body = z
+      .object({
+        command: z.string().min(1),
+        parameters: z.record(z.unknown()).optional(),
+        expiresAt: z.string().datetime().optional(),
+        enableExpiry: z.boolean().optional(),
+      })
+      .parse(request.body);
+    const device = await prisma.orbitDevice.findUnique({ where: { id } });
+    if (!device?.physicalDeviceId) {
+      const err = new Error("Device not found or missing physicalDeviceId") as Error & { statusCode: number };
+      err.statusCode = 404;
+      throw err;
+    }
+    if (device.revokedAt) {
+      const err = new Error("Device revoked") as Error & { statusCode: number };
+      err.statusCode = 403;
+      throw err;
+    }
+    const issued = await issueCommand(prisma, {
+      deviceId: device.id,
+      tenantId: device.tenantId,
+      physicalDeviceId: device.physicalDeviceId,
+      command: body.command,
+      parameters: body.parameters,
+      expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+      enableExpiry: body.enableExpiry ?? false,
+    });
+    return issued;
+  });
+
+  app.post("/devices/v1/:id/config", async (request) => {
+    await serviceAuth(request);
+    const id = z.string().uuid().parse((request.params as { id: string }).id);
+    const body = z
+      .object({
+        configVersion: z.number().int().positive(),
+        config: z.record(z.unknown()),
+      })
+      .parse(request.body);
+    const device = await prisma.orbitDevice.findUnique({ where: { id } });
+    if (!device?.physicalDeviceId) {
+      const err = new Error("Device not found or missing physicalDeviceId") as Error & { statusCode: number };
+      err.statusCode = 404;
+      throw err;
+    }
+    return issueConfig(prisma, {
+      deviceId: device.id,
+      physicalDeviceId: device.physicalDeviceId,
+      configVersion: body.configVersion,
+      config: body.config,
+    });
+  });
+
   app.post("/admin/v1/inbox/process", async (request) => {
     await serviceAuth(request);
     const results = await processPendingInbox(prisma, 100);
@@ -380,11 +506,14 @@ export async function buildOrbitApp(env: OrbitEnv) {
     return {
       device: {
         id: device.id,
+        physicalDeviceId: device.physicalDeviceId,
+        mqttUsername: device.mqttUsername,
         tenantId: device.tenantId,
         atlasScreenId: device.atlasScreenId,
         deviceType: device.deviceType,
         status: device.status,
         firmwareVersion: device.firmwareVersion,
+        appliedConfigVersion: device.appliedConfigVersion,
         revokedAt: device.revokedAt?.toISOString() ?? null,
       },
       connectivity: device.state
@@ -412,9 +541,11 @@ export async function buildOrbitApp(env: OrbitEnv) {
       capabilityVersion: device.capabilities[0]?.version ?? null,
       limitations: [
         "Heartbeat/connectivity does not imply screen power or campaign playback",
-        "Traffic observations require Orbit Edge Sense capability",
+        "Generic voltage/signalStrength are not interpreted as screen power or a specific cellular metric without agreed definitions",
+        "Traffic observations require Orbit Edge Sense capability (separate validated contract)",
         "Trusted playback attribution requires CMS/player creative/campaign identifiers",
-        "Camera images are not collected by default",
+        "Camera images are not collected by default; camera/OTA/player control are not MVP",
+        "Lunar offline baseline queues events and acks only — missing telemetry/heartbeat history remains unknown",
       ],
     };
   });

@@ -1,19 +1,53 @@
 # Phase 7B — Orbit MQTT / Telemetry Contracts
 
-**Verification modes**
-- **Simulator-verified:** contract unit tests + HTTPS `/ingest/v1/events` using the same payload schema as MQTT (no physical hardware required).
-- **Live broker / physical device:** blocked until `ORBIT_MQTT_URL` credentials and hardware are available — does **not** block simulator development.
+**Partner wire baseline:** [Skyarc Orbit MQTT Spec v1.0](./ORBIT_MQTT_LUNAR_COMPATIBILITY.md) (Lunar Embedded draft).  
+**Internal processing schema:** `7b.v1` (normalized). Firmware is **not** required to rename Lunar fields to 7b names.
 
-## Ownership
+## Verification modes (report separately)
+
+| Mode | Status |
+|------|--------|
+| **Backend implemented** | Lunar topics/envelope, durable ingest, commands/config, mappings, evidence |
+| **Simulator verified** | Unit tests + HTTPS `/ingest/v1/lunar` using Lunar envelope (no hardware) |
+| **Physical-device verified** | **Blocked** — no Lunar hardware session in this workstream |
+| **Pending Lunar decisions** | Spec §10 + proposed additions in compatibility matrix |
+| **Pending production configuration** | Broker host/CA, per-device ACL + session kill on revoke |
+
+## Ownership (ADR-0003)
 
 | Concern | Owner |
 |---------|--------|
-| Telemetry, device identity, measurement state, aggregates, incidents | Orbit Cloud |
+| Telemetry, device identity, measurement state, aggregates, incidents, commands/config | Orbit Cloud |
 | Screen/location mappings, campaigns, bookings, campaign associations | Atlas |
 | Operational-risk snapshots from authorized evidence | Pulse/Atlas (versioned; not forecasts) |
 | External messaging | Bridge |
 
-No booking or quote ledger duplication.
+No booking or quote ledger duplication. Commercial availability ≠ operational evidence.
+
+## Lunar MQTT Spec v1.0 (wire)
+
+| Item | Value |
+|------|--------|
+| Topic prefix | `skyarc/v1/orbit/{physicalDeviceId}/` |
+| Device publish | `telemetry`, `heartbeat`, `status`, `events`, `command-ack` |
+| Device subscribe | `commands`, `config` |
+| Envelope | `messageId`, `deviceId`, `timestamp`, `type`, `version`, `payload` |
+| QoS | 1 |
+| TLS | Required; fail closed |
+| Dedup | `messageId` per device; commands also by `commandId` |
+| Offline baseline | Queue **events + acks** only — **not** telemetry/heartbeat |
+| MVP commands | `capture_status`, `request_diagnostics`, `sync_config`, `restart` |
+| Config | Increasing integer `configVersion` |
+
+Physical id (e.g. `ORBIT-0001`) maps to internal UUID + tenant via registry (`physicalDeviceId`).
+
+**Do not** interpret example `voltage` / `signalStrength` as screen power or a specific cellular metric without agreed definitions.
+
+## Internal `7b.v1` (normalized)
+
+Used after Lunar normalize and for HTTPS `/ingest/v1/events`. Fields: eventId (= messageId when from Lunar), internal device UUID, bootId/sessionId/sequence (optional proposed — may be `unknown`), observedAt, firmwareVersion, measurementType, value, typedValues, qualityFlags.
+
+Server adds: `receivedAt`, `authenticatedTenantId`, `ingestResult`.
 
 ## Device capabilities
 
@@ -23,106 +57,90 @@ No booking or quote ledger duplication.
 | Orbit Edge Sense | Edge + traffic_count, audience_obs | playback |
 | CMS / media player | heartbeat, connectivity, playback (with creative/campaign ids) | traffic/audience/GPS |
 
-Unsupported or unavailable measurements remain **unknown**. Raw camera images are **not** enabled by default (`includesImage` must be false/absent).
+Unsupported → **unknown**. Raw camera images not enabled by default. Camera/OTA/player control **not** MVP.
 
-## Versioned payload (`7b.v1`)
+## MQTT consumer
 
-Required fields: `eventId`, `deviceId`, `bootId`, `sessionId`, `sequence`, `observedAt`, `firmwareVersion`, `measurementType`, `value`.
-
-Optional: `unit`, `typedValues`, `sensorModelVersion`, `confidence`, `qualityFlags`, `creativeId`, `campaignId`.
-
-Server adds: `receivedAt`, `authenticatedTenantId`, `ingestResult` (`accepted` | `duplicate` | `rejected` | `deferred`).
-
-## MQTT
-
-- Topics: `orbit/{tenantId}/{deviceId}/telemetry|heartbeat`
-- Encrypted URL (`mqtts://` preferred in production)
-- Topic tenant + deviceId must match registry; payload `deviceId` must match topic
-- Revoked devices rejected
-- Bounded payload size (`MAX_ORBIT_TELEMETRY_BYTES` = 16KiB)
-- Schema validation; failures → `OrbitIngestFailure`
+- Subscribes `skyarc/v1/orbit/+/{device-publish-channel}` at QoS 1
+- Directional ACL helpers reject device publish on commands/config and cross-device topics
+- Topic + envelope `deviceId` must match registered `physicalDeviceId`
+- Tenant from registry — no fixed-tenant delivery
+- App-layer device secret required until broker ACL/mTLS verified as sole auth (secret scrubbed before persist)
+- Revocation clears credential hash (ingest rejected); **production must also kill broker sessions / ACLs**
 
 ### Durable handoff
 
-1. Persist `OrbitIngestInbox` (unique `eventId`) — **secrets stripped** (`__mqttSecret` never stored)
-2. Process inbox → `OrbitRawEvent` (dedupe) → measurements / state / incidents / aggregates
-3. Consumer crash: replay `processedAt IS NULL` inbox rows
-4. **Broker ACK ≠ normalized DB persistence.** HTTPS path is authoritative for simulator/production until MQTT manual-ACK + broker per-device ACL/mTLS are verified. MQTT app-layer **requires** device secret in `typedValues.__mqttSecret` (stripped before persist).
+1. Persist `OrbitIngestInbox` unique `(deviceId, messageId/eventId)` — secrets stripped
+2. Process → raw / measurements / state / incidents / aggregates / command acks
+3. Crash recovery: replay `processedAt IS NULL`
+4. **Broker PUBACK ≠ DB persistence.** Prefer manual ACK after inbox once live.
 
-Capability-unsupported measurements are stored as observations with `capabilityStatus` but **do not** update `screenPower` / `playbackVerified` / `sensorHealth`.
+## Offline behavior (baseline faithful to Spec §7)
 
-## State correctness
+- Missing historical telemetry/heartbeat → **unknown** / coverage gap
+- Replayed **events** retain observation time
+- Stale observations do **not** mark device online now
+- Missing connectivity does **not** prove display lost power
+- Optional historical telemetry summaries: **off** until Lunar confirms
 
-Separated fields: connectivity (`online`), `sensorHealth`, `screenPower`, `playbackVerified`.
+## Status / LWT
 
-Heartbeat/connectivity **must not** imply display operating or campaign playing.
+- Retained/LWT status applied only if not older than current state
+- LWT timestamp is preconfigured — **not** actual disconnect time
+- Separated state: connectivity ≠ sensor health ≠ screen power ≠ playback
 
-Stale / future-skew observations do **not** mark the device online now (`connectivityFromHeartbeat`).
+## Commands / config
 
-Tenant identity comes from the device registry (claim `tenantId`), not a fixed constant on ingest.
+| Command | Notes |
+|---------|--------|
+| capture_status | Expect ACCEPTED → COMPLETED |
+| request_diagnostics | ACCEPTED → COMPLETED/FAILED |
+| sync_config | COMPLETED only when applied `configVersion` matches intended |
+| restart | ACCEPTED before reboot; COMPLETED after boot via saved `commandId` |
 
-## Atlas mappings & associations
+PUBACK ≠ execution. Expiry support is feature-flagged (proposed). Camera/OTA/player **not** implemented as MVP.
 
-`DeviceScreenMapping` is effective-dated with relocation history and conflict notes.
+## Atlas mappings & evidence
 
-Observations join booking items using: mapping at observation time, campaign flight, operating schedule, measurement capability.
+`DeviceScreenMapping` effective-dated. Observations join bookings via mapping at observation time, flight, schedule, capability.
 
-Screen traffic = **contextual** for concurrent campaigns — not measured impressions.
+`GET /campaigns/:id/orbit-evidence` — freshness, coverage, connectivity incidents, affected booking items, limitations. No auto cancel/credit/replacement. No playback/impressions/reach inference from heartbeat/temp/battery.
 
-Trusted playback requires CMS/player creative/campaign identifiers.
-
-## Campaign evidence
-
-`GET /campaigns/:id/orbit-evidence` (staff) — freshness, coverage, incidents, affected booking items, limitations.
-
-`POST .../orbit-evidence/snapshots` — versioned operational-risk snapshot. Does **not** auto-cancel, credit, or promise replacements. Audience/impressions/reach/verified delivery deferred.
-
-## Retention (configurable)
+## Retention
 
 | Store | Default | Env |
 |-------|---------|-----|
-| Raw events / 5m aggregates / processed inbox | 14 days | `ORBIT_TELEMETRY_RETENTION_DAYS` |
+| Raw / 5m / processed inbox | 14 days | `ORBIT_TELEMETRY_RETENTION_DAYS` |
 | Hourly/daily aggregates | 365 days | `ORBIT_AGGREGATE_RETENTION_DAYS` |
 
-Estimate helper: `estimateStorageBytes` (e.g. 100 devices × 1440 evt/day × 14d × 400B ≈ raw order-of-GB planning input). Partitioning when volume justifies.
+Volume planning: heartbeat 60s + telemetry ~300s (spec defaults) → order ~1.4k+ evt/device/day. Helper: `estimateStorageBytes`.
 
 ## Endpoints (Orbit)
 
-| Path | Auth |
-|------|------|
-| `POST /provision/v1/claim` | Service |
-| `POST /provision/v1/enroll` | Claim code |
-| `POST /devices/v1/:id/revoke` | Service |
-| `POST /ingest/v1/events` | Device |
-| `POST /ingest/v1/events/batch` | Device (offline replay) |
-| `GET /devices/v1/:id/state` | Service |
-| `POST /admin/v1/inbox/process` | Service |
-| `POST /admin/v1/retention/run` | Service |
-
-## Atlas
-
-| Path | Notes |
-|------|--------|
-| `POST /devices/:id/relocate` | Effective-dated remap |
-| `GET /campaigns/:id/orbit-evidence` | Staff evidence |
-| `POST /campaigns/:id/orbit-evidence/snapshots` | Risk snapshot |
+| Path | Auth | Notes |
+|------|------|-------|
+| `POST /provision/v1/claim` | Service | Assigns `physicalDeviceId` |
+| `POST /provision/v1/enroll` | Claim code | Returns secret + physical id |
+| `POST /devices/v1/:id/revoke` | Service | Clears creds; broker kill pending prod |
+| `POST /ingest/v1/events` | Device | Internal 7b.v1 |
+| `POST /ingest/v1/events/batch` | Device | Offline 7b replay |
+| `POST /ingest/v1/lunar` | Device | **Lunar envelope** simulator/HTTPS |
+| `POST /devices/v1/:id/commands` | Service | MVP commands |
+| `POST /devices/v1/:id/config` | Service | Increasing configVersion |
+| `GET /devices/v1/:id/state` | Service | Separated state + limitations |
+| `POST /admin/v1/inbox/process` | Service | Crash recovery |
+| `POST /admin/v1/retention/run` | Service | Retention |
 
 ## First working slice (simulator)
 
-Registered sim device → authenticated HTTPS event (same contract as MQTT) → inbox → raw → normalized state → incident/aggregate → historical mapping → booking association → campaign evidence UI.
+Registered sim device (`ORBIT-0001` → UUID) → Lunar envelope on HTTPS/MQTT contract → durable inbox → normalized state/incident → historical mapping → campaign evidence.
 
-Include offline replay batch + device relocate.
+Demonstrate offline **event** replay + relocate. Telemetry/heartbeat offline queue is **not** claimed.
 
-## Security
+## Deferred
 
-- Credentials never logged (hash compare only)
-- Spoofed topic/tenant/device rejected
-- Cross-tenant topic mismatch rejected
-- Revocation clears credential hash
-
-## Deferred live verification
-
-- Physical Orbit Edge / Sense hardware
-- Production MQTT broker ACLs + mTLS
-- CMS/player verified delivery metrics
-- Audience forecasting / unique reach
+- Physical Lunar hardware verification
+- Production broker ACL/mTLS + session revoke API
+- Audience / Edge Sense validated contract
+- CMS verified playback metrics
+- Proposed additions in compatibility matrix (bootId/sequence required, offline telemetry summaries, command expiry defaults, etc.)

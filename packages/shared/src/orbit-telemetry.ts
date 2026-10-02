@@ -3,7 +3,12 @@
  * Distinguishes Edge connectivity/diagnostics, Edge Sense traffic observations,
  * and CMS/player playback evidence. Unsupported measurements stay unknown.
  * Do not invent measurements. Raw camera images are not enabled by default.
+ *
+ * Wire baseline for Lunar firmware is MQTT Spec v1.0 (`orbit-mqtt-lunar.ts`).
+ * `7b.v1` is the internal/normalized HTTPS + processing schema — not a firmware rename.
  */
+
+export * from "./orbit-mqtt-lunar.js";
 
 export const ORBIT_PAYLOAD_VERSION = "7b.v1" as const;
 
@@ -73,11 +78,15 @@ export const OrbitDeviceCapabilityProfile = {
 
 export type OrbitCapabilityStatus = "supported" | "unsupported" | "unknown" | "unavailable";
 
-/** Topic pattern: orbit/{tenantId}/{deviceId}/{channel} */
+/**
+ * @deprecated Legacy internal topic shape. Lunar Spec v1.0 uses
+ * `skyarc/v1/orbit/{physicalDeviceId}/{channel}` via `orbitLunarMqttTopic`.
+ */
 export function orbitMqttTopic(tenantId: string, deviceId: string, channel: "telemetry" | "heartbeat" | "ack") {
   return `orbit/${tenantId}/${deviceId}/${channel}`;
 }
 
+/** @deprecated Prefer `parseOrbitLunarMqttTopic`. */
 export function parseOrbitMqttTopic(topic: string): {
   tenantId: string;
   deviceId: string;
