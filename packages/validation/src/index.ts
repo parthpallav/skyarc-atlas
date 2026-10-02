@@ -656,6 +656,25 @@ export const bookingQuoteBodySchema = z.object({
 
 export type BookingQuoteBody = z.infer<typeof bookingQuoteBodySchema>;
 
+export const bookingReserveBodySchema = z.object({
+  campaignId: uuidSchema,
+  inventoryIds: z.array(uuidSchema).min(1).max(100),
+  mediaPlanId: uuidSchema.optional(),
+  mode: z.enum(["hold", "book"]).default("hold"),
+  requireVendorApproval: z.boolean().optional().default(false),
+  idempotencyKey: z.string().min(8).max(128).optional(),
+});
+
+export type BookingReserveBody = z.infer<typeof bookingReserveBodySchema>;
+
+export const bookingVendorRespondBodySchema = z.object({
+  action: z.enum(["APPROVE", "REJECT"]),
+  inventoryIds: z.array(uuidSchema).max(100).optional(),
+  vendorOrganizationId: uuidSchema.optional(),
+});
+
+export type BookingVendorRespondBody = z.infer<typeof bookingVendorRespondBodySchema>;
+
 export const healthSchema = z.object({
   status: z.literal("ok"),
   timestamp: z.string().datetime(),

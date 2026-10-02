@@ -26,8 +26,23 @@ import {
   flightCostFromStoredRate,
   ratePeriodForInventory,
 } from "./rates.js";
+import {
+  cancelBookingItemsForInventories,
+  syncBookingWithWindows,
+  type SyncBookingInput,
+} from "../booking/reserve.js";
 
 export { customerRateForInventory } from "./rates.js";
+
+export type HoldInventoryOptions = {
+  mediaPlanId?: string | null;
+  actorUserId?: string | null;
+  tenantOrganizationId?: string | null;
+  idempotencyKey?: string | null;
+  requireVendorApproval?: boolean;
+  /** When false, only capacity windows are written (legacy callers). Default true. */
+  syncBooking?: boolean;
+};
 
 export interface InventoryRow {
   id: string;
@@ -599,14 +614,15 @@ export async function holdInventoryForCampaign(
   prisma: PrismaClient,
   campaignId: string,
   inventoryIds: string[],
-  mode: "hold" | "book" = "hold"
-): Promise<{ held: string[]; skipped: string[] }> {
+  mode: "hold" | "book" = "hold",
+  options: HoldInventoryOptions = {}
+): Promise<{ held: string[]; skipped: string[]; bookingId: string | null }> {
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
     select: { startDate: true, endDate: true },
   });
   if (!campaign?.startDate || !campaign.endDate || inventoryIds.length === 0) {
-    return { held: [], skipped: [] };
+    return { held: [], skipped: [], bookingId: null };
   }
 
   const uniqueIds = [...new Set(inventoryIds)];
@@ -618,6 +634,8 @@ export async function holdInventoryForCampaign(
   const flightEnd = campaign.endDate;
   const held: string[] = [];
   const skipped: string[] = [];
+  let bookingId: string | null = null;
+  const syncBooking = options.syncBooking !== false;
 
   await prisma.$transaction(
     async (tx) => {
@@ -625,7 +643,7 @@ export async function holdInventoryForCampaign(
         where: {
           inventoryId: { in: uniqueIds },
           status: { in: mode === "book" ? ["HELD", "BOOKED"] : ["HELD"] },
-          notes: { contains: campaignId },
+          OR: [{ campaignId }, { notes: { contains: campaignId } }],
         },
       });
       await tx.availabilityWindow.deleteMany({
@@ -661,15 +679,7 @@ export async function holdInventoryForCampaign(
         },
       });
 
-      const createRows: Array<{
-        inventoryId: string;
-        startDate: Date;
-        endDate: Date;
-        status: "HELD" | "BOOKED";
-        notes: string;
-        slotsConsumed: number;
-        expiresAt: Date | null;
-      }> = [];
+      const windowIdsByInventory: Record<string, string> = {};
 
       for (const inv of inventories) {
         const free = isInventoryFreeForFlight(
@@ -695,15 +705,20 @@ export async function holdInventoryForCampaign(
           continue;
         }
         held.push(inv.id);
-        createRows.push({
-          inventoryId: inv.id,
-          startDate: flightStart,
-          endDate: flightEnd,
-          status: mode === "book" ? "BOOKED" : "HELD",
-          notes: campaignWindowNote(campaignId, mode),
-          slotsConsumed: 1,
-          expiresAt,
+        const window = await tx.availabilityWindow.create({
+          data: {
+            inventoryId: inv.id,
+            campaignId,
+            startDate: flightStart,
+            endDate: flightEnd,
+            status: mode === "book" ? "BOOKED" : "HELD",
+            notes: campaignWindowNote(campaignId, mode),
+            slotsConsumed: 1,
+            expiresAt,
+          },
+          select: { id: true },
         });
+        windowIdsByInventory[inv.id] = window.id;
       }
 
       if (mode === "book" && skipped.length > 0) {
@@ -712,15 +727,30 @@ export async function holdInventoryForCampaign(
         );
       }
 
-      if (createRows.length > 0) {
-        await tx.availabilityWindow.createMany({ data: createRows });
+      if (syncBooking && held.length > 0) {
+        const syncInput: SyncBookingInput = {
+          campaignId,
+          mediaPlanId: options.mediaPlanId ?? null,
+          inventoryIds: held,
+          windowIdsByInventory,
+          mode,
+          expiresAt,
+          startDate: flightStart,
+          endDate: flightEnd,
+          actorUserId: options.actorUserId ?? null,
+          tenantOrganizationId: options.tenantOrganizationId ?? null,
+          idempotencyKey: options.idempotencyKey ?? null,
+          requireVendorApproval: options.requireVendorApproval,
+        };
+        const booking = await syncBookingWithWindows(tx, syncInput);
+        bookingId = booking?.id ?? null;
       }
     },
     { isolationLevel: "Serializable" }
   );
 
   invalidateLocationCaches();
-  return { held, skipped };
+  return { held, skipped, bookingId };
 }
 
 /** Drop soft holds (HELD only) for inventory on hidden/archived locations. Keeps BOOKED flights. */
@@ -775,15 +805,25 @@ export async function releaseHoldsForHiddenLocations(
 export async function releaseInventoryForCampaign(
   prisma: PrismaClient,
   campaignId: string,
-  inventoryIds: string[]
+  inventoryIds: string[],
+  options: { actorUserId?: string | null; reason?: string } = {}
 ) {
   if (inventoryIds.length === 0) return;
-  await prisma.availabilityWindow.deleteMany({
-    where: {
-      inventoryId: { in: [...new Set(inventoryIds)] },
-      status: { in: ["HELD", "BOOKED"] },
-      notes: { contains: campaignId },
-    },
+  const uniqueIds = [...new Set(inventoryIds)];
+  await prisma.$transaction(async (tx) => {
+    await tx.availabilityWindow.deleteMany({
+      where: {
+        inventoryId: { in: uniqueIds },
+        status: { in: ["HELD", "BOOKED"] },
+        OR: [{ campaignId }, { notes: { contains: campaignId } }],
+      },
+    });
+    await cancelBookingItemsForInventories(tx, {
+      campaignId,
+      inventoryIds: uniqueIds,
+      actorUserId: options.actorUserId,
+      reason: options.reason ?? "released",
+    });
   });
   invalidateLocationCaches();
 }
@@ -944,7 +984,12 @@ export async function buildMediaPlanFromSelection(
     await holdInventoryForCampaign(
       prisma,
       campaignId,
-      items.map((item) => item.inventoryId)
+      items.map((item) => item.inventoryId),
+      "hold",
+      {
+        mediaPlanId: plan.id,
+        requireVendorApproval: isNetworkRequest,
+      }
     );
   }
 

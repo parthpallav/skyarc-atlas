@@ -6,6 +6,7 @@ import {
 } from "../lib/ai/openrouter.js";
 import { prisma } from "../lib/prisma.js";
 import { recomputeScore } from "../modules/intelligence/routes.js";
+import { expireStaleHolds } from "../lib/booking/reserve.js";
 
 const STALE_RUNNING_MS = 5 * 60 * 1000;
 
@@ -14,6 +15,7 @@ export function startAnalysisRunner(env: Env): NodeJS.Timeout {
 
   return setInterval(async () => {
     try {
+      await expireStaleHolds(prisma);
       const staleCutoff = new Date(Date.now() - STALE_RUNNING_MS);
       await prisma.aIAnalysis.updateMany({
         where: {

@@ -139,6 +139,44 @@ enum AvailabilityWindowStatus {
   BOOKED
 }
 
+/// Commercial / ops booking header (capacity stays on AvailabilityWindow).
+enum BookingStatus {
+  REQUESTED
+  HELD
+  PENDING_VENDOR_APPROVAL
+  PARTIALLY_APPROVED
+  CONFIRMED
+  CANCELLED
+}
+
+enum BookingItemStatus {
+  REQUESTED
+  HELD
+  PENDING_VENDOR_APPROVAL
+  APPROVED
+  REJECTED
+  CONFIRMED
+  CANCELLED
+}
+
+/// Separate from booking lifecycle — payment integration may be UNAVAILABLE.
+enum BookingPaymentStatus {
+  NOT_REQUIRED
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  UNAVAILABLE
+}
+
+/// Separate from booking and payment — campaign execution tracking.
+enum BookingExecutionStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  INTERRUPTED
+}
+
 model User {
   id             String    @id @default(uuid()) @db.Uuid
   email          String    @unique
@@ -168,6 +206,7 @@ model Organization {
 
   members   User[]
   locations Location[]
+  bookings  Booking[] @relation("BookingTenantOrg")
 
   @@index([type, status])
 }
@@ -496,9 +535,11 @@ model Campaign {
   advertiser      Advertiser       @relation(fields: [advertiserId], references: [id])
   brief           CampaignBrief?
   mediaPlans      MediaPlan[]
+  bookings        Booking[]
   analyses        AIAnalysis[]
   recommendations Recommendation[]
   liveProofAssets LocationAsset[]
+  availabilityWindows AvailabilityWindow[]
 
   @@index([lifecycleStatus, startDate, endDate])
 }
@@ -534,11 +575,14 @@ model Inventory {
   mediaPlanItems      MediaPlanItem[]
   recommendations     Recommendation[]
   availabilityWindows AvailabilityWindow[]
+  bookingItems        BookingItem[]
 }
 
 model AvailabilityWindow {
   id            String                   @id @default(uuid()) @db.Uuid
   inventoryId   String                   @db.Uuid
+  /// Prefer over parsing notes — links capacity rows to campaigns.
+  campaignId    String?                  @db.Uuid
   startDate     DateTime
   endDate       DateTime
   status        AvailabilityWindowStatus @default(AVAILABLE)
@@ -550,10 +594,13 @@ model AvailabilityWindow {
   createdAt     DateTime                 @default(now())
   updatedAt     DateTime                 @updatedAt
 
-  inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  inventory   Inventory    @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  campaign    Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  bookingItem BookingItem?
 
   @@index([inventoryId, startDate, endDate])
   @@index([status, expiresAt])
+  @@index([campaignId, status])
 }
 
 model RateCard {
@@ -582,6 +629,7 @@ model MediaPlan {
 
   campaign Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   items    MediaPlanItem[]
+  bookings Booking[]
 }
 
 model MediaPlanItem {
@@ -599,6 +647,76 @@ model MediaPlanItem {
 
   mediaPlan MediaPlan @relation(fields: [mediaPlanId], references: [id], onDelete: Cascade)
   inventory Inventory @relation(fields: [inventoryId], references: [id])
+}
+
+/// Explicit booking header — capacity remains on AvailabilityWindow.
+model Booking {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?                @db.Uuid
+  campaignId           String                 @db.Uuid
+  mediaPlanId          String?                @db.Uuid
+  status               BookingStatus          @default(HELD)
+  paymentStatus        BookingPaymentStatus   @default(NOT_REQUIRED)
+  executionStatus      BookingExecutionStatus @default(NOT_STARTED)
+  startDate            DateTime
+  endDate              DateTime
+  expiresAt            DateTime?
+  idempotencyKey       String?                @unique
+  createdByUserId      String?                @db.Uuid
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  tenantOrganization Organization?       @relation("BookingTenantOrg", fields: [tenantOrganizationId], references: [id], onDelete: SetNull)
+  campaign           Campaign            @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  mediaPlan          MediaPlan?          @relation(fields: [mediaPlanId], references: [id], onDelete: SetNull)
+  items              BookingItem[]
+  transitions        BookingTransition[]
+
+  @@index([campaignId, status])
+  @@index([tenantOrganizationId, status])
+  @@index([expiresAt])
+  @@index([startDate, endDate])
+  @@index([mediaPlanId])
+}
+
+model BookingItem {
+  id                   String           @id @default(uuid()) @db.Uuid
+  bookingId            String           @db.Uuid
+  inventoryId          String           @db.Uuid
+  availabilityWindowId String?          @unique @db.Uuid
+  vendorOrganizationId String?          @db.Uuid
+  status               BookingItemStatus @default(HELD)
+  slotsConsumed        Int              @default(1)
+  mediaPlanItemId      String?          @db.Uuid
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  booking            Booking             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  inventory          Inventory           @relation(fields: [inventoryId], references: [id])
+  availabilityWindow AvailabilityWindow? @relation(fields: [availabilityWindowId], references: [id], onDelete: SetNull)
+  transitions        BookingTransition[]
+
+  @@unique([bookingId, inventoryId])
+  @@index([status])
+  @@index([vendorOrganizationId, status])
+  @@index([inventoryId])
+}
+
+model BookingTransition {
+  id            String   @id @default(uuid()) @db.Uuid
+  bookingId     String   @db.Uuid
+  bookingItemId String?  @db.Uuid
+  fromStatus    String
+  toStatus      String
+  actorUserId   String?  @db.Uuid
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  booking     Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingItem BookingItem? @relation(fields: [bookingItemId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId, createdAt])
+  @@index([bookingItemId, createdAt])
 }
 
 model Recommendation {

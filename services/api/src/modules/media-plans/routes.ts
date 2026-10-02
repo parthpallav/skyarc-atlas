@@ -1559,7 +1559,13 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
           prisma,
           campaignId,
           plan.items.map((item) => item.inventoryId),
-          "book"
+          "book",
+          {
+            mediaPlanId: planId,
+            actorUserId: request.user.id,
+            tenantOrganizationId: request.user.organizationId ?? null,
+            requireVendorApproval: false,
+          }
         );
       }
 
@@ -1633,7 +1639,11 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
           where: { id: { in: targetIds } },
           data: { approvalStatus: "APPROVED" },
         });
-        await holdInventoryForCampaign(prisma, campaignId, inventoryIds, "book");
+        await holdInventoryForCampaign(prisma, campaignId, inventoryIds, "book", {
+          mediaPlanId: planId,
+          actorUserId: request.user.id,
+          tenantOrganizationId: request.user.organizationId ?? null,
+        });
       }
 
       const remaining = await prisma.mediaPlanItem.findMany({
@@ -1756,7 +1766,11 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
             endDate: plan.campaign.endDate,
           },
         });
-        await holdInventoryForCampaign(prisma, campaignId, [body.inventoryId]);
+        await holdInventoryForCampaign(prisma, campaignId, [body.inventoryId], "hold", {
+          mediaPlanId: planId,
+          actorUserId: request.user.id,
+          tenantOrganizationId: request.user.organizationId ?? null,
+        });
       }
 
       const refreshed = await prisma.mediaPlan.findFirst({
@@ -1854,7 +1868,11 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
         },
       });
 
-      await holdInventoryForCampaign(prisma, campaignId, [addition.id]);
+      await holdInventoryForCampaign(prisma, campaignId, [addition.id], "hold", {
+        mediaPlanId: planId,
+        actorUserId: request.user.id,
+        tenantOrganizationId: request.user.organizationId ?? null,
+      });
 
       const refreshed = await prisma.mediaPlan.findFirst({
         where: { id: planId, campaignId },

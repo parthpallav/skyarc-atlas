@@ -448,6 +448,52 @@ export class ApiClient {
     });
   }
 
+  listBookings(params?: { campaignId?: string; status?: string; upcoming?: boolean }) {
+    const q = new URLSearchParams();
+    if (params?.campaignId) q.set("campaignId", params.campaignId);
+    if (params?.status) q.set("status", params.status);
+    if (params?.upcoming) q.set("upcoming", "true");
+    const qs = q.toString();
+    return this.request<{ bookings: unknown[]; summary: Record<string, number> }>(
+      `/bookings${qs ? `?${qs}` : ""}`
+    );
+  }
+
+  getBooking(id: string) {
+    return this.request<unknown>(`/bookings/${id}`);
+  }
+
+  reserveBooking(data: {
+    campaignId: string;
+    inventoryIds: string[];
+    mediaPlanId?: string;
+    mode?: "hold" | "book";
+    requireVendorApproval?: boolean;
+    idempotencyKey?: string;
+  }) {
+    return this.request<{ held: string[]; skipped: string[]; booking: unknown | null }>(
+      "/bookings/reserve",
+      { method: "POST", body: JSON.stringify(data) }
+    );
+  }
+
+  cancelBooking(id: string, reason?: string) {
+    return this.request<unknown>(`/bookings/${id}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  respondBooking(
+    id: string,
+    data: { action: "APPROVE" | "REJECT"; inventoryIds?: string[]; vendorOrganizationId?: string }
+  ) {
+    return this.request<unknown>(`/bookings/${id}/respond`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   updateMediaPlanStatus(
     campaignId: string,
     planId: string,

@@ -59,6 +59,17 @@ interface PlanningPreview {
   hasGeoConstraints?: boolean;
 }
 
+interface BookingRow {
+  id: string;
+  status: string;
+  paymentStatus: string;
+  executionStatus: string;
+  startDate: string;
+  endDate: string;
+  expiresAt: string | null;
+  items?: Array<{ id: string; status: string; inventoryId: string }>;
+}
+
 interface CampaignDetail {
   id: string;
   name: string;
@@ -180,6 +191,25 @@ export default function CampaignDetailPage() {
   });
 
   const planningPreview = planningPreviewQuery.data;
+
+  const bookingsQuery = useQuery({
+    queryKey: ["campaign-bookings", id],
+    queryFn: async () => {
+      const client = createWebApiClient();
+      const result = await client.listBookings({ campaignId: id });
+      return result.data as {
+        bookings: BookingRow[];
+        summary: {
+          total: number;
+          pendingApprovals: number;
+          conflicts: number;
+          upcomingStarts: number;
+          upcomingEndings: number;
+        };
+      };
+    },
+    enabled: Boolean(campaign && !isSiteRequestCampaign(campaign)),
+  });
 
   const optimizeMutation = useMutation({
     mutationFn: async () => {
@@ -524,6 +554,55 @@ export default function CampaignDetailPage() {
                 {plans.map((plan) =>
                   renderPlanRow(plan, isActiveMediaPlan(plan), campaign.id)
                 )}
+              </ul>
+            )}
+          </div>
+        </section>
+
+        <section className={cn(workspacePanel, "md:col-span-2")}>
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-primary/10 px-3 py-2.5">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Bookings</h2>
+              <p className="text-[10px] text-muted">
+                Holds, vendor approvals, and confirmed capacity for this campaign.
+              </p>
+            </div>
+            {bookingsQuery.data?.summary ? (
+              <p className="text-[10px] text-slate-600">
+                {bookingsQuery.data.summary.total} total · {bookingsQuery.data.summary.pendingApprovals} pending
+                approval · {bookingsQuery.data.summary.conflicts} conflict
+                {bookingsQuery.data.summary.conflicts === 1 ? "" : "s"}
+              </p>
+            ) : null}
+          </div>
+          <div className={workspacePanelScroll}>
+            {bookingsQuery.isLoading ? (
+              <p className="px-4 py-6 text-center text-sm text-muted">Loading bookings…</p>
+            ) : !bookingsQuery.data?.bookings?.length ? (
+              <p className="px-4 py-6 text-center text-sm text-muted">
+                No booking records yet. Soft-holds and site requests create them automatically.
+              </p>
+            ) : (
+              <ul className="divide-y divide-violet-50">
+                {bookingsQuery.data.bookings.map((booking) => (
+                  <li key={booking.id} className="px-3 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{booking.status}</p>
+                        <p className="text-[11px] text-muted">
+                          {formatDateIn(booking.startDate)} → {formatDateIn(booking.endDate)} · payment{" "}
+                          {booking.paymentStatus} · execution {booking.executionStatus}
+                        </p>
+                      </div>
+                      <p className="text-[11px] text-slate-600">
+                        {(booking.items ?? []).length} item{(booking.items ?? []).length === 1 ? "" : "s"}
+                        {(booking.items ?? []).some((i) => i.status === "PENDING_VENDOR_APPROVAL")
+                          ? " · awaiting vendor"
+                          : ""}
+                      </p>
+                    </div>
+                  </li>
+                ))}
               </ul>
             )}
           </div>
