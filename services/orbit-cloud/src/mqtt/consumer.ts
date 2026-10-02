@@ -48,7 +48,8 @@ export async function startMqttConsumer(env: OrbitEnv): Promise<MqttConsumerHand
 
   const useTls = env.ORBIT_MQTT_URL.startsWith("mqtts");
   const client = mqtt.default.connect(env.ORBIT_MQTT_URL, {
-    protocol: useTls ? "mqtts" : undefined,
+    // Always set protocol — some brokers/URLs otherwise throw "Missing protocol".
+    protocol: useTls ? "mqtts" : "mqtt",
     protocolVersion: 5,
     rejectUnauthorized: env.NODE_ENV === "production",
     username: env.ORBIT_MQTT_USERNAME,

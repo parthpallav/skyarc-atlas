@@ -10,7 +10,7 @@ const schema = z.object({
   ORBIT_HEARTBEAT_TIMEOUT_MS: z.coerce.number().default(90_000),
   ORBIT_TELEMETRY_RETENTION_DAYS: z.coerce.number().default(14),
   ORBIT_AGGREGATE_RETENTION_DAYS: z.coerce.number().default(365),
-  ORBIT_MQTT_URL: z.string().url().optional(),
+  ORBIT_MQTT_URL: z.string().min(1).optional(),
   ORBIT_MQTT_USERNAME: z.string().optional(),
   ORBIT_MQTT_PASSWORD: z.string().optional(),
   ORBIT_MAX_CLOCK_SKEW_MS: z.coerce.number().default(120_000),
