@@ -8,6 +8,7 @@ Living ownership map. Update as capabilities ship.
 **Phase 3 quotes (core):** Atlas `QuoteRevision` + accept→reserve; ADR-0003; `docs/contracts/QUOTE_API.md`
 **Phase 4 proposals:** Coverage/Concentration scenarios + immutable `ProposalRevision` + share tokens + PDF/XLSX/PPTX; `docs/contracts/PROPOSAL_API.md`
 **Phase 5 ops/billing:** ExecutionTask, CreativeVersion, ProofRecord, Invoice/Payment/CreditNote, vendor costs, Tally file export, ReminderJob; `docs/contracts/OPS_BILLING_API.md`
+**Phase 6 WhatsApp:** Atlas link+confirm; Pulse conversation; Bridge durable delivery/receipts; `docs/contracts/WHATSAPP_API.md`
 
 ## Service ownership
 
@@ -22,6 +23,9 @@ Living ownership map. Update as capabilities ship.
 | Execution tasks / creatives / proof | Atlas API | Confirm ≠ campaign LIVE |
 | Invoice / payment / credit / vendor cost | Atlas API | From QuoteRevision snapshot; staff-only costs |
 | Tally file export / reminders | Atlas API | Live sync & Bridge delivery config-gated |
+| WhatsApp account link + mutation confirmations | Atlas API | Phone alone never grants access |
+| WhatsApp conversation orchestration | Pulse | Calls Atlas APIs; no quote ledger |
+| WhatsApp transport / webhooks / receipts | Bridge | Production signature mandatory |
 | Campaigns, media plans, optimizer | Atlas API | — |
 | Excel/WhatsApp orchestration | Pulse | Calls Atlas quotes + reserve (**pending**) |
 | WhatsApp provider + webhooks | Bridge | — |
@@ -80,14 +84,24 @@ Living ownership map. Update as capabilities ship.
 - Unit: `phase5-ops-billing.test.ts`
 - Security: proof `replacesProofId` scoped to campaign/tenant; invoice AR hidden from vendors; manual payments transactional; remaining medium gaps (creative r2Key binding, location asset write authz) tracked as release blockers
 
+## Phase 6 evidence (WhatsApp)
+
+- Upload harden: creatives/proofs require UPLOADED LocationAsset; forged r2Key rejected (`authorized-assets.test.ts`)
+- Bridge: deliveryStatus, idempotency, webhook dedup, partial send, dry-run, prod signature gate
+- Atlas: WhatsAppAccountLink / LinkChallenge / ActionConfirmation (`0013`)
+- Pulse: ConversationSession + ops notification fan-out with receipt tracking
+- Live Meta delivery + webhook verification: **pending credentials**
+
 ## Still open / blocked
 
 - Live paid checkout (credentials + adapter enablement) — **not production-ready**
 - Live Tally synchronization (file export only for now)
-- Pulse Excel/WhatsApp quote packaging + WhatsApp conversation workflows (Phase 6)
+- Live WhatsApp Meta delivery + webhook verification (adapters ready; dry-run without credentials)
+- Pulse Excel quote packaging beyond WhatsApp slice
 - MQTT ingestion (Orbit workstream) — deferred; not treated as measured evidence
 - Campaign intelligence (blocked on Orbit + associations)
-- Security review gate before release
+- Creative r2Key / proof asset auth: **resolved** (locationAssetId + UPLOADED checks)
+- Remaining medium: stronger invoice sequence serializable TX under load
 
 ## Cognitive load rules
 

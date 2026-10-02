@@ -10,27 +10,38 @@ datasource db {
 }
 
 model OutboundMessage {
-  id                String   @id @default(uuid()) @db.Uuid
+  id                String    @id @default(uuid()) @db.Uuid
   channel           String
   toE164            String
   bodyPreview       String?
-  status            String   @default("pending")
+  /// Legacy coarse status
+  status            String    @default("queued")
+  /// queued | submitted | delivered | read | failed | dry_run | partial
+  deliveryStatus    String    @default("queued")
   providerMessageId String?
-  payloadJson       Json     @default("{}")
+  idempotencyKey    String?   @unique
+  attemptCount      Int       @default(0)
+  nextRetryAt       DateTime?
+  payloadJson       Json      @default("{}")
+  receiptJson       Json      @default("{}")
   error             String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([channel, createdAt(sort: Desc)])
+  @@index([deliveryStatus, nextRetryAt])
+  @@index([providerMessageId])
   @@schema("bridge")
 }
 
 model InboundEvent {
-  id          String   @id @default(uuid()) @db.Uuid
-  channel     String
-  payloadJson Json
-  processed   Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id                 String   @id @default(uuid()) @db.Uuid
+  channel            String
+  payloadJson        Json
+  providerEventId    String?  @unique
+  signatureVerified  Boolean  @default(false)
+  processed          Boolean  @default(false)
+  createdAt          DateTime @default(now())
 
   @@index([channel, createdAt(sort: Desc)])
   @@schema("bridge")

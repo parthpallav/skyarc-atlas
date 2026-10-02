@@ -644,14 +644,9 @@ export class ApiClient {
   createCampaignCreative(
     campaignId: string,
     data: {
-      r2Key: string;
-      contentType: string;
-      byteSize?: number;
-      widthPx?: number;
-      heightPx?: number;
-      durationMs?: number;
-      digital?: boolean;
+      locationAssetId: string;
       bookingItemIds?: string[];
+      digital?: boolean;
       label?: string;
     }
   ) {

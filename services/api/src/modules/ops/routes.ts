@@ -17,6 +17,11 @@ import {
   transitionExecutionTask,
 } from "../../lib/ops/task-transitions.js";
 import {
+  resolveAuthorizedCreativeAsset,
+  resolveAuthorizedProofAsset,
+  bindAssetToCampaign,
+} from "../../lib/ops/authorized-assets.js";
+import {
   approveCreative,
   createCreativeVersion,
   customerSafeCreative,
@@ -153,24 +158,39 @@ export async function opsRoutes(fastify: FastifyInstance) {
     const body = z
       .object({
         label: z.string().max(200).optional(),
-        r2Key: z.string().min(1).max(512),
-        contentType: z.string().min(3).max(120),
-        byteSize: z.number().int().positive().optional(),
-        checksumSha256: z.string().max(128).optional(),
-        widthPx: z.number().int().positive().optional(),
-        heightPx: z.number().int().positive().optional(),
-        durationMs: z.number().int().positive().optional(),
+        /** Must reference a server-owned UPLOADED LocationAsset — raw r2Key rejected. */
+        locationAssetId: z.string().uuid(),
         bookingItemIds: z.array(z.string().uuid()).optional(),
         digital: z.boolean().optional(),
       })
       .parse(request.body);
+
+    const authorized = await resolveAuthorizedCreativeAsset(prisma, request.user, {
+      campaignId,
+      locationAssetId: body.locationAssetId,
+      bookingItemIds: body.bookingItemIds,
+    });
+    if (!authorized.ok) throw forbidden(authorized.error);
+
+    const asset = authorized.asset;
     const result = await createCreativeVersion(prisma, {
       campaignId,
       tenantOrganizationId: tenantOrgId,
-      ...body,
+      label: body.label,
+      locationAssetId: asset.id,
+      r2Key: asset.r2Key,
+      contentType: asset.contentType,
+      byteSize: asset.byteSize,
+      checksumSha256: asset.checksumSha256,
+      widthPx: asset.width,
+      heightPx: asset.height,
+      durationMs: asset.durationMs,
+      bookingItemIds: body.bookingItemIds,
+      digital: body.digital,
       actorUserId: request.user.id,
     });
     if ("error" in result) throw validationError(result.error ?? "Request failed");
+    await bindAssetToCampaign(prisma, asset.id, campaignId);
     return success({ creative: customerSafeCreative(result.creative) });
   });
 
@@ -264,11 +284,14 @@ export async function opsRoutes(fastify: FastifyInstance) {
       })
       .parse(request.body);
 
-    // Authorize asset belongs to location
-    const asset = await prisma.locationAsset.findUnique({ where: { id: body.locationAssetId } });
-    if (!asset || asset.locationId !== body.locationId) {
-      throw forbidden("Upload authorization failed for location asset");
-    }
+    const authorized = await resolveAuthorizedProofAsset(prisma, request.user, {
+      campaignId,
+      locationId: body.locationId,
+      locationAssetId: body.locationAssetId,
+      bookingItemId: body.bookingItemId,
+      executionTaskId: body.executionTaskId,
+    });
+    if (!authorized.ok) throw forbidden(authorized.error);
 
     const result = await createProofRecord(prisma, {
       tenantOrganizationId: tenantOrgId,
@@ -288,6 +311,7 @@ export async function opsRoutes(fastify: FastifyInstance) {
       provenanceNote: body.provenanceNote,
     });
     if ("error" in result) throw validationError(result.error ?? "Proof create failed");
+    await bindAssetToCampaign(prisma, authorized.asset.id, campaignId);
     return success({ proof: customerSafeProof(result.proof) });
   });
 

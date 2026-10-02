@@ -8,6 +8,14 @@ import { prisma } from "./prisma.js";
 import { fetchMediaPlan, fetchMediaPlanPdf } from "./lib/atlas-client.js";
 import { buildMediaPlanWorkbook, buildShareSummaryText } from "./lib/excel-export.js";
 import { sendWhatsAppViaBridge } from "./lib/bridge-client.js";
+import {
+  customerSafeStatusReply,
+  extractBriefHints,
+  explainServiceLimitation,
+  newConversationState,
+  nextPhaseAfterBrief,
+  type ConversationState,
+} from "./lib/conversation.js";
 
 type PulseUser = {
   id: string;
@@ -190,6 +198,174 @@ export async function buildPulseApp(env: PulseEnv) {
       return { job };
     }
   );
+
+  /** Inbound WhatsApp turn — requires prior Atlas link; never trusts phone alone. */
+  app.post("/v1/whatsapp/inbound", { preHandler: [app.authenticate] }, async (request) => {
+    const body = z
+      .object({
+        phoneE164: z.string().min(8).max(20),
+        text: z.string().max(4000),
+        atlasUserId: z.string().uuid().optional(),
+        tenantOrganizationId: z.string().uuid().optional(),
+      })
+      .parse(request.body);
+
+    if (!body.atlasUserId || !body.tenantOrganizationId) {
+      return {
+        reply: customerSafeStatusReply(newConversationState()),
+        phase: "AWAIT_LINK",
+        note: "Phone alone does not grant Atlas access — complete linking first",
+      };
+    }
+
+    let session = await prisma.conversationSession.findFirst({
+      where: { phoneE164: body.phoneE164, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    let state: ConversationState = session
+      ? (session.stateJson as ConversationState)
+      : newConversationState();
+
+    if (!session) {
+      state = { ...newConversationState(), phase: "COLLECT_BRIEF", atlasUserId: body.atlasUserId } as ConversationState & {
+        atlasUserId?: string;
+      };
+      session = await prisma.conversationSession.create({
+        data: {
+          phoneE164: body.phoneE164,
+          atlasUserId: body.atlasUserId,
+          tenantOrganizationId: body.tenantOrganizationId,
+          phase: state.phase,
+          stateJson: state as object,
+          expiresAt: new Date(state.expiresAt),
+        },
+      });
+    }
+
+    const upper = body.text.trim().toUpperCase();
+    let reply: string;
+    if (upper === "STATUS") {
+      reply = customerSafeStatusReply(state);
+    } else if (upper === "HELP" || upper === "ESCALATE") {
+      state = { ...state, phase: "ESCALATED" };
+      reply = customerSafeStatusReply(state);
+    } else if (upper.startsWith("CONFIRM ")) {
+      state = { ...state, phase: "AWAIT_CONFIRM", confirmationToken: body.text.trim().slice(8) };
+      reply =
+        "Confirmation received for processing via Atlas execute API. Availability and quote expiry will be revalidated. Duplicate CONFIRM will not reserve twice.";
+    } else if (state.phase === "COLLECT_BRIEF" || state.phase === "CLARIFY") {
+      const hints = extractBriefHints(body.text);
+      state = nextPhaseAfterBrief(state, hints);
+      reply =
+        state.phase === "CLARIFY"
+          ? customerSafeStatusReply(state)
+          : "Thanks — I'll compare Coverage vs Concentration using Atlas planning APIs (not a second quote ledger). " +
+            explainServiceLimitation("cms");
+    } else {
+      reply = customerSafeStatusReply(state) + " " + explainServiceLimitation("orbit");
+    }
+
+    await prisma.conversationTurn.create({
+      data: {
+        sessionId: session.id,
+        role: "user",
+        text: body.text,
+        actionJson: {},
+      },
+    });
+    await prisma.conversationSession.update({
+      where: { id: session.id },
+      data: { phase: state.phase, stateJson: state as object, updatedAt: new Date() },
+    });
+    await prisma.conversationTurn.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        text: reply,
+        actionJson: { phase: state.phase },
+      },
+    });
+
+    return { sessionId: session.id, phase: state.phase, reply };
+  });
+
+  /** Operational reminder fan-out — scoped text only; Bridge tracks receipts. */
+  app.post("/v1/ops-notifications/whatsapp", { preHandler: [app.authenticate] }, async (request) => {
+    const body = z
+      .object({
+        kind: z.enum([
+          "VENDOR_APPROVAL",
+          "HOLD_EXPIRY",
+          "LAUNCH_READY",
+          "OVERDUE_TASK",
+          "MISSING_PROOF",
+          "INVOICE_REMINDER",
+          "BOOKING_UPDATE",
+        ]),
+        toE164: z.string().min(8).max(20),
+        atlasReminderId: z.string().uuid().optional(),
+        scopedLink: z.string().url().optional(),
+        summary: z.string().max(280),
+      })
+      .parse(request.body);
+
+    const text = [
+      `Skyarc Atlas: ${body.kind.replace(/_/g, " ").toLowerCase()}`,
+      body.summary,
+      body.scopedLink ? `Open: ${body.scopedLink}` : null,
+      "Internal costs and margins are not included.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const job = await prisma.opsNotificationJob.create({
+      data: {
+        kind: body.kind,
+        toE164: body.toE164,
+        atlasReminderId: body.atlasReminderId,
+        status: "pending",
+        payloadJson: { summary: body.summary, scopedLink: body.scopedLink ?? null },
+      },
+    });
+
+    try {
+      const bridge = await sendWhatsAppViaBridge(env, {
+        toE164: body.toE164,
+        text,
+        idempotencyKey: body.atlasReminderId
+          ? `ops-reminder:${body.atlasReminderId}`
+          : `ops-notif:${job.id}`,
+        hasConsent: true,
+      });
+      const deliveryStatus = bridge.deliveryStatus ?? (bridge.dryRun ? "dry_run" : "submitted");
+      await prisma.opsNotificationJob.update({
+        where: { id: job.id },
+        data: {
+          status: bridge.dryRun ? "dry_run" : "submitted",
+          bridgeMessageId: bridge.id,
+          deliveryStatus,
+        },
+      });
+      return {
+        jobId: job.id,
+        bridgeMessageId: bridge.id,
+        deliveryStatus,
+        delivered: bridge.delivered === true,
+        dryRun: bridge.dryRun === true,
+        note: bridge.delivered
+          ? undefined
+          : "Queued/submitted only — delivery requires provider receipt (or dry-run pending Meta credentials)",
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "notify failed";
+      await prisma.opsNotificationJob.update({
+        where: { id: job.id },
+        data: { status: "failed", error: message },
+      });
+      throw err;
+    }
+  });
 
   return app;
 }

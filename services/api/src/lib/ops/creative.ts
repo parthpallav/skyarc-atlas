@@ -64,6 +64,8 @@ export async function createCreativeVersion(
     campaignId: string;
     tenantOrganizationId?: string | null;
     label?: string;
+    /** Server-owned uploaded LocationAsset — never a raw client r2Key. */
+    locationAssetId: string;
     r2Key: string;
     contentType: string;
     byteSize?: number | null;
@@ -106,7 +108,7 @@ export async function createCreativeVersion(
     },
     include: { bookingItems: true },
   });
-  return { creative: row };
+  return { creative: row, locationAssetId: input.locationAssetId };
 }
 
 export async function submitCreative(db: Db, id: string, actorUserId?: string | null) {

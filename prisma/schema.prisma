@@ -1419,6 +1419,62 @@ model AccountingExportBatch {
 }
 
 
+
+
+enum WhatsAppConfirmAction {
+  RESERVE_INVENTORY
+  ACCEPT_QUOTE
+  AMEND_BOOKING
+  CANCEL_BOOKING
+  VENDOR_APPROVE
+}
+
+/// Verified WhatsApp channel ↔ Atlas user+tenant. Phone alone never grants access.
+model WhatsAppAccountLink {
+  id                   String    @id @default(uuid()) @db.Uuid
+  userId               String    @db.Uuid
+  tenantOrganizationId String    @db.Uuid
+  phoneE164            String
+  verifiedAt           DateTime
+  revokedAt            DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([phoneE164, revokedAt])
+  @@index([userId, revokedAt])
+  @@index([tenantOrganizationId])
+}
+
+model WhatsAppLinkChallenge {
+  id                   String    @id @default(uuid()) @db.Uuid
+  userId               String    @db.Uuid
+  tenantOrganizationId String    @db.Uuid
+  phoneE164            String
+  tokenHash            String    @unique
+  expiresAt            DateTime
+  usedAt               DateTime?
+  createdAt            DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model WhatsAppActionConfirmation {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  userId               String                 @db.Uuid
+  tenantOrganizationId String?                @db.Uuid
+  action               WhatsAppConfirmAction
+  payloadJson          Json                   @default("{}")
+  fingerprint          String
+  tokenHash            String                 @unique
+  expiresAt            DateTime
+  consumedAt           DateTime?
+  createdAt            DateTime               @default(now())
+
+  @@index([userId, expiresAt])
+  @@index([fingerprint])
+}
+
+
 /// Ledger for prisma/migrations/*.sql — maintained by apply-sql-migrations.sh (not Prisma Migrate).
 model SkyarcSqlMigration {
   id        String   @id

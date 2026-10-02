@@ -6,6 +6,9 @@ export type BridgeWhatsAppSendInput = {
   documentUrl?: string;
   documentFilename?: string;
   documentBase64?: string;
+  idempotencyKey?: string;
+  hasConsent?: boolean;
+  lastUserMessageAt?: string | null;
 };
 
 export async function sendWhatsAppViaBridge(env: PulseEnv, input: BridgeWhatsAppSendInput) {
@@ -22,5 +25,11 @@ export async function sendWhatsAppViaBridge(env: PulseEnv, input: BridgeWhatsApp
     const text = await res.text();
     throw new Error(`Bridge WhatsApp send failed: ${res.status} ${text}`);
   }
-  return (await res.json()) as { id: string; providerMessageId: string; dryRun?: boolean };
+  return (await res.json()) as {
+    id: string;
+    providerMessageId: string;
+    dryRun?: boolean;
+    deliveryStatus?: string;
+    delivered?: boolean;
+  };
 }

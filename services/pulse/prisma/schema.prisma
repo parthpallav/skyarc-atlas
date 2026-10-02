@@ -39,3 +39,52 @@ model ExportArtifact {
   @@index([planId, createdAt(sort: Desc)])
   @@schema("pulse")
 }
+
+/// WhatsApp conversation orchestration state (Pulse). Atlas owns quotes/bookings.
+model ConversationSession {
+  id                   String   @id @default(uuid()) @db.Uuid
+  phoneE164            String
+  atlasUserId          String?  @db.Uuid
+  tenantOrganizationId String?  @db.Uuid
+  phase                String   @default("AWAIT_LINK")
+  stateJson            Json     @default("{}")
+  expiresAt            DateTime
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  turns ConversationTurn[]
+
+  @@index([phoneE164, expiresAt])
+  @@schema("pulse")
+}
+
+model ConversationTurn {
+  id         String   @id @default(uuid()) @db.Uuid
+  sessionId  String   @db.Uuid
+  role       String
+  text       String
+  actionJson Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@schema("pulse")
+}
+
+model OpsNotificationJob {
+  id               String   @id @default(uuid()) @db.Uuid
+  kind             String
+  toE164           String
+  atlasReminderId  String?  @db.Uuid
+  status           String   @default("pending")
+  bridgeMessageId  String?  @db.Uuid
+  deliveryStatus   String?
+  payloadJson      Json     @default("{}")
+  error            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@schema("pulse")
+}

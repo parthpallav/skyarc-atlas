@@ -13,11 +13,13 @@ export type WhatsAppSendInput = {
 export type WhatsAppSendResult = {
   providerMessageId: string;
   dryRun: boolean;
+  /** True when text succeeded but document failed (or vice versa). */
+  partial?: boolean;
+  partialDetail?: string;
 };
 
 function normalizeE164(to: string): string {
-  const digits = to.replace(/\D/g, "");
-  return digits;
+  return to.replace(/\D/g, "");
 }
 
 export function verifyWhatsAppSignature(
@@ -33,6 +35,30 @@ export function verifyWhatsAppSignature(
   } catch {
     return false;
   }
+}
+
+/** Production must verify signatures; missing secret is a hard deny in production. */
+export function requireWebhookSignature(
+  env: BridgeEnv,
+  rawBody: string,
+  signatureHeader: string | undefined
+): { ok: true } | { ok: false; error: string } {
+  if (env.NODE_ENV === "production") {
+    if (!env.WHATSAPP_APP_SECRET) {
+      return { ok: false, error: "WHATSAPP_APP_SECRET required in production" };
+    }
+    if (!verifyWhatsAppSignature(rawBody, signatureHeader, env.WHATSAPP_APP_SECRET)) {
+      return { ok: false, error: "Invalid signature" };
+    }
+    return { ok: true };
+  }
+  // Non-production: verify when secret is configured; otherwise allow with unverified flag upstream
+  if (env.WHATSAPP_APP_SECRET) {
+    if (!verifyWhatsAppSignature(rawBody, signatureHeader, env.WHATSAPP_APP_SECRET)) {
+      return { ok: false, error: "Invalid signature" };
+    }
+  }
+  return { ok: true };
 }
 
 async function uploadMedia(env: BridgeEnv, buffer: Buffer, mimeType: string): Promise<string> {
@@ -74,8 +100,14 @@ export async function sendWhatsAppMessage(
 
   const phoneId = env.WHATSAPP_PHONE_NUMBER_ID!;
   const token = env.WHATSAPP_TOKEN!;
+  const wantsDoc = Boolean(input.documentUrl || input.documentBuffer);
+  const wantsText = Boolean(input.text?.trim());
 
-  if (input.text?.trim()) {
+  let textOk = !wantsText;
+  let textId: string | undefined;
+  let textError: string | undefined;
+
+  if (wantsText) {
     const textRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
       method: "POST",
       headers: {
@@ -86,51 +118,84 @@ export async function sendWhatsAppMessage(
         messaging_product: "whatsapp",
         to,
         type: "text",
-        text: { body: input.text.trim() },
+        text: { body: input.text!.trim() },
       }),
     });
     if (!textRes.ok) {
-      throw new Error(`WhatsApp text send failed: ${textRes.status} ${await textRes.text()}`);
+      textError = `WhatsApp text send failed: ${textRes.status} ${await textRes.text()}`;
+      textOk = false;
+    } else {
+      const textJson = (await textRes.json()) as { messages?: Array<{ id?: string }> };
+      textId = textJson.messages?.[0]?.id ?? `wa-${Date.now()}`;
+      textOk = true;
     }
-    const textJson = (await textRes.json()) as { messages?: Array<{ id?: string }> };
-    const msgId = textJson.messages?.[0]?.id ?? `wa-${Date.now()}`;
-    if (!input.documentUrl && !input.documentBuffer) {
-      return { providerMessageId: msgId, dryRun: false };
+    if (!wantsDoc) {
+      if (!textOk) throw new Error(textError ?? "Text send failed");
+      return { providerMessageId: textId!, dryRun: false };
     }
   }
 
-  let documentPayload: Record<string, unknown>;
-  if (input.documentBuffer) {
-    const mediaId = await uploadMedia(env, input.documentBuffer, "application/pdf");
-    documentPayload = {
-      id: mediaId,
-      filename: input.documentFilename ?? "media-plan.pdf",
-    };
-  } else if (input.documentUrl) {
-    documentPayload = {
-      link: input.documentUrl,
-      filename: input.documentFilename ?? "media-plan.pdf",
-    };
-  } else {
-    throw new Error("Document send requested without document payload");
+  let docOk = false;
+  let docId: string | undefined;
+  let docError: string | undefined;
+  try {
+    let documentPayload: Record<string, unknown>;
+    if (input.documentBuffer) {
+      const mediaId = await uploadMedia(env, input.documentBuffer, "application/pdf");
+      documentPayload = {
+        id: mediaId,
+        filename: input.documentFilename ?? "media-plan.pdf",
+      };
+    } else if (input.documentUrl) {
+      documentPayload = {
+        link: input.documentUrl,
+        filename: input.documentFilename ?? "media-plan.pdf",
+      };
+    } else {
+      throw new Error("Document send requested without document payload");
+    }
+
+    const docRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to,
+        type: "document",
+        document: documentPayload,
+      }),
+    });
+    if (!docRes.ok) {
+      docError = `WhatsApp document send failed: ${docRes.status} ${await docRes.text()}`;
+      docOk = false;
+    } else {
+      const docJson = (await docRes.json()) as { messages?: Array<{ id?: string }> };
+      docId = docJson.messages?.[0]?.id ?? `wa-doc-${Date.now()}`;
+      docOk = true;
+    }
+  } catch (err) {
+    docError = err instanceof Error ? err.message : "Document send failed";
+    docOk = false;
   }
 
-  const docRes = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to,
-      type: "document",
-      document: documentPayload,
-    }),
-  });
-  if (!docRes.ok) {
-    throw new Error(`WhatsApp document send failed: ${docRes.status} ${await docRes.text()}`);
+  if (textOk && docOk) {
+    return { providerMessageId: docId ?? textId!, dryRun: false };
   }
-  const docJson = (await docRes.json()) as { messages?: Array<{ id?: string }> };
-  return { providerMessageId: docJson.messages?.[0]?.id ?? `wa-doc-${Date.now()}`, dryRun: false };
+  if (!textOk && !docOk) {
+    throw new Error([textError, docError].filter(Boolean).join("; "));
+  }
+  // Provider accepted one part only — not delivered for both
+  return {
+    providerMessageId: docId ?? textId ?? `wa-partial-${Date.now()}`,
+    dryRun: false,
+    partial: true,
+    partialDetail: [
+      textOk ? "text:submitted" : `text:failed:${textError}`,
+      docOk ? "document:submitted" : `document:failed:${docError}`,
+      "Provider acceptance of one part does not mean full delivery",
+    ].join(" | "),
+  };
 }

@@ -73,6 +73,10 @@
 | Invoices + manual payments          | `Invoice` / `InvoicePayment` from QuoteRevision     | Snapshot issue; partial pay; AR    | Atlas        | quotes       | **done**        | invoice arithmetic unit                                     |
 | Vendor costs + GP report            | PO / bill / CampaignExpense                         | Staff-only; missing costs flagged  | Atlas        | billing      | **done**        | commercial performance basis                                |
 | Tally file export + reminders       | `AccountingExportBatch` / `ReminderJob`             | File ≠ live sync; no false sent    | Atlas        | Bridge opt.  | **done (file)** | tally mapping + reminder serialize unit                     |
+| Creative/proof upload authorization | `authorized-assets.ts` — no client r2Key trust | Server-owned UPLOADED assets only  | Atlas        | assets       | **done**        | authorized-assets unit                                      |
+| WhatsApp Bridge delivery            | durable jobs, receipts, signature, dry-run       | Accept ≠ delivered; retries        | Bridge       | Meta         | **done (adapters)** | whatsapp-policy unit; live pending                          |
+| WhatsApp account linking            | Atlas WhatsAppAccountLink + challenges          | Phone alone ≠ access               | Atlas        | Pulse        | **done**        | whatsapp-link unit                                          |
+| WhatsApp conversation + confirm     | Pulse conversation + Atlas confirmations        | Confirm before mutate              | Pulse+Atlas  | Bridge       | **done (slice)** | conversation unit; live Meta pending                        |
 | Payment provider                   | `payment-adapter.ts` + `/payment-intent`            | Live capture when configured       | Atlas        | creds        | **pending**     | UNAVAILABLE without creds (by design)                       |
 | Live paid checkout                 | —                                                   | Hold/payment/refund policy live    | Atlas        | payment      | **pending**     | blocked on credentials                                      |
 | Pulse quote orchestration          | —                                                   | Excel/WhatsApp via Atlas APIs      | Pulse        | Atlas quotes | **pending**     | —                                                           |
@@ -109,7 +113,7 @@
 - **Phase 3:** ✅ Core quote→accept→reserve (Atlas); ⏳ live payments; ⏳ Pulse orchestration
 - **Phase 4:** ✅ Scenarios + proposal revisions + share links + PDF/XLSX/PPTX (`docs/contracts/PROPOSAL_API.md`)
 - **Phase 5:** ✅ Ops tasks, creative, proof, invoices, vendor costs, Tally file export, reminders (`docs/contracts/OPS_BILLING_API.md`)
-- **Phase 6:** WhatsApp delivery jobs, inbound state, confirmation before reserve
+- **Phase 6:** ✅ Adapters + linking + confirm + conversation slice (`docs/contracts/WHATSAPP_API.md`); ⏳ live Meta delivery
 - **Phase 7:** Continuity / fill-rate / Orbit-aware risk (after evidence foundation)
 - **Orbit MQTT:** Separate workstream — ingestion contracts, retention, campaign association joins
 
