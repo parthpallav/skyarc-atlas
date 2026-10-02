@@ -4,7 +4,7 @@
 > Paste into draft PR #7 when repository access is available. Do **not** merge or deploy automatically.
 
 **Branch:** `feat/phase2-4-booking-scenarios`  
-**Hardened RC SHA:** `4677c26` (tip with evidence stamp: `e095313`)  
+**Hardened RC SHA:** `4677c26` (tip with evidence stamp: `72d4386`)  
 **Prior baseline:** `52a817d`  
 **Title:**
 
@@ -28,7 +28,7 @@ RC: Harden OIDC/MQTT/Pulse authz; local browser + MQTT 3.1.1/5 matrix; migration
 
 ## Validation summary
 
-Recorded on tip `e095313` (hardening `4677c26`), local:
+Recorded on tip `72d4386` (hardening `4677c26`), local:
 
 ```text
 @skyarc/api build: PASS
@@ -42,7 +42,7 @@ Recorded on tip `e095313` (hardening `4677c26`), local:
 @skyarc/orbit-cloud test:integration: 6 passed / 1 skipped (MQTT5 live Mosquitto skipped without MQTT5_BROKER_URL; doc assertion passed)
 ```
 
-**CI note:** No workflow under `.github/workflows` currently runs these integration suites. Treat the counts above as separate RC evidence until CI is extended.
+**CI note:** `.github/workflows/ci.yml` runs `pnpm build`, `pnpm typecheck`, and `pnpm test` (unit). It does **not** run API/Pulse/Orbit `test:integration`. Treat the integration counts above as separate RC evidence until CI is extended.
 
 ## Test plan
 
