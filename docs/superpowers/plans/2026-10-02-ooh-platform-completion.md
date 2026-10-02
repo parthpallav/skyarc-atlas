@@ -77,12 +77,14 @@
 | WhatsApp Bridge delivery            | durable jobs, receipts, signature, dry-run       | Accept ≠ delivered; retries        | Bridge       | Meta         | **done (adapters)** | whatsapp-policy unit; live pending                          |
 | WhatsApp account linking            | Atlas WhatsAppAccountLink + challenges          | Phone alone ≠ access               | Atlas        | Pulse        | **done**        | whatsapp-link unit                                          |
 | WhatsApp conversation + confirm     | Pulse conversation + Atlas confirmations        | Confirm before mutate              | Pulse+Atlas  | Bridge       | **done (slice)** | conversation unit; live Meta pending                        |
+| Continuity + fill-rate recommendations | `CommercialRecommendation` + scan/approve/apply (`0014`) | Disruptions→replacements; vacancy packages; no reserve | Atlas+Pulse | bookings/rates | **done (7A)** | phase7a-recommendations unit; staff `/recommendations` |
 | Payment provider                   | `payment-adapter.ts` + `/payment-intent`            | Live capture when configured       | Atlas        | creds        | **pending**     | UNAVAILABLE without creds (by design)                       |
 | Live paid checkout                 | —                                                   | Hold/payment/refund policy live    | Atlas        | payment      | **pending**     | blocked on credentials                                      |
 | Pulse quote orchestration          | —                                                   | Excel/WhatsApp via Atlas APIs      | Pulse        | Atlas quotes | **pending**     | —                                                           |
-| WhatsApp production                | Bridge dry-run                                      | Signed webhooks + delivery jobs    | Bridge+Pulse | Meta creds   | **pending**     | —                                                           |
-| MQTT telemetry                     | OrbitTelemetry/DeviceState                          | Auth MQTT + contracts              | Orbit        | Phase Orbit  | **not started** | —                                                           |
-| Campaign intelligence              | —                                                   | After telemetry + associations     | Pulse        | Orbit        | **blocked**     | —                                                           |
+| WhatsApp production                | Bridge dry-run                                      | Signed webhooks + delivery jobs    | Bridge+Pulse | Meta creds   | **pending**     | live Meta + template catalog + signed webhooks              |
+| Live Tally synchronization         | File export only                                    | Live sync when contract verified   | Atlas        | Tally        | **pending**     | not complete from dry-run/file export                       |
+| MQTT telemetry (Phase 7B)          | OrbitTelemetry/DeviceState                          | Auth MQTT + contracts              | Orbit        | Phase 7B     | **not started** | —                                                           |
+| Campaign intelligence (post-7B)    | —                                                   | After telemetry + associations     | Pulse        | Orbit 7B     | **blocked**     | —                                                           |
 
 
 ---
@@ -114,7 +116,8 @@
 - **Phase 4:** ✅ Scenarios + proposal revisions + share links + PDF/XLSX/PPTX (`docs/contracts/PROPOSAL_API.md`)
 - **Phase 5:** ✅ Ops tasks, creative, proof, invoices, vendor costs, Tally file export, reminders (`docs/contracts/OPS_BILLING_API.md`)
 - **Phase 6:** ✅ Adapters + linking + confirm + conversation slice (`docs/contracts/WHATSAPP_API.md`); ⏳ live Meta delivery
-- **Phase 7:** Continuity / fill-rate / Orbit-aware risk (after evidence foundation)
+- **Phase 7A:** ✅ Continuity + fill-rate recommendations (`docs/contracts/RECOMMENDATIONS_API.md`); no Orbit inference
+- **Phase 7B:** MQTT ingestion, validated telemetry, effective-dated device/screen mappings, campaign associations — then Orbit-aware intelligence
 - **Orbit MQTT:** Separate workstream — ingestion contracts, retention, campaign association joins
 
 ---

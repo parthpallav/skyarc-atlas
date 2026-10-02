@@ -302,6 +302,8 @@ export async function buildPulseApp(env: PulseEnv) {
           "MISSING_PROOF",
           "INVOICE_REMINDER",
           "BOOKING_UPDATE",
+          "RECOMMENDATION_APPROVED",
+          "CONTINUITY_ALERT",
         ]),
         toE164: z.string().min(8).max(20),
         atlasReminderId: z.string().uuid().optional(),

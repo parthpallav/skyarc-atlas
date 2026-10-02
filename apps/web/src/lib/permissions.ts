@@ -6,6 +6,7 @@ import {
   canAccessOrganizationPage,
   canWriteLocation,
   getDefaultLandingPath,
+  isInternalUser,
   isReadOnly,
   isVendorRole,
   type AuthUser,
@@ -47,6 +48,10 @@ export function canAccessRoute(user: StoredUser | null, pathname: string): boole
 
   if (pathname.match(/^\/admin\/organizations\/[^/]+/)) {
     return canAccessAdmin(authUser);
+  }
+
+  if (pathname.startsWith("/recommendations")) {
+    return isInternalUser(authUser);
   }
 
   if (

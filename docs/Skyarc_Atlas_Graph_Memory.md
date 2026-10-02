@@ -9,6 +9,7 @@ Living ownership map. Update as capabilities ship.
 **Phase 4 proposals:** Coverage/Concentration scenarios + immutable `ProposalRevision` + share tokens + PDF/XLSX/PPTX; `docs/contracts/PROPOSAL_API.md`
 **Phase 5 ops/billing:** ExecutionTask, CreativeVersion, ProofRecord, Invoice/Payment/CreditNote, vendor costs, Tally file export, ReminderJob; `docs/contracts/OPS_BILLING_API.md`
 **Phase 6 WhatsApp:** Atlas link+confirm; Pulse conversation; Bridge durable delivery/receipts; `docs/contracts/WHATSAPP_API.md`
+**Phase 7A recommendations:** Continuity + fill-rate via `CommercialRecommendation`; `docs/contracts/RECOMMENDATIONS_API.md`; Orbit intelligence deferred to 7B
 
 ## Service ownership
 
@@ -26,10 +27,11 @@ Living ownership map. Update as capabilities ship.
 | WhatsApp account link + mutation confirmations | Atlas API | Phone alone never grants access |
 | WhatsApp conversation orchestration | Pulse | Calls Atlas APIs; no quote ledger |
 | WhatsApp transport / webhooks / receipts | Bridge | Production signature mandatory |
+| Commercial continuity / fill-rate recommendations | Atlas API | Pulse notifies; no reserve/quote ledger copy |
 | Campaigns, media plans, optimizer | Atlas API | — |
 | Excel/WhatsApp orchestration | Pulse | Calls Atlas quotes + reserve (**pending**) |
 | WhatsApp provider + webhooks | Bridge | — |
-| Device telemetry / MQTT | Orbit Cloud | Separate workstream; not campaign ledger |
+| Device telemetry / MQTT | Orbit Cloud | Phase 7B; not campaign ledger |
 
 ## Phase 1 evidence
 
@@ -92,14 +94,26 @@ Living ownership map. Update as capabilities ship.
 - Pulse: ConversationSession + ops notification fan-out with receipt tracking
 - Live Meta delivery + webhook verification: **pending credentials**
 
+## Phase 7A evidence (continuity + fill-rate)
+
+- Model: `CommercialRecommendation` + enums (`0014_phase7a_recommendations`)
+- Detection from authoritative records only (vendor reject, unavailable inventory, blocked ops/launch) — no Orbit inference
+- Replacements + fill-rate packages: deterministic/heuristic labels; margin suppressed when costs missing; no capacity reserve
+- Apply: authorized approve → revalidate availability/price → `amendBooking`; preserve on fail; duplicate apply blocked
+- UI: staff `/recommendations` queue; customer serializers strip costs/margins
+- Pulse ops notify kinds: `RECOMMENDATION_APPROVED`, `CONTINUITY_ALERT` (Bridge dry-run/live preserved)
+- Contract: `docs/contracts/RECOMMENDATIONS_API.md`
+- Unit: `phase7a-recommendations.test.ts`
+- **Phase 7B (separate):** MQTT ingestion, validated telemetry, effective-dated device/screen mappings, campaign associations — then Orbit-aware intelligence
+
 ## Still open / blocked
 
 - Live paid checkout (credentials + adapter enablement) — **not production-ready**
 - Live Tally synchronization (file export only for now)
-- Live WhatsApp Meta delivery + webhook verification (adapters ready; dry-run without credentials)
+- Live WhatsApp Meta delivery + webhook verification + approved template catalog (adapters ready; dry-run without credentials)
 - Pulse Excel quote packaging beyond WhatsApp slice
-- MQTT ingestion (Orbit workstream) — deferred; not treated as measured evidence
-- Campaign intelligence (blocked on Orbit + associations)
+- MQTT ingestion / Phase 7B (Orbit workstream) — deferred; not treated as measured evidence
+- Campaign intelligence (blocked on Phase 7B Orbit + associations)
 - Creative r2Key / proof asset auth: **resolved** (locationAssetId + UPLOADED checks)
 - Remaining medium: stronger invoice sequence serializable TX under load
 

@@ -575,6 +575,7 @@ model Campaign {
   invoices        Invoice[]
   campaignExpenses CampaignExpense[]
   reminderJobs    ReminderJob[]
+  commercialRecommendations CommercialRecommendation[]
 
   @@index([lifecycleStatus, startDate, endDate])
 }
@@ -1472,6 +1473,68 @@ model WhatsAppActionConfirmation {
 
   @@index([userId, expiresAt])
   @@index([fingerprint])
+}
+
+
+
+
+enum CommercialRecommendationKind {
+  CONTINUITY_REPLACEMENT
+  FILL_RATE_PACKAGE
+}
+
+enum CommercialRecommendationStatus {
+  OPEN
+  APPROVED
+  DISMISSED
+  APPLIED
+  EXPIRED
+  SUPERSEDED
+  FAILED
+}
+
+enum RecommendationMethod {
+  DETERMINISTIC_RULE
+  HEURISTIC
+}
+
+/// Phase 7A continuity / fill-rate recommendations. Not a quote or reservation ledger.
+model CommercialRecommendation {
+  id                   String                          @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?                         @db.Uuid
+  kind                 CommercialRecommendationKind
+  status               CommercialRecommendationStatus  @default(OPEN)
+  method               RecommendationMethod            @default(DETERMINISTIC_RULE)
+  ruleVersion          String                          @default("7a.v1")
+  /// Dedupes repeated triggers (e.g. bookingItem:reject:<id>)
+  triggerKey           String
+  triggerType          String
+  campaignId           String?                         @db.Uuid
+  bookingId            String?                         @db.Uuid
+  bookingItemId        String?                         @db.Uuid
+  observedAt           DateTime                        @default(now())
+  expiresAt            DateTime
+  inputSnapshotJson    Json                            @default("{}")
+  suggestionsJson      Json                            @default("[]")
+  explanation          String?
+  freshnessLabel       String                          @default("fresh")
+  pricingAvailable     Boolean                         @default(true)
+  costDataComplete     Boolean                         @default(false)
+  marginSuppressed     Boolean                         @default(false)
+  reviewedAt           DateTime?
+  reviewedByUserId     String?                         @db.Uuid
+  appliedChangeJson    Json                            @default("{}")
+  actionHistoryJson    Json                            @default("[]")
+  createdAt            DateTime                        @default(now())
+  updatedAt            DateTime                        @updatedAt
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([triggerKey])
+  @@index([tenantOrganizationId, status])
+  @@index([campaignId, status])
+  @@index([kind, status, expiresAt])
+  @@index([bookingId])
 }
 
 

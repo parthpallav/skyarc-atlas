@@ -8,10 +8,11 @@ import {
   Layers,
   CalendarCheck,
   Send,
+  Lightbulb,
   Settings,
   Users,
 } from "lucide-react";
-import { canAccessAdmin, canAccessCampaigns, isVendorRole } from "@skyarc/shared";
+import { canAccessAdmin, canAccessCampaigns, isInternalUser, isVendorRole } from "@skyarc/shared";
 import type { StoredUser } from "./api";
 import { toAuthUser } from "./permissions";
 
@@ -49,6 +50,10 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
     links.push({ href: "/bookings", label: "Bookings", icon: CalendarCheck });
     links.push({ href: "/requests", label: "Requests", icon: Send });
     links.push({ href: "/media-plans", label: "Media Plans", icon: Layers });
+  }
+
+  if (isInternalUser(authUser)) {
+    links.push({ href: "/recommendations", label: "Recommendations", icon: Lightbulb });
   }
 
   links.push({ href: "/map", label: "Map", icon: Map });

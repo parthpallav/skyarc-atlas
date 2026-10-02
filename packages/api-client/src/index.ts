@@ -546,6 +546,73 @@ export class ApiClient {
     return this.request<unknown>(`/bookings/${id}`);
   }
 
+  listRecommendations(params?: {
+    kind?: string;
+    status?: string;
+    campaignId?: string;
+  }) {
+    const q = new URLSearchParams();
+    if (params?.kind) q.set("kind", params.kind);
+    if (params?.status) q.set("status", params.status);
+    if (params?.campaignId) q.set("campaignId", params.campaignId);
+    const qs = q.toString();
+    return this.request<{
+      recommendations: unknown[];
+      queue: Record<string, unknown>;
+      ruleVersion: string;
+      note?: string;
+    }>(`/recommendations${qs ? `?${qs}` : ""}`);
+  }
+
+  scanRecommendations(data?: {
+    continuity?: boolean;
+    fillRate?: boolean;
+    daysAhead?: number;
+    windowDays?: number;
+  }) {
+    return this.request<unknown>("/recommendations/scan", {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  getRecommendation(id: string) {
+    return this.request<{ recommendation: unknown }>(`/recommendations/${id}`);
+  }
+
+  approveRecommendation(id: string) {
+    return this.request<{ recommendation: unknown }>(`/recommendations/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
+  dismissRecommendation(id: string, reason?: string) {
+    return this.request<{ recommendation: unknown }>(`/recommendations/${id}/dismiss`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  recalculateRecommendation(id: string) {
+    return this.request<{ recommendation: unknown }>(`/recommendations/${id}/recalculate`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
+  applyRecommendation(id: string, data: { chosenInventoryId: string }) {
+    return this.request<{
+      recommendation: unknown;
+      change?: unknown;
+      bookingId?: string | null;
+      note?: string;
+    }>(`/recommendations/${id}/apply`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   reserveBooking(data: {
     campaignId: string;
     inventoryIds: string[];

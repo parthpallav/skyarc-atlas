@@ -25,6 +25,7 @@ import { proposalRoutes } from "./modules/proposals/routes.js";
 import { opsRoutes } from "./modules/ops/routes.js";
 import { billingRoutes } from "./modules/billing/routes.js";
 import { whatsappRoutes } from "./modules/whatsapp/routes.js";
+import { recommendationRoutes } from "./modules/recommendations/routes.js";
 import { deviceRoutes } from "./modules/devices/routes.js";
 import { orbitEventRoutes } from "./modules/orbit-events/routes.js";
 import { startAnalysisRunner } from "./workers/analysis-runner.js";
@@ -69,6 +70,7 @@ export async function buildApp() {
       await opsRoutes(api);
       await billingRoutes(api);
       await whatsappRoutes(api);
+      await recommendationRoutes(api);
       await deviceRoutes(api, env);
     },
     { prefix: API_PREFIX }
