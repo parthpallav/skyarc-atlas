@@ -54,6 +54,10 @@ export function canAccessRoute(user: StoredUser | null, pathname: string): boole
     return isInternalUser(authUser);
   }
 
+  if (pathname.includes("/orbit-evidence")) {
+    return isInternalUser(authUser);
+  }
+
   if (
     pathname.startsWith("/campaigns") ||
     pathname.startsWith("/bookings") ||

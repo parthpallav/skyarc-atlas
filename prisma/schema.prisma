@@ -374,6 +374,7 @@ model Screen {
   inventories   Inventory[]
   devices       Device[]
   externalIds   ScreenExternalId[]
+  deviceMappings DeviceScreenMapping[]
 }
 
 /// External provider ids mapped to a Skyarc screen. Never the primary screen identity.
@@ -406,10 +407,33 @@ model Device {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  screen Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  screen   Screen                @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  mappings DeviceScreenMapping[]
 
   @@unique([provider, externalId])
   @@index([screenId])
+}
+
+/// Effective-dated device ↔ screen assignment (Atlas owns mappings; Orbit owns telemetry).
+model DeviceScreenMapping {
+  id                   String    @id @default(uuid()) @db.Uuid
+  deviceId             String    @db.Uuid
+  screenId             String    @db.Uuid
+  tenantOrganizationId String?   @db.Uuid
+  validFrom            DateTime
+  validTo              DateTime?
+  reason               String?
+  conflictNote         String?
+  createdByUserId      String?   @db.Uuid
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  screen Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, validFrom])
+  @@index([screenId, validFrom])
+  @@index([tenantOrganizationId])
 }
 
 /// Idempotent receipts for Orbit → Atlas domain events.
@@ -417,6 +441,24 @@ model OrbitEventReceipt {
   eventId   String   @id @db.Uuid
   eventType String
   receivedAt DateTime @default(now())
+}
+
+/// Pulse/Atlas operational-risk snapshots from Orbit evidence (not forecasts).
+model OperationalRiskSnapshot {
+  id                   String   @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?  @db.Uuid
+  campaignId           String   @db.Uuid
+  version              Int
+  source               String   @default("orbit_evidence")
+  snapshotJson         Json
+  limitationsJson      Json     @default("[]")
+  createdByUserId      String?  @db.Uuid
+  createdAt            DateTime @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, version])
+  @@index([tenantOrganizationId, createdAt])
 }
 
 model ScreenSpecification {
@@ -576,6 +618,7 @@ model Campaign {
   campaignExpenses CampaignExpense[]
   reminderJobs    ReminderJob[]
   commercialRecommendations CommercialRecommendation[]
+  operationalRiskSnapshots OperationalRiskSnapshot[]
 
   @@index([lifecycleStatus, startDate, endDate])
 }

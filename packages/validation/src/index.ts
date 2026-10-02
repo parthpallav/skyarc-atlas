@@ -757,3 +757,40 @@ export const orbitEventEnvelopeSchema = z.object({
   correlationId: uuidSchema.optional(),
   payload: z.record(z.unknown()),
 });
+
+/** Phase 7B versioned device telemetry payload (MQTT or HTTPS ingest). */
+export const orbitTelemetryPayloadV1Schema = z
+  .object({
+    schemaVersion: z.literal("7b.v1"),
+    eventId: uuidSchema,
+    deviceId: uuidSchema,
+    bootId: z.string().min(1).max(64),
+    sessionId: z.string().min(1).max(64),
+    sequence: z.number().int().min(0),
+    observedAt: z.string().datetime(),
+    firmwareVersion: z.string().min(1).max(64),
+    measurementType: z.string().min(1).max(64),
+    value: z.union([z.number(), z.string(), z.boolean(), z.null()]),
+    unit: z.string().max(32).nullable().optional(),
+    typedValues: z.record(z.union([z.number(), z.string(), z.boolean(), z.null()])).optional(),
+    sensorModelVersion: z.string().max(64).nullable().optional(),
+    confidence: z.number().min(0).max(1).nullable().optional(),
+    qualityFlags: z.array(z.string().max(32)).max(20).optional(),
+    creativeId: z.string().uuid().nullable().optional(),
+    campaignId: z.string().uuid().nullable().optional(),
+    /** Raw camera frames are disabled by default — only explicit false/omit allowed. */
+    includesImage: z.literal(false).optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.measurementType === "playback") {
+      if (!val.creativeId && !val.campaignId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Playback evidence requires creativeId and/or campaignId from supported CMS/player",
+          path: ["creativeId"],
+        });
+      }
+    }
+  });
+
+export const MAX_ORBIT_TELEMETRY_BYTES = 16_384;

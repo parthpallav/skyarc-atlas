@@ -10,6 +10,7 @@ Living ownership map. Update as capabilities ship.
 **Phase 5 ops/billing:** ExecutionTask, CreativeVersion, ProofRecord, Invoice/Payment/CreditNote, vendor costs, Tally file export, ReminderJob; `docs/contracts/OPS_BILLING_API.md`
 **Phase 6 WhatsApp:** Atlas link+confirm; Pulse conversation; Bridge durable delivery/receipts; `docs/contracts/WHATSAPP_API.md`
 **Phase 7A recommendations:** Continuity + fill-rate via `CommercialRecommendation`; `docs/contracts/RECOMMENDATIONS_API.md`; Orbit intelligence deferred to 7B
+**Phase 7B telemetry:** Orbit MQTT/HTTPS contracts + durable inbox; Atlas `DeviceScreenMapping` + campaign evidence; `docs/contracts/ORBIT_TELEMETRY_API.md` (simulator-verified; live broker/hardware pending)
 
 ## Service ownership
 
@@ -28,10 +29,12 @@ Living ownership map. Update as capabilities ship.
 | WhatsApp conversation orchestration | Pulse | Calls Atlas APIs; no quote ledger |
 | WhatsApp transport / webhooks / receipts | Bridge | Production signature mandatory |
 | Commercial continuity / fill-rate recommendations | Atlas API | Pulse notifies; no reserve/quote ledger copy |
+| Device↔screen effective-dated mappings + campaign evidence | Atlas API | Historical joins; no raw telemetry store |
+| Device credentials, MQTT/HTTPS ingest, measurements, aggregates, incidents | Orbit Cloud | No booking/quote ledger |
+| Operational-risk snapshots from Orbit evidence | Atlas/Pulse | Not audience forecasts |
 | Campaigns, media plans, optimizer | Atlas API | — |
-| Excel/WhatsApp orchestration | Pulse | Calls Atlas quotes + reserve (**pending**) |
-| WhatsApp provider + webhooks | Bridge | — |
-| Device telemetry / MQTT | Orbit Cloud | Phase 7B; not campaign ledger |
+| Excel/WhatsApp quote→reserve orchestration | Pulse | **pending** full Atlas quote loop |
+| Device telemetry / MQTT live hardware | Orbit Cloud | Simulator done; live pending credentials |
 
 ## Phase 1 evidence
 
@@ -104,16 +107,30 @@ Living ownership map. Update as capabilities ship.
 - Pulse ops notify kinds: `RECOMMENDATION_APPROVED`, `CONTINUITY_ALERT` (Bridge dry-run/live preserved)
 - Contract: `docs/contracts/RECOMMENDATIONS_API.md`
 - Unit: `phase7a-recommendations.test.ts`
-- **Phase 7B (separate):** MQTT ingestion, validated telemetry, effective-dated device/screen mappings, campaign associations — then Orbit-aware intelligence
+- **Phase 7B:** see below
+
+## Phase 7B evidence (Orbit telemetry + associations)
+
+- Payload contracts `7b.v1` + capability profiles (Edge / Sense / player) in `@skyarc/shared`
+- Orbit: durable `OrbitIngestInbox` handoff, raw dedupe, measurements, separated state, incidents, aggregates, coverage gaps, retention
+- MQTT consumer (optional `ORBIT_MQTT_URL`) with topic/tenant/device binding + revoke; HTTPS ingest uses same schema
+- Simulator offline replay without hardware
+- Atlas: `DeviceScreenMapping` (`0015`), relocate API, `GET /campaigns/:id/orbit-evidence`, operational-risk snapshots
+- UI: `/campaigns/[id]/orbit-evidence`
+- Contract: `docs/contracts/ORBIT_TELEMETRY_API.md`
+- Unit: `phase7b-telemetry.test.ts` (Orbit), `phase7b-orbit-evidence.test.ts` (Atlas)
+- **Simulator-verified** vs **live broker/hardware** called out separately — missing MQTT/hardware blocks live verification only
+- Audience/impressions/reach/verified delivery: **still blocked** pending validated sensors + CMS
 
 ## Still open / blocked
 
 - Live paid checkout (credentials + adapter enablement) — **not production-ready**
 - Live Tally synchronization (file export only for now)
 - Live WhatsApp Meta delivery + webhook verification + approved template catalog (adapters ready; dry-run without credentials)
-- Pulse Excel quote packaging beyond WhatsApp slice
-- MQTT ingestion / Phase 7B (Orbit workstream) — deferred; not treated as measured evidence
-- Campaign intelligence (blocked on Phase 7B Orbit + associations)
+- Pulse Excel/WhatsApp **quote→reserve** orchestration (XLSX export + conversation slice done; full Atlas quote loop pending)
+- Google sign-up/onboarding — **deferred** (email/password only; no Google OAuth in repo)
+- Live MQTT broker ACLs + physical Orbit Edge/Sense verification
+- Campaign intelligence forecasts (blocked on validated evidence sources)
 - Creative r2Key / proof asset auth: **resolved** (locationAssetId + UPLOADED checks)
 - Remaining medium: stronger invoice sequence serializable TX under load
 

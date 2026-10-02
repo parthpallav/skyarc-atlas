@@ -27,13 +27,23 @@ model OrbitDevice {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  claims    ClaimCode[]
-  telemetry OrbitTelemetry[]
-  state     OrbitDeviceState?
-  outbox    OrbitEventOutbox[]
+  claims       ClaimCode[]
+  telemetry    OrbitTelemetry[]
+  state        OrbitDeviceState?
+  outbox       OrbitEventOutbox[]
+  capabilities OrbitDeviceCapability[]
+  rawEvents    OrbitRawEvent[]
+  measurements OrbitMeasurement[]
+  measureState OrbitMeasurementState[]
+  incidents    OrbitIncident[]
+  aggregates   OrbitAggregate[]
+  coverageGaps OrbitCoverageGap[]
+  inbox        OrbitIngestInbox[]
+  failures     OrbitIngestFailure[]
 
   @@index([tenantId, atlasScreenId])
   @@index([skyarcScreenCode])
+  @@index([tenantId, status])
   @@schema("orbit")
 }
 
@@ -50,6 +60,7 @@ model ClaimCode {
   @@schema("orbit")
 }
 
+/// Legacy sample store — retained for foundation heartbeat path.
 model OrbitTelemetry {
   id          String   @id @default(uuid()) @db.Uuid
   deviceId    String   @db.Uuid
@@ -65,12 +76,16 @@ model OrbitTelemetry {
 }
 
 model OrbitDeviceState {
-  deviceId        String    @id @db.Uuid
-  online          Boolean   @default(false)
-  health          String    @default("unknown")
-  lastHeartbeatAt DateTime?
-  summaryJson     Json      @default("{}")
-  updatedAt       DateTime  @updatedAt
+  deviceId           String    @id @db.Uuid
+  /// Connectivity from fresh heartbeats only — not screen power or playback.
+  online             Boolean   @default(false)
+  health             String    @default("unknown")
+  lastHeartbeatAt    DateTime?
+  sensorHealth       String    @default("unknown")
+  screenPower        String    @default("unknown")
+  playbackVerified   String    @default("unknown")
+  summaryJson        Json      @default("{}")
+  updatedAt          DateTime  @updatedAt
 
   device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
@@ -90,5 +105,180 @@ model OrbitEventOutbox {
   device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@index([deliveredAt, createdAt])
+  @@schema("orbit")
+}
+
+/// Durable MQTT/HTTPS handoff. Broker ACK only after inbox insert.
+model OrbitIngestInbox {
+  id           String    @id @default(uuid()) @db.Uuid
+  eventId      String    @unique
+  deviceId     String    @db.Uuid
+  tenantId     String
+  topic        String?
+  payloadJson  Json
+  receivedAt   DateTime  @default(now())
+  processedAt  DateTime?
+  processError String?
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([processedAt, receivedAt])
+  @@index([deviceId, receivedAt])
+  @@schema("orbit")
+}
+
+model OrbitIngestFailure {
+  id          String   @id @default(uuid()) @db.Uuid
+  deviceId    String?  @db.Uuid
+  tenantId    String?
+  topic       String?
+  reason      String
+  payloadPreview String?
+  receivedAt  DateTime @default(now())
+
+  device OrbitDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([receivedAt])
+  @@schema("orbit")
+}
+
+/// Deduplicated raw events (short retention).
+model OrbitRawEvent {
+  eventId          String   @id
+  deviceId         String   @db.Uuid
+  tenantId         String
+  bootId           String
+  sessionId        String
+  sequence         Int
+  observedAt       DateTime
+  receivedAt       DateTime
+  firmwareVersion  String
+  measurementType  String
+  schemaVersion    String
+  payloadJson      Json
+  createdAt        DateTime @default(now())
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, observedAt])
+  @@index([tenantId, observedAt])
+  @@index([receivedAt])
+  @@schema("orbit")
+}
+
+/// Queryable normalized measurements.
+model OrbitMeasurement {
+  id              String   @id @default(uuid()) @db.Uuid
+  eventId         String   @unique
+  deviceId        String   @db.Uuid
+  tenantId        String
+  measurementType String
+  observedAt      DateTime
+  receivedAt      DateTime
+  numericValue    Float?
+  textValue       String?
+  unit            String?
+  confidence      Float?
+  qualityFlagsJson Json    @default("[]")
+  typedValuesJson Json     @default("{}")
+  capabilityStatus String  @default("unknown")
+  createdAt       DateTime @default(now())
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, measurementType, observedAt])
+  @@index([tenantId, measurementType, observedAt])
+  @@schema("orbit")
+}
+
+/// Latest state per device + measurement type.
+model OrbitMeasurementState {
+  id              String   @id @default(uuid()) @db.Uuid
+  deviceId        String   @db.Uuid
+  measurementType String
+  observedAt      DateTime
+  receivedAt      DateTime
+  numericValue    Float?
+  textValue       String?
+  unit            String?
+  summaryJson     Json     @default("{}")
+  updatedAt       DateTime @updatedAt
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, measurementType])
+  @@index([deviceId])
+  @@schema("orbit")
+}
+
+model OrbitDeviceCapability {
+  id               String   @id @default(uuid()) @db.Uuid
+  deviceId         String   @db.Uuid
+  version          Int
+  effectiveFrom    DateTime
+  effectiveTo      DateTime?
+  capabilitiesJson Json
+  createdAt        DateTime @default(now())
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, effectiveFrom])
+  @@schema("orbit")
+}
+
+model OrbitIncident {
+  id              String    @id @default(uuid()) @db.Uuid
+  deviceId        String    @db.Uuid
+  tenantId        String
+  kind            String
+  severity        String    @default("info")
+  startedAt       DateTime
+  endedAt         DateTime?
+  evidenceJson    Json      @default("{}")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, startedAt])
+  @@index([tenantId, kind, startedAt])
+  @@schema("orbit")
+}
+
+model OrbitAggregate {
+  id              String   @id @default(uuid()) @db.Uuid
+  deviceId        String   @db.Uuid
+  tenantId        String
+  measurementType String
+  bucket          String
+  bucketStart     DateTime
+  sampleCount     Int      @default(0)
+  minValue        Float?
+  maxValue        Float?
+  avgValue        Float?
+  sumValue        Float?
+  missingFlag     Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, measurementType, bucket, bucketStart])
+  @@index([tenantId, bucket, bucketStart])
+  @@schema("orbit")
+}
+
+model OrbitCoverageGap {
+  id         String   @id @default(uuid()) @db.Uuid
+  deviceId   String   @db.Uuid
+  tenantId   String
+  gapStart   DateTime
+  gapEnd     DateTime
+  reason     String
+  createdAt  DateTime @default(now())
+
+  device OrbitDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, gapStart])
   @@schema("orbit")
 }

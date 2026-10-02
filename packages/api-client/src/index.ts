@@ -546,6 +546,27 @@ export class ApiClient {
     return this.request<unknown>(`/bookings/${id}`);
   }
 
+  getCampaignOrbitEvidence(campaignId: string) {
+    return this.request<unknown>(`/campaigns/${campaignId}/orbit-evidence`);
+  }
+
+  createOrbitEvidenceSnapshot(campaignId: string) {
+    return this.request<{ snapshot: { id: string; version: number }; note?: string }>(
+      `/campaigns/${campaignId}/orbit-evidence/snapshots`,
+      { method: "POST", body: JSON.stringify({}) }
+    );
+  }
+
+  relocateDevice(
+    id: string,
+    data: { screenId: string; validFrom?: string; reason?: string }
+  ) {
+    return this.request<unknown>(`/devices/${id}/relocate`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   listRecommendations(params?: {
     kind?: string;
     status?: string;

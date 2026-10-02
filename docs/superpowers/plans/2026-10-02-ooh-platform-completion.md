@@ -78,13 +78,16 @@
 | WhatsApp account linking            | Atlas WhatsAppAccountLink + challenges          | Phone alone ≠ access               | Atlas        | Pulse        | **done**        | whatsapp-link unit                                          |
 | WhatsApp conversation + confirm     | Pulse conversation + Atlas confirmations        | Confirm before mutate              | Pulse+Atlas  | Bridge       | **done (slice)** | conversation unit; live Meta pending                        |
 | Continuity + fill-rate recommendations | `CommercialRecommendation` + scan/approve/apply (`0014`) | Disruptions→replacements; vacancy packages; no reserve | Atlas+Pulse | bookings/rates | **done (7A)** | phase7a-recommendations unit; staff `/recommendations` |
+| Google sign-up / onboarding        | Email+password auth only (`/auth/login`); no Google OAuth client/routes | Google identity onboarding         | Atlas        | OAuth creds  | **deferred**   | No `GOOGLE_CLIENT_*` / `/auth/google` in repo             |
+| Pulse media-plan XLSX export       | `POST /v1/media-plans/:id/export/xlsx`              | Workbook from Atlas plan           | Pulse        | Atlas plan   | **done (slice)** | excel-export unit                                         |
+| Pulse WhatsApp share / ops notify  | share job + Bridge dry-run; ops-notification kinds  | Orchestrate delivery receipts      | Pulse+Bridge | Meta         | **done (slice)** | conversation + bridge policy; live Meta pending           |
+| Pulse quote→reserve orchestration  | Conversation stubs; no Atlas quote/accept loop yet  | Excel/WhatsApp via Atlas quote APIs | Pulse       | Atlas quotes | **pending**     | Does not issue QuoteRevision or reserve from Pulse yet    |
 | Payment provider                   | `payment-adapter.ts` + `/payment-intent`            | Live capture when configured       | Atlas        | creds        | **pending**     | UNAVAILABLE without creds (by design)                       |
 | Live paid checkout                 | —                                                   | Hold/payment/refund policy live    | Atlas        | payment      | **pending**     | blocked on credentials                                      |
-| Pulse quote orchestration          | —                                                   | Excel/WhatsApp via Atlas APIs      | Pulse        | Atlas quotes | **pending**     | —                                                           |
 | WhatsApp production                | Bridge dry-run                                      | Signed webhooks + delivery jobs    | Bridge+Pulse | Meta creds   | **pending**     | live Meta + template catalog + signed webhooks              |
 | Live Tally synchronization         | File export only                                    | Live sync when contract verified   | Atlas        | Tally        | **pending**     | not complete from dry-run/file export                       |
-| MQTT telemetry (Phase 7B)          | OrbitTelemetry/DeviceState                          | Auth MQTT + contracts              | Orbit        | Phase 7B     | **not started** | —                                                           |
-| Campaign intelligence (post-7B)    | —                                                   | After telemetry + associations     | Pulse        | Orbit 7B     | **blocked**     | —                                                           |
+| MQTT telemetry (Phase 7B)          | Contracts + inbox/MQTT consumer + mappings (`0015`) | Auth MQTT + validated telemetry + associations | Orbit+Atlas | Phase 7B | **done (simulator slice)** | phase7b unit (Orbit+Atlas); live broker/hardware pending |
+| Campaign intelligence (forecasts)  | —                                                   | Audience/impressions/reach         | Pulse        | validated sensors + CMS | **blocked** | deferred until evidence sources validated |
 
 
 ---
@@ -117,8 +120,8 @@
 - **Phase 5:** ✅ Ops tasks, creative, proof, invoices, vendor costs, Tally file export, reminders (`docs/contracts/OPS_BILLING_API.md`)
 - **Phase 6:** ✅ Adapters + linking + confirm + conversation slice (`docs/contracts/WHATSAPP_API.md`); ⏳ live Meta delivery
 - **Phase 7A:** ✅ Continuity + fill-rate recommendations (`docs/contracts/RECOMMENDATIONS_API.md`); no Orbit inference
-- **Phase 7B:** MQTT ingestion, validated telemetry, effective-dated device/screen mappings, campaign associations — then Orbit-aware intelligence
-- **Orbit MQTT:** Separate workstream — ingestion contracts, retention, campaign association joins
+- **Phase 7B:** ✅ Simulator slice — MQTT contracts, durable ingest, storage, mappings, campaign evidence (`docs/contracts/ORBIT_TELEMETRY_API.md`); ⏳ live broker/hardware
+- **Orbit live verification:** Blocked on broker credentials + physical devices — does not block simulator contracts
 
 ---
 

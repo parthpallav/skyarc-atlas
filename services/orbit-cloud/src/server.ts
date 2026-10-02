@@ -34,24 +34,39 @@ import { buildOrbitApp } from "./app.js";
 import { prisma } from "./prisma.js";
 import { flushOutbox } from "./events.js";
 import { markStaleDevicesOffline } from "./state.js";
+import { startMqttConsumer } from "./mqtt/consumer.js";
+import { applyRetentionPolicies } from "./lib/retention.js";
+import { processPendingInbox } from "./lib/ingest.js";
 
 const env = loadOrbitEnv();
 const app = await buildOrbitApp(env);
-
-const retentionMs = env.ORBIT_TELEMETRY_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const mqtt = await startMqttConsumer(env);
+if (mqtt) {
+  app.log.info("MQTT consumer started");
+} else {
+  app.log.info("MQTT not configured — HTTPS ingest + simulator contracts available");
+}
 
 setInterval(async () => {
   try {
     await markStaleDevicesOffline(env.ORBIT_HEARTBEAT_TIMEOUT_MS);
+    await processPendingInbox(prisma, 50);
     await flushOutbox(env);
-    const cutoff = new Date(Date.now() - retentionMs);
-    await prisma.orbitTelemetry.deleteMany({ where: { createdAt: { lt: cutoff } } });
   } catch (err) {
     app.log.error(err);
   }
 }, 15_000);
 
+setInterval(async () => {
+  try {
+    await applyRetentionPolicies(prisma, env);
+  } catch (err) {
+    app.log.error(err);
+  }
+}, 60 * 60 * 1000);
+
 const shutdown = async () => {
+  if (mqtt) await mqtt.stop();
   await app.close();
   await prisma.$disconnect();
   process.exit(0);

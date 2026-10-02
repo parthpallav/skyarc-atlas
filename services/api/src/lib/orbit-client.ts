@@ -12,6 +12,7 @@ export async function requestOrbitClaim(
     atlasScreenId: string;
     skyarcScreenCode: string;
     deviceType: string;
+    tenantId: string;
   }
 ): Promise<OrbitClaimResult> {
   if (!env.ORBIT_CLOUD_URL || !env.ORBIT_SERVICE_TOKEN) {
@@ -24,7 +25,7 @@ export async function requestOrbitClaim(
       authorization: `Bearer ${env.ORBIT_SERVICE_TOKEN}`,
     },
     body: JSON.stringify({
-      tenantId: "skyarc",
+      tenantId: input.tenantId,
       atlasScreenId: input.atlasScreenId,
       skyarcScreenCode: input.skyarcScreenCode,
       deviceType: input.deviceType,
@@ -35,4 +36,23 @@ export async function requestOrbitClaim(
     throw new Error(`Orbit claim failed (${res.status}): ${text}`);
   }
   return (await res.json()) as OrbitClaimResult;
+}
+
+export async function fetchOrbitDeviceState(
+  env: Env,
+  orbitDeviceId: string
+): Promise<Record<string, unknown> | null> {
+  if (!env.ORBIT_CLOUD_URL || !env.ORBIT_SERVICE_TOKEN) return null;
+  try {
+    const res = await fetch(
+      `${env.ORBIT_CLOUD_URL.replace(/\/$/, "")}/devices/v1/${orbitDeviceId}/state`,
+      {
+        headers: { authorization: `Bearer ${env.ORBIT_SERVICE_TOKEN}` },
+      }
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
