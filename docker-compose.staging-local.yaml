@@ -1,0 +1,12 @@
+# Isolated local QA staging — separate project/volumes from production compose.
+# Usage:
+#   docker compose -p skyarc-qa -f docker-compose.yml -f docker-compose.staging-local.yaml --env-file .env.staging up -d postgres
+services:
+  postgres:
+    ports:
+      - "5433:5432"
+    volumes:
+      - skyarc_qa_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  skyarc_qa_postgres_data:

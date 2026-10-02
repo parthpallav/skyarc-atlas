@@ -1,0 +1,173 @@
+{
+  "commits": {
+    "frontend": "6ad7214",
+    "backend": "5f3816b",
+    "localHead": "6ad7214"
+  },
+  "role": "MEDIA_PLANNER",
+  "apiBase": "http://127.0.0.1:3101",
+  "generatedAt": "2026-10-02T16:58:45.345Z",
+  "results": [
+    {
+      "step": "0.login_planner",
+      "expected": "MEDIA_PLANNER lands with planner role token",
+      "actual": "role=MEDIA_PLANNER email=planner@skyarcads.com",
+      "status": "PASS",
+      "missing": []
+    },
+    {
+      "step": "0.permissions_admin_surfaces",
+      "expected": "Planner cannot manage admin org/scoring/settings",
+      "actual": "orgs=403 scoring=404 settings=404",
+      "status": "PASS",
+      "missing": []
+    },
+    {
+      "step": "1.dashboard_signals",
+      "expected": "Planner sees campaigns, proposed plans (pending), upcoming bookings/holds",
+      "actual": "campaigns=2 proposedPlans=3 upcomingBookings=0 held=0 http=200/200/200",
+      "status": "PARTIAL",
+      "missing": [
+        "Dashboard does not surface expiring holds / overdue work as first-class widgets (code review)"
+      ]
+    },
+    {
+      "step": "2.browse_inventory_specs",
+      "expected": "Location detail exposes specs, photos, vendor, commercial fields for planner",
+      "actual": "list=200 n=10 detail=200 vendor=true photos=false commercial=true",
+      "status": "PASS",
+      "missing": [
+        "Photos may be empty on seed / not exposed as previewMedia",
+        "Map geography/format/date filters not exercised via this API script (UI required)"
+      ]
+    },
+    {
+      "step": "3.digital_availability",
+      "expected": "liveInventory returns available/held/booked/blocked (+ daily series)",
+      "actual": "http=404 keys=message,error,statusCode breakdown=false",
+      "status": "FAIL",
+      "missing": [
+        "Hover/keyboard/mobile tap UX requires browser evidence",
+        "Capacity breakdown fields incomplete"
+      ]
+    },
+    {
+      "step": "4.create_campaign_scenarios",
+      "expected": "Create campaign with brief/budget/flight and generate coverage/concentration plans",
+      "actual": "adv=200 create=200 campaignId=0c288b40-6dbe-481e-bede-dcf306be8b9f optimize=200 msg=",
+      "status": "PASS",
+      "missing": [
+        "Dual coverage vs concentration scenarios may be a single optimize path"
+      ]
+    },
+    {
+      "step": "5.compare_costs_constraints",
+      "expected": "Plan detail shows costs, constraints, explanations; support add/remove/swap",
+      "actual": "planGet=200 planId=53dee1b1-e262-4b17-a0eb-68feb68b94ea explanations=true",
+      "status": "PASS",
+      "missing": [
+        "Missing-rate / insufficient-capacity handling needs targeted fixtures",
+        "Add/remove/swap inventory mutation not fully exercised in this pass"
+      ]
+    },
+    {
+      "step": "6.proposal_export_share",
+      "expected": "Customer-safe PDF/XLSX/PPTX export + share link; revise without altering issued snapshots",
+      "actual": "pdf=200 xlsx=404 share=404 pptx=not_probed_if_absent",
+      "status": "PARTIAL",
+      "missing": [
+        "XLSX export path failed or differs",
+        "Share-link API missing or forbidden",
+        "PPTX export not verified",
+        "Issued-snapshot immutability not verified in this pass"
+      ]
+    },
+    {
+      "step": "7.quote_hold_vendor_confirm",
+      "expected": "Issue/accept quote, hold inventory, item-level vendor approvals, confirm booking",
+      "actual": "approvePlan=200 quote=0 accept=0 inventory=false",
+      "status": "PARTIAL",
+      "missing": [
+        "Item-level vendor approval path needs vendor login follow-up"
+      ]
+    },
+    {
+      "step": "8.amendments_expiry_partial",
+      "expected": "Partial rejection, hold expiry, cancellation, amendments preserve valid reservations",
+      "actual": "bookings=1 cancelProbe=200 bookingId=ea411aca-4769-419d-9b1e-8a383209d5aa",
+      "status": "PARTIAL",
+      "missing": [
+        "Hold expiry / concurrent reservation / partial vendor reject need orchestrated fixtures",
+        "Cancel probe may be forbidden or require reason schema"
+      ]
+    },
+    {
+      "step": "9.creative_production_proof",
+      "expected": "Creative review, production/mounting tasks, launch readiness, approved proof",
+      "actual": "creativeSubmit=200",
+      "status": "PARTIAL",
+      "missing": [
+        "Production/mounting task board missing or not exposed to planner APIs",
+        "Approved proof workflow not fully implemented as first-class status machine"
+      ]
+    },
+    {
+      "step": "10.execution_incidents",
+      "expected": "Track execution, incidents, replacement recommendations",
+      "actual": "incidents=404 replacements=404",
+      "status": "FAIL",
+      "missing": [
+        "Incidents API missing",
+        "Replacement recommendations API missing"
+      ]
+    },
+    {
+      "step": "11.finance_visibility",
+      "expected": "Invoices, payments, vendor costs, profitability only where planner permissions allow",
+      "actual": "invoices=404 payments=404 profitability=404",
+      "status": "FAIL",
+      "missing": [
+        "Dedicated invoice/profitability modules largely missing for planner role",
+        "Sandbox PaymentIntent exists on bookings but is not a full AR/AP ledger"
+      ]
+    },
+    {
+      "step": "12.close_campaign",
+      "expected": "Close campaign with accurate status and outstanding-work summary",
+      "actual": "close=200 body={\"data\":{\"id\":\"0c288b40-6dbe-481e-bede-dcf306be8b9f\",\"name\":\"QA Planner Audit 1790960324595\",\"advertiserId\":\"00000000-00",
+      "status": "PARTIAL",
+      "missing": [
+        "Outstanding-work summary on close not observed"
+      ]
+    },
+    {
+      "step": "E.stale_availability",
+      "expected": "Past flight returns coherent empty/stale occupancy without crash",
+      "actual": "http=404",
+      "status": "FAIL",
+      "missing": []
+    },
+    {
+      "step": "E.cross_tenant_admin",
+      "expected": "Client role cannot access admin config",
+      "actual": "customerLogin=200 admin=404",
+      "status": "PASS",
+      "missing": []
+    },
+    {
+      "step": "E.expired_share",
+      "expected": "Expired share links reject access",
+      "actual": "Share token not available",
+      "status": "BLOCKED",
+      "missing": [
+        "Share link issuance missing or different shape"
+      ]
+    }
+  ],
+  "counts": {
+    "PASS": 6,
+    "PARTIAL": 6,
+    "FAIL": 4,
+    "BLOCKED": 1
+  }
+}

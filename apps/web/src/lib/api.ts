@@ -3,21 +3,16 @@ import { UserRole, type UserRole as UserRoleType } from "@skyarc/shared";
 import { safeGetItem, safeRemoveItem, safeSetItem } from "@/lib/safe-storage";
 
 export function getApiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    // Always use same-origin `/api` (API_PROXY_TARGET). Ignoring NEXT_PUBLIC_API_URL in the
+    // browser avoids hardcoded localhost:3001 breaking staging ports (e.g. 3101) and
+    // localhost vs 127.0.0.1 CORS mismatches.
+    return "";
+  }
   if (process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL;
   }
-  if (typeof window !== "undefined") {
-    const host = window.location.hostname;
-    if (host === "localhost" || host === "127.0.0.1") {
-      // Keep API host aligned with the page host so CORS Origin matches
-      // (localhost vs 127.0.0.1 are different origins).
-      return `${window.location.protocol}//${host}:3001`;
-    }
-    // In production (e.g. atlas.skyarcads.com or Vercel preview), use same-origin
-    // relative /api — proxied at runtime by app/api/[...path] via API_PROXY_TARGET.
-    return "";
-  }
-  return "http://localhost:3001";
+  return process.env.API_PROXY_TARGET?.replace(/\/$/, "") || "http://127.0.0.1:3001";
 }
 
 export interface StoredUser {
