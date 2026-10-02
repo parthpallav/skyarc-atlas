@@ -49,7 +49,7 @@
 | CI optimizer imports | Import `rates.ts` not prisma module | Unit suite without DATABASE_URL | Atlas | — | **done** | vitest w/ fake URL |
 | Tenant isolation | `tenant-context.ts` foundation | Expand on mutating routes | Atlas | auth | **partial** | helper added |
 | Booking records | Booking + BookingItem + transitions linked to windows | Explicit Booking/BookingItem | Atlas | Phase 2 | **done (core)** | unit status + reserve API |
-| Versioned pricing/quotes | RateCard + commercial JSON | Immutable quotes + accept→reserve | Pulse+Atlas | Phase 3 | not started | — |
+| Versioned pricing/quotes | QuoteRevision + RateCard effective dates | Immutable quotes + accept→reserve | Atlas (+Pulse orch) | Phase 3 | **partial** | money unit + accept path |
 | WhatsApp production | Bridge dry-run; UI hidden | Signed webhooks + delivery jobs | Bridge+Pulse | Meta creds | partial | — |
 | MQTT telemetry | OrbitTelemetry/DeviceState | Auth MQTT + contracts | Orbit | Phase Orbit | not started | — |
 

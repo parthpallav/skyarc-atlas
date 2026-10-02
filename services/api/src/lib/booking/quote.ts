@@ -77,7 +77,14 @@ export async function quotePlayBasedBooking(
     where: { id: input.inventoryId },
     include: {
       availabilityWindows: true,
-      rateCards: { take: 1, orderBy: { effectiveFrom: "desc" } },
+      rateCards: {
+        where: {
+          effectiveFrom: { lte: new Date() },
+          OR: [{ effectiveTo: null }, { effectiveTo: { gte: new Date() } }],
+        },
+        take: 1,
+        orderBy: { effectiveFrom: "desc" },
+      },
       screen: {
         include: {
           location: {

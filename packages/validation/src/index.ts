@@ -675,6 +675,40 @@ export const bookingVendorRespondBodySchema = z.object({
 
 export type BookingVendorRespondBody = z.infer<typeof bookingVendorRespondBodySchema>;
 
+export const issueQuoteBodySchema = z.object({
+  campaignId: uuidSchema,
+  mediaPlanId: uuidSchema.optional(),
+  lines: z
+    .array(
+      z.object({
+        inventoryId: uuidSchema,
+        startDate: z.string().datetime(),
+        endDate: z.string().datetime(),
+        playsPerDay: z.number().int().min(1).max(100_000),
+        creativeDurationSec: z.number().int().min(1).max(300).default(10),
+        distributionMode: z
+          .enum(["AUTOMATIC", "ALL_DAY", "MORNING", "AFTERNOON", "EVENING", "CUSTOM"])
+          .default("ALL_DAY"),
+        customTimeStartMinute: z.number().int().min(0).max(24 * 60).optional(),
+        customTimeEndMinute: z.number().int().min(0).max(24 * 60).optional(),
+        loopDurationSec: z.number().int().min(1).max(3600).optional(),
+      })
+    )
+    .min(1)
+    .max(50),
+  expiresAt: z.string().datetime().optional(),
+});
+
+export type IssueQuoteBody = z.infer<typeof issueQuoteBodySchema>;
+
+export const acceptQuoteBodySchema = z.object({
+  mode: z.enum(["hold", "book"]).default("book"),
+  requireVendorApproval: z.boolean().optional().default(false),
+  idempotencyKey: z.string().min(8).max(128).optional(),
+});
+
+export type AcceptQuoteBody = z.infer<typeof acceptQuoteBodySchema>;
+
 export const healthSchema = z.object({
   status: z.literal("ok"),
   timestamp: z.string().datetime(),

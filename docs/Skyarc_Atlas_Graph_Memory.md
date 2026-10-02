@@ -37,6 +37,13 @@ Living ownership map. Update as capabilities ship.
 - Campaign UI: bookings panel on campaign detail
 - Unit: `booking-status.test.ts`
 
+## Phase 3 evidence (quotes)
+
+- `QuoteRevision` immutable revisions with minor-unit totals (`0009_quote_revisions`)
+- Issue / get / accept APIs: `POST /quotes`, `GET /quotes/:id`, `POST /quotes/:id/accept`
+- Accept revalidates price + feasibility then calls `holdInventoryForCampaign`
+- Money helpers: `services/api/src/lib/booking/money.ts`
+
 ## Still open
 
-Versioned pricing/immutable quotes, MQTT ingestion, WhatsApp production delivery, ops/billing parity, deep tenant isolation on all queries — see plan doc.
+Full versioned rate rules engine, MQTT ingestion, WhatsApp production delivery, ops/billing parity, deep tenant isolation, customer booking UI polish — see plan doc.

@@ -494,6 +494,39 @@ export class ApiClient {
     });
   }
 
+  issueQuote(data: {
+    campaignId: string;
+    mediaPlanId?: string;
+    lines: Array<{
+      inventoryId: string;
+      startDate: string;
+      endDate: string;
+      playsPerDay: number;
+      creativeDurationSec?: number;
+      distributionMode?: string;
+    }>;
+    expiresAt?: string;
+  }) {
+    return this.request<unknown>("/quotes", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  getQuote(id: string) {
+    return this.request<unknown>(`/quotes/${id}`);
+  }
+
+  acceptQuote(
+    id: string,
+    data?: { mode?: "hold" | "book"; requireVendorApproval?: boolean; idempotencyKey?: string }
+  ) {
+    return this.request<unknown>(`/quotes/${id}/accept`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
+  }
+
   updateMediaPlanStatus(
     campaignId: string,
     planId: string,

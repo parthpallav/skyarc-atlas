@@ -3,6 +3,8 @@ import {
   bookingQuoteBodySchema,
   bookingReserveBodySchema,
   bookingVendorRespondBodySchema,
+  issueQuoteBodySchema,
+  acceptQuoteBodySchema,
   uuidSchema,
 } from "@skyarc/validation";
 import { canAccessLocation, isInternalUser, isVendorUser } from "@skyarc/shared";
@@ -15,6 +17,11 @@ import {
   applyVendorItemDecisions,
   expireStaleHolds,
 } from "../../lib/booking/reserve.js";
+import {
+  acceptQuoteRevision,
+  issueQuoteRevision,
+} from "../../lib/booking/quote-revision.js";
+import { fromMinorUnits } from "../../lib/booking/money.js";
 import { holdInventoryForCampaign, releaseInventoryForCampaign } from "../../lib/media-planning/run-optimization.js";
 import { resolveTenantContext } from "../../lib/tenant-context.js";
 
@@ -407,4 +414,150 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     if (!updated) throw notFound("Booking not found");
     return success(serializeBooking(updated));
   });
+
+  /** Issue an immutable quote revision (minor-unit totals). */
+  fastify.post("/quotes", { preHandler: [fastify.authenticate] }, async (request) => {
+    if (!isAdtechBookingEnabled()) {
+      throw validationError("AdTech booking engine is not enabled");
+    }
+    if (!canWriteCampaigns(request.user)) throw forbidden();
+    const tenant = resolveTenantContext(request.user);
+    const body = issueQuoteBodySchema.parse(request.body);
+
+    const campaign = await prisma.campaign.findUnique({ where: { id: body.campaignId }, select: { id: true } });
+    if (!campaign) throw notFound("Campaign not found");
+
+    for (const line of body.lines) {
+      const inv = await prisma.inventory.findUnique({
+        where: { id: line.inventoryId },
+        select: {
+          screen: {
+            select: {
+              location: {
+                select: { id: true, organizationId: true, createdByUserId: true, archivedAt: true },
+              },
+            },
+          },
+        },
+      });
+      if (!inv) throw notFound(`Inventory not found: ${line.inventoryId}`);
+      if (!canAccessLocation(request.user, inv.screen.location)) {
+        throw forbidden("You do not have access to one or more inventory rows");
+      }
+    }
+
+    const result = await issueQuoteRevision(prisma, {
+      campaignId: body.campaignId,
+      mediaPlanId: body.mediaPlanId,
+      tenantOrganizationId: tenant.tenantId ?? request.user.organizationId ?? null,
+      actorUserId: request.user.id,
+      inventoryQuotes: body.lines.map((line) => ({
+        ...line,
+        // Strip privileged rate overrides for non-internal — issue path never takes client rates
+        baseRateAmount: undefined,
+        ratePeriod: undefined,
+        gstPercent: undefined,
+      })),
+      expiresAt: body.expiresAt ? new Date(body.expiresAt) : undefined,
+    });
+    if ("error" in result) {
+      const err = result.error ?? "Quote issue failed";
+      if (err === "PRICING_UNAVAILABLE") throw validationError("PRICING_UNAVAILABLE");
+      throw validationError(err);
+    }
+    const q = result.quote;
+    return success({
+      id: q.id,
+      campaignId: q.campaignId,
+      revisionNumber: q.revisionNumber,
+      status: q.status,
+      currency: q.currency,
+      subtotalMinor: q.subtotalMinor,
+      taxMinor: q.taxMinor,
+      totalMinor: q.totalMinor,
+      subtotal: fromMinorUnits(q.subtotalMinor, q.currency),
+      tax: fromMinorUnits(q.taxMinor, q.currency),
+      total: fromMinorUnits(q.totalMinor, q.currency),
+      expiresAt: q.expiresAt.toISOString(),
+      chargesJson: q.chargesJson,
+      rateVersionsJson: q.rateVersionsJson,
+      assumptionsJson: q.assumptionsJson,
+    });
+  });
+
+  fastify.get("/quotes/:id", { preHandler: [fastify.authenticate] }, async (request) => {
+    if (!canReadLocations(request.user)) throw forbidden();
+    const id = uuidSchema.parse((request.params as { id: string }).id);
+    const q = await prisma.quoteRevision.findUnique({ where: { id } });
+    if (!q) throw notFound("Quote not found");
+    if (
+      !isInternalUser(request.user) &&
+      q.tenantOrganizationId &&
+      q.tenantOrganizationId !== request.user.organizationId
+    ) {
+      throw forbidden();
+    }
+    return success({
+      id: q.id,
+      campaignId: q.campaignId,
+      revisionNumber: q.revisionNumber,
+      status: q.status,
+      currency: q.currency,
+      subtotalMinor: q.subtotalMinor,
+      taxMinor: q.taxMinor,
+      totalMinor: q.totalMinor,
+      subtotal: fromMinorUnits(q.subtotalMinor, q.currency),
+      tax: fromMinorUnits(q.taxMinor, q.currency),
+      total: fromMinorUnits(q.totalMinor, q.currency),
+      expiresAt: q.expiresAt.toISOString(),
+      acceptedBookingId: q.acceptedBookingId,
+      acceptedAt: q.acceptedAt?.toISOString() ?? null,
+      chargesJson: q.chargesJson,
+      rateVersionsJson: q.rateVersionsJson,
+      assumptionsJson: q.assumptionsJson,
+      quantitiesJson: q.quantitiesJson,
+    });
+  });
+
+  /** Accept quote: revalidate price+availability, then Atlas reserve. */
+  fastify.post("/quotes/:id/accept", { preHandler: [fastify.authenticate] }, async (request) => {
+    if (!isAdtechBookingEnabled()) {
+      throw validationError("AdTech booking engine is not enabled");
+    }
+    if (!canWriteCampaigns(request.user)) throw forbidden();
+    const tenant = resolveTenantContext(request.user);
+    const id = uuidSchema.parse((request.params as { id: string }).id);
+    const body = acceptQuoteBodySchema.parse(request.body ?? {});
+
+    const existing = await prisma.quoteRevision.findUnique({ where: { id } });
+    if (!existing) throw notFound("Quote not found");
+    if (
+      !isInternalUser(request.user) &&
+      existing.tenantOrganizationId &&
+      existing.tenantOrganizationId !== request.user.organizationId
+    ) {
+      throw forbidden();
+    }
+
+    const result = await acceptQuoteRevision(prisma, {
+      quoteId: id,
+      actorUserId: request.user.id,
+      tenantOrganizationId: tenant.tenantId ?? request.user.organizationId ?? null,
+      idempotencyKey: body.idempotencyKey,
+      mode: body.mode,
+      requireVendorApproval: body.requireVendorApproval,
+    });
+    if ("error" in result && result.error) {
+      const details: Array<{ path?: string; message: string }> = [];
+      if ("previousTotalMinor" in result && result.previousTotalMinor != null) {
+        details.push({ path: "previousTotalMinor", message: String(result.previousTotalMinor) });
+      }
+      if ("recomputedTotalMinor" in result && result.recomputedTotalMinor != null) {
+        details.push({ path: "recomputedTotalMinor", message: String(result.recomputedTotalMinor) });
+      }
+      throw validationError(result.error, details);
+    }
+    return success(result);
+  });
+
 }

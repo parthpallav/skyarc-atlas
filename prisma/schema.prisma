@@ -177,6 +177,17 @@ enum BookingExecutionStatus {
   INTERRUPTED
 }
 
+
+enum QuoteRevisionStatus {
+  DRAFT
+  ISSUED
+  ACCEPTED
+  EXPIRED
+  SUPERSEDED
+  CANCELLED
+}
+
+
 model User {
   id             String    @id @default(uuid()) @db.Uuid
   email          String    @unique
@@ -536,6 +547,7 @@ model Campaign {
   brief           CampaignBrief?
   mediaPlans      MediaPlan[]
   bookings        Booking[]
+  quotes          QuoteRevision[]
   analyses        AIAnalysis[]
   recommendations Recommendation[]
   liveProofAssets LocationAsset[]
@@ -736,6 +748,40 @@ model Recommendation {
   location  Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
   inventory Inventory? @relation(fields: [inventoryId], references: [id], onDelete: SetNull)
   analysis  AIAnalysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+}
+
+
+/// Immutable commercial quote revision. Accept revalidates then reserves via AvailabilityWindow.
+model QuoteRevision {
+  id                   String              @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?             @db.Uuid
+  campaignId           String?             @db.Uuid
+  mediaPlanId          String?             @db.Uuid
+  revisionNumber       Int                 @default(1)
+  status               QuoteRevisionStatus @default(ISSUED)
+  currency             String              @default("INR")
+  /// Integer minor units (paise) — never float money on write paths.
+  subtotalMinor        Int
+  taxMinor             Int                 @default(0)
+  totalMinor           Int
+  assumptionsJson      Json                @default("{}")
+  quantitiesJson       Json                @default("{}")
+  rateVersionsJson     Json                @default("[]")
+  chargesJson          Json                @default("[]")
+  inventoryIds         Json                @default("[]")
+  expiresAt            DateTime
+  acceptedBookingId    String?             @db.Uuid
+  acceptedAt           DateTime?
+  createdByUserId      String?             @db.Uuid
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId, status])
+  @@index([tenantOrganizationId, status])
+  @@index([expiresAt])
+  @@index([status, expiresAt])
 }
 
 /// Admin audit when force-freeing BOOKED/HELD windows for a flight range.
