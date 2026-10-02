@@ -1,99 +1,73 @@
 # Staging verification record
 
-**Status: INCOMPLETE — isolated staging not verified.**
+**Status: INCOMPLETE — isolated staging partially deployed; Class C matrix not complete.**
 
 **Distinct from local RC browser evidence** (`RC_BROWSER_VERIFICATION.md`).
 
 | Field | Value |
 |-------|--------|
 | Verification outcome | **INCOMPLETE** (not PASS) |
-| Deployment candidate SHA | `c4dd197e9a6b1eee413a42178e90ddc38beda7e5` |
-| Type-fix commit | `fc5ef75` |
-| Hardening baseline | `4677c2628ea224a516ce4bccedfb7bb149067f8e` |
-| Branch | `feat/phase2-4-booking-scenarios` |
-| Backend SHA on isolated staging | **not deployed** |
-| Image digests (staging) | **none** — images not published |
-| Vercel READY frontend | `dpl_AAvb9JxeFat3nBzFh6RaYcc5uYAV` @ `c4dd197` |
-| Working preview URL | `https://skyarc-atlas-git-feat-phase2-4-boo-3f64d0-parthpallavs-projects.vercel.app` |
-| Production alias `skyarc-atlas.vercel.app` | **404** `DEPLOYMENT_NOT_FOUND` |
-| Isolated staging API | **missing** (`:3101` timeout) |
+| Frontend candidate (prior) | `c4dd197` |
+| Staging deploy branch tip | `96d4d05` (bootstrap + MQTT protocol fixes) |
+| Image build SHA (in progress / pending redeploy) | `96d4d05` workflow `37012120177` |
+| Prior image digests (ba68fa9) | See `docs/contracts/staging-image-digests.txt` |
+| Hostinger project | `skyarc-atlas-staging` (separate from production `skyarc-atlas`) |
+| Production project | **untouched** — still running on `:3001–:3004` |
 | Date | 2026-10-02 |
 
-## Evidence classes (do not mix)
+## Evidence classes
 
 | Class | Meaning | Completes staging sign-off? |
 |-------|---------|------------------------------|
-| **A — Local** | Local API/web on developer machine | No |
-| **B — Mixed preview** | RC **frontend** `c4dd197` + **production** VPS backend | **No** |
-| **C — Isolated staging** | RC frontend + RC images backend + staging DB/MQTT | **Required** |
+| **A — Local** | Local API/web | No |
+| **B — Mixed preview** | RC frontend + **production** backend | **No** |
+| **C — Isolated staging** | Preview frontend + staging images/DB/MQTT | **Required** |
 
-Browser results below are **Class B only** unless marked otherwise.
+## Vercel environment audit (no production value restores)
 
-## Vercel environment audit (no production edits)
+| Key | Env id | Targets | Note |
+|-----|--------|---------|------|
+| `API_PROXY_TARGET` | `yUXBihGrGzQBcnAu` | production, preview | Shared — **not edited** |
+| `API_PROXY_TARGET` | `9Jhi7AnoKuaQKAVB` | preview only | Prior list showed empty; reserved for staging URL |
+| `PULSE_PROXY_TARGET` | `eta2MXJhUNSsXg8v` | production, preview | Shared — **not edited** yet |
+| Fail-closed proxy | code in `apps/web` @ `3a93a5c+` | — | Explicit `503 STAGING_*_UNAVAILABLE` / isolation |
 
-Prior-value evidence recorded by env **id / targets / timestamps** (secrets not written here).
-
-| Key | Env id | Targets | Updated | Comment / note |
-|-----|--------|---------|---------|----------------|
-| `API_PROXY_TARGET` | `yUXBihGrGzQBcnAu` | production, preview | 1790785723050 | Shared build/runtime proxy — **points both envs at same origin** (production VPS historically). Do **not** edit blindly. |
-| `API_PROXY_TARGET` | `9Jhi7AnoKuaQKAVB` | preview only | 1790785451204 | Comment: “Hostinger public hostname for Atlas API previews”. Value type sensitive; list response showed **empty** decrypted field — treat as **unset / unknown prior**. Safe target for preview-only staging URL once staging is up. |
-| `PULSE_PROXY_TARGET` | `eta2MXJhUNSsXg8v` | production, preview | 1790867670817 | Shared Pulse proxy — currently production+preview. Preview-only override needed; **do not change production target**. |
-| `NEXT_PUBLIC_ORBIT_UI` | `YqwbLzzVFHHfVdq0` | production, preview, development | 1790779543231 | Plain `true` |
-| `NEXT_PUBLIC_API_URL` | `muoAMwF95LdAmJP5` / `8zwgpAq0klnyTiHa` | preview / production | older | Separate per target |
-| `NEXT_PUBLIC_CLARITY_PROJECT_ID` | preview + production ids | split | older | Unrelated to staging proxy |
-
-**Audit conclusion:** Preview currently inherits production API/Pulse proxies via shared env rows. No restore performed (prior plaintext of shared rows not committed to evidence files). Production env values left unchanged.
+Preview proxies **not** switched to staging until API `:3101` healthy after bootstrap fix redeploy.
 
 ## Class B browser matrix (RC frontend + production backend)
 
-| # | Flow | Desktop | Mobile | Notes |
-|---|------|---------|--------|-------|
-| 1 | Login | PASS | PASS | planner@skyarcads.com |
-| 1b | Google disabled | PARTIAL | PARTIAL | No Google CTA in UI; prod `GET /api/v1/auth/google/status` → **404** (route absent on prod API) |
-| 2 | Inventory / calendar | PASS | PASS | 50 sites / 47 bookable |
-| 3 | Scenario generation | **FAIL** | **FAIL** | UI: “Could not generate scenarios.” **Cause unconfirmed** (mixed env; not reproduced on matching RC services) |
-| 4 | Proposal share / exports | PARTIAL | PARTIAL | Share “Copied”; PDF/Excel controls present; file bytes not asserted |
-| 5–11 | Quote, creative, invoice, Pulse, MQTT, cross-tenant | PENDING | PENDING | Not run against production |
-| 12 | Responsive chrome | PASS | PASS | |
+| Flow | Result | Notes |
+|------|--------|-------|
+| Login / inventory / responsive | PASS | Mixed env |
+| Scenario generation | **FAIL** | Cause **unconfirmed** (not reproduced on matching RC services) |
+| Mutating / Pulse / MQTT / exports bytes | PENDING | Not run against production |
 
-## Class C isolated staging matrix
+## Class C isolated staging — deploy progress
 
-All flows **PENDING** — stack not deployed.
+| Step | Result |
+|------|--------|
+| Image-based compose (no VPS `build:`) | Done — `docker-compose.staging.images.yaml` + pinned digests |
+| GHCR publish via Actions (`packages:write`) | Done — anonymous pull of manifests works |
+| Hostinger `vps_docker_create` `skyarc-atlas-staging` | Done — project exists alongside production |
+| Firewall TCP 3101 / 3103 | Added + synced on firewall `350834` |
+| Postgres + Mosquitto + Bridge + Pulse | Came up; Pulse `:3103` returned **200** |
+| API | **Crash loop** on first deploy — SQL `0001_postgis` before Prisma tables (`P1014` Location missing). **Fixed in** `96d4d05` entrypoint order; redeploy pending |
+| Orbit | **Crash loop** — MQTT `Missing protocol`. **Fixed in** `96d4d05` connect options; redeploy pending |
+| Seed two tenants | PENDING (needs healthy API) |
+| Preview-only proxy cutover + `STAGING_PROXY_ISOLATION=1` | PENDING |
+| Full Class C browser matrix | PENDING |
+| HTTPS TLS hostname | **Not provisioned** (no SSH/certs via MCP); using IP:port like production HTTP pattern |
 
-## Migration sequence (empty staging DB)
+## Migration sequence (empty staging)
 
-Do **not** assume only `0016`/`0017`. Full ledger for Atlas SQL:
-
-`0001` … `0017` via `scripts/apply-sql-migrations.sh` (API entrypoint).
-
-On empty DB with `DATABASE_BOOTSTRAP=always|auto`:
-
-1. Postgres volume init: PostGIS extension (`prisma/docker-init/01-postgis.sql`) + any orbit init SQL.
-2. API entrypoint: apply **all** `prisma/migrations/*/migration.sql` in order into `_skyarc_sql_migrations`.
-3. If user count = 0: `prisma db push --skip-generate` (Atlas schema only — **staging DB name `skyarc_atlas_staging` only**).
-4. `prisma/apply-postgis.ts`, `prisma/backfill-screen-codes.ts`.
-5. Orbit / Pulse / Bridge: each service entrypoint `db:push` / migrate against **same isolated** `*_DATABASE_URL` pointing at staging DB only — document in deploy log; never production DSN.
-6. Seed: `pnpm exec tsx prisma/seed-staging.ts` with `STAGING_SEED_CONFIRM=1` (two tenants + roles).
-
-## Hostinger capability vs image deploy
-
-| Capability | Available |
-|------------|-----------|
-| `vps_docker_create` / start / update / logs | Yes |
-| Separate project name (e.g. `skyarc-atlas-staging`) | Yes |
-| Env vars on project | Yes |
-| Named volumes in compose | Yes |
-| SSH / remote shell / arbitrary file sync | **No** via MCP |
-| Compose `build: context: .` without monorepo on VM | **Unsupported** for raw YAML URL |
-| Pull pre-built `image:` from registry | **Supported** if VPS can pull |
-
-Preferred path: CI → immutable images → `docker-compose.staging.images.yaml` → Hostinger create. Fallback SSH package: `docs/deploy/staging/SSH_DEPLOY_PACKAGE.md`.
+Documented in `docs/deploy/staging/MIGRATION_SEQUENCE.md` — full `0001`–`0017`, not only `0016`/`0017`. Entrypoint now **db push then SQL ledger** on fresh DB.
 
 ## Remaining blockers
 
-1. Registry publish + Hostinger pull of RC images (GH Packages write / valid token / Docker daemon for local build).
-2. HTTPS (or intentional IP:port) for staging API/Pulse without colliding with production `:3001–:3004`.
-3. Preview-only `API_PROXY_TARGET` / `PULSE_PROXY_TARGET` (leave production shared rows untouched).
-4. Class C matrix after SHA/digest verify.
+1. Finish image rebuild `96d4d05` and recreate/update `skyarc-atlas-staging` (wipe empty broken volume if needed).
+2. Confirm `:3101` health + seed.
+3. Preview-only Vercel proxy + isolation flag; leave production env rows unchanged.
+4. Class C matrix including scenario generation on matching RC services.
+5. Managed HTTPS for staging (SSH/cert capability still missing via Hostinger MCP).
 
 **Not done:** merge, production routing changes, production promotion.
