@@ -22,7 +22,7 @@
     "zod": "^3.24.1"
   },
   "optionalDependencies": {
-    "mqtt": "^5.10.1"
+    "mqtt": "^5.16.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
