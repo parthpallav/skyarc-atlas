@@ -354,6 +354,24 @@ export default function CampaignDetailPage() {
                 <Pencil className="h-3.5 w-3.5" />
                 Edit
               </Link>
+              <Link
+                href={`/campaigns/${campaign.id}/scenarios`}
+                className="btn-secondary text-xs px-3 py-1.5"
+              >
+                Scenarios
+              </Link>
+              <Link
+                href={`/campaigns/${campaign.id}/ops`}
+                className="btn-secondary text-xs px-3 py-1.5"
+              >
+                Ops
+              </Link>
+              <Link
+                href={`/campaigns/${campaign.id}/orbit-evidence`}
+                className="btn-secondary text-xs px-3 py-1.5"
+              >
+                Orbit evidence
+              </Link>
               <button
                 type="button"
                 className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"

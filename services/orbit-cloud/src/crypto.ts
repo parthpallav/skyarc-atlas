@@ -17,3 +17,15 @@ export function safeEqualHex(a: string, b: string): boolean {
   const bb = Buffer.from(b);
   return ba.length === bb.length && timingSafeEqual(ba, bb);
 }
+
+export function credentialsMatch(secret: string, hash: string | null | undefined): boolean {
+  if (!hash) return false;
+  return safeEqualHex(hashSecret(secret), hash);
+}
+
+export function timingSafeStringEqual(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ba.length !== bb.length) return false;
+  return timingSafeEqual(ba, bb);
+}

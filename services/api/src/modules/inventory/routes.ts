@@ -26,6 +26,8 @@ import { forbidden, notFound, validationError } from "../../lib/errors.js";
 import { invalidateLocationCaches } from "../../lib/cache/location-cache.js";
 import { allocateSkyarcScreenCode } from "../../lib/screen-code.js";
 import { loadPlatformConfig } from "../../lib/commercial-config.js";
+import { buildInventoryCalendar } from "../../lib/inventory/availability-calendar.js";
+import { inventoryAvailabilityBlockBodySchema } from "@skyarc/validation";
 
 function estimateScore(sqft: number, lightingType?: string | null): number {
   let score = 58;
@@ -735,6 +737,150 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
         organizationId: targetOrgId,
         vendorUserCreated,
       });
+    }
+  );
+
+  fastify.get(
+    "/inventories/:id/availability-calendar",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      const id = uuidSchema.parse((request.params as { id: string }).id);
+      const inventory = await loadInventoryWithLocation(id);
+      if (!canAccessLocation(request.user, inventory.screen.location)) throw forbidden();
+
+      const q = request.query as { from?: string; to?: string };
+      const from = q.from ? new Date(q.from) : new Date();
+      const to = q.to ? new Date(q.to) : new Date(from.getTime() + 30 * 86400000);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to < from) {
+        throw validationError("Invalid calendar range");
+      }
+
+      const windows = await prisma.availabilityWindow.findMany({
+        where: {
+          inventoryId: id,
+          startDate: { lte: to },
+          endDate: { gte: from },
+        },
+        orderBy: { startDate: "asc" },
+      });
+
+      const calendar = buildInventoryCalendar({
+        inventoryType: inventory.inventoryType,
+        slotCapacity: inventory.slotCapacity ?? 1,
+        availabilityConfirmedAt: inventory.availabilityConfirmedAt,
+        windows,
+        rangeStart: from,
+        rangeEnd: to,
+      });
+
+      return success({
+        inventoryId: id,
+        inventoryStatus: inventory.status,
+        deviceHealthNote:
+          "Calendar reflects commercial holds and blocks only — not player or Orbit device health.",
+        ...calendar,
+      });
+    }
+  );
+
+  fastify.post(
+    "/inventories/:id/confirm-availability",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      const id = uuidSchema.parse((request.params as { id: string }).id);
+      const inventory = await loadInventoryWithLocation(id);
+      if (!canWriteLocation(request.user, inventory.screen.location) || isReadOnly(request.user)) {
+        throw forbidden();
+      }
+
+      const before = { availabilityConfirmedAt: inventory.availabilityConfirmedAt };
+      const updated = await prisma.inventory.update({
+        where: { id },
+        data: { availabilityConfirmedAt: new Date() },
+      });
+      await prisma.inventoryChangeLog.create({
+        data: {
+          inventoryId: id,
+          actorUserId: request.user.id,
+          changeType: "availability_confirmed",
+          beforeJson: before,
+          afterJson: { availabilityConfirmedAt: updated.availabilityConfirmedAt },
+        },
+      });
+      invalidateLocationCaches(inventory.screen.locationId);
+      return success({
+        inventoryId: id,
+        availabilityConfirmedAt: updated.availabilityConfirmedAt?.toISOString() ?? null,
+      });
+    }
+  );
+
+  fastify.post(
+    "/inventories/:id/availability-blocks",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      const id = uuidSchema.parse((request.params as { id: string }).id);
+      const inventory = await loadInventoryWithLocation(id);
+      if (!canWriteLocation(request.user, inventory.screen.location) || isReadOnly(request.user)) {
+        throw forbidden();
+      }
+      const body = inventoryAvailabilityBlockBodySchema.parse(request.body);
+      const start = new Date(body.startDate);
+      const end = new Date(body.endDate);
+      if (end < start) throw validationError("Invalid block dates");
+
+      const window = await prisma.availabilityWindow.create({
+        data: {
+          inventoryId: id,
+          startDate: start,
+          endDate: end,
+          status: "BLOCKED",
+          notes: body.notes ?? "Maintenance / manual block",
+          slotsConsumed: body.slotsConsumed ?? 1,
+        },
+      });
+      await prisma.inventoryChangeLog.create({
+        data: {
+          inventoryId: id,
+          actorUserId: request.user.id,
+          changeType: "availability_block",
+          beforeJson: {},
+          afterJson: { windowId: window.id, startDate: start, endDate: end },
+        },
+      });
+      invalidateLocationCaches(inventory.screen.locationId);
+      return success({
+        id: window.id,
+        status: window.status,
+        startDate: window.startDate.toISOString(),
+        endDate: window.endDate.toISOString(),
+      });
+    }
+  );
+
+  fastify.get(
+    "/inventories/:id/change-log",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      const id = uuidSchema.parse((request.params as { id: string }).id);
+      const inventory = await loadInventoryWithLocation(id);
+      if (!canAccessLocation(request.user, inventory.screen.location)) throw forbidden();
+
+      const rows = await prisma.inventoryChangeLog.findMany({
+        where: { inventoryId: id },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      });
+      return success(
+        rows.map((r) => ({
+          id: r.id,
+          changeType: r.changeType,
+          actorUserId: r.actorUserId,
+          beforeJson: r.beforeJson,
+          afterJson: r.afterJson,
+          createdAt: r.createdAt.toISOString(),
+        }))
+      );
     }
   );
 }

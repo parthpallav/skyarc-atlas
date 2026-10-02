@@ -21,6 +21,56 @@ export interface ApiErrorBody {
   };
 }
 
+/** Staff commercial recommendation row from GET /recommendations. */
+export type RecommendationStaffRow = {
+  id: string;
+  tenantOrganizationId?: string | null;
+  kind: string;
+  status: string;
+  method: string;
+  triggerType: string;
+  campaignId?: string | null;
+  bookingId?: string | null;
+  bookingItemId?: string | null;
+  explanation?: string | null;
+  freshnessLabel: string;
+  pricingAvailable: boolean;
+  costDataComplete: boolean;
+  marginSuppressed: boolean;
+  stale?: boolean;
+  expiresAt: string;
+  observedAt: string;
+  suggestions: unknown;
+  inputSnapshot?: unknown;
+  appliedChange?: unknown;
+  actionHistory?: unknown;
+  reviewedAt?: string | null;
+  reviewedByUserId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  ruleVersion?: string;
+  triggerKey?: string;
+};
+
+export type RecommendationsQueue = {
+  campaignDisruptions: RecommendationStaffRow[];
+  fillRatePackages: RecommendationStaffRow[];
+  missingDataWarnings: Array<{
+    id: string;
+    kind: string;
+    pricingAvailable: boolean;
+    marginSuppressed: boolean;
+    costDataComplete: boolean;
+  }>;
+};
+
+export type RecommendationsListPayload = {
+  recommendations: RecommendationStaffRow[];
+  queue: RecommendationsQueue;
+  ruleVersion: string;
+  note?: string;
+};
+
 export class ApiClient {
   private refreshPromise: Promise<string | null> | null = null;
 
@@ -448,19 +498,187 @@ export class ApiClient {
     });
   }
 
-  listBookings(params?: { campaignId?: string; status?: string; upcoming?: boolean }) {
+  listBookings(params?: {
+    campaignId?: string;
+    status?: string;
+    upcoming?: boolean;
+    expiringHolds?: boolean;
+  }) {
     const q = new URLSearchParams();
     if (params?.campaignId) q.set("campaignId", params.campaignId);
     if (params?.status) q.set("status", params.status);
     if (params?.upcoming) q.set("upcoming", "true");
+    if (params?.expiringHolds) q.set("expiringHolds", "true");
     const qs = q.toString();
     return this.request<{ bookings: unknown[]; summary: Record<string, number> }>(
       `/bookings${qs ? `?${qs}` : ""}`
     );
   }
 
+  requestBooking(data: {
+    campaignId: string;
+    inventoryIds: string[];
+    mediaPlanId?: string;
+    requireVendorApproval?: boolean;
+    idempotencyKey?: string;
+  }) {
+    return this.request<{ held: string[]; skipped: string[]; booking: unknown | null }>(
+      "/bookings/request",
+      { method: "POST", body: JSON.stringify(data) }
+    );
+  }
+
+  amendBooking(
+    id: string,
+    data: {
+      addInventoryIds?: string[];
+      removeInventoryIds?: string[];
+      startDate?: string;
+      endDate?: string;
+    }
+  ) {
+    return this.request<unknown>(`/bookings/${id}/amend`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  getBookingEvents(id: string) {
+    return this.request<{
+      timeline: Array<{
+        kind: "transition";
+        id: string;
+        bookingItemId: string | null;
+        fromStatus: string;
+        toStatus: string;
+        actorUserId: string | null;
+        reason: string | null;
+        createdAt: string;
+      }>;
+      integrationEvents: Array<{
+        kind: "outbox";
+        id: string;
+        eventType: string;
+        payloadJson: unknown;
+        createdAt: string;
+        deliveredAt: string | null;
+        deliveryAttempts: number;
+      }>;
+    }>(`/bookings/${id}/events`);
+  }
+
+  getInventoryAvailabilityCalendar(
+    inventoryId: string,
+    params: { from: string; to: string }
+  ) {
+    const q = new URLSearchParams({ from: params.from, to: params.to });
+    return this.request<unknown>(`/inventories/${inventoryId}/availability-calendar?${q}`);
+  }
+
+  confirmInventoryAvailability(inventoryId: string) {
+    return this.request<unknown>(`/inventories/${inventoryId}/confirm-availability`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
+  createInventoryAvailabilityBlock(
+    inventoryId: string,
+    data: { startDate: string; endDate: string; reason?: string }
+  ) {
+    return this.request<unknown>(`/inventories/${inventoryId}/availability-blocks`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   getBooking(id: string) {
     return this.request<unknown>(`/bookings/${id}`);
+  }
+
+  getCampaignOrbitEvidence(campaignId: string) {
+    return this.request<unknown>(`/campaigns/${campaignId}/orbit-evidence`);
+  }
+
+  createOrbitEvidenceSnapshot(campaignId: string) {
+    return this.request<{ snapshot: { id: string; version: number }; note?: string }>(
+      `/campaigns/${campaignId}/orbit-evidence/snapshots`,
+      { method: "POST", body: JSON.stringify({}) }
+    );
+  }
+
+  relocateDevice(
+    id: string,
+    data: { screenId: string; validFrom?: string; reason?: string }
+  ) {
+    return this.request<unknown>(`/devices/${id}/relocate`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  listRecommendations(params?: {
+    kind?: string;
+    status?: string;
+    campaignId?: string;
+  }) {
+    const q = new URLSearchParams();
+    if (params?.kind) q.set("kind", params.kind);
+    if (params?.status) q.set("status", params.status);
+    if (params?.campaignId) q.set("campaignId", params.campaignId);
+    const qs = q.toString();
+    return this.request<RecommendationsListPayload>(
+      `/recommendations${qs ? `?${qs}` : ""}`
+    );
+  }
+
+  scanRecommendations(data?: {
+    continuity?: boolean;
+    fillRate?: boolean;
+    daysAhead?: number;
+    windowDays?: number;
+  }) {
+    return this.request<unknown>("/recommendations/scan", {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  getRecommendation(id: string) {
+    return this.request<{ recommendation: unknown }>(`/recommendations/${id}`);
+  }
+
+  approveRecommendation(id: string) {
+    return this.request<{ recommendation: unknown }>(`/recommendations/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
+  dismissRecommendation(id: string, reason?: string) {
+    return this.request<{ recommendation: unknown }>(`/recommendations/${id}/dismiss`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  recalculateRecommendation(id: string) {
+    return this.request<{ recommendation: unknown }>(`/recommendations/${id}/recalculate`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
+  applyRecommendation(id: string, data: { chosenInventoryId: string }) {
+    return this.request<{
+      recommendation: unknown;
+      change?: unknown;
+      bookingId?: string | null;
+      note?: string;
+    }>(`/recommendations/${id}/apply`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
   }
 
   reserveBooking(data: {
@@ -492,6 +710,144 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify(data),
     });
+  }
+
+
+  generateScenarios(campaignId: string, data?: { totalBudget?: number }) {
+    return this.request<unknown>(`/campaigns/${campaignId}/scenarios`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  issueProposal(campaignId: string, data: { scenarioKind: "COVERAGE" | "CONCENTRATION"; totalBudget?: number }) {
+    return this.request<{ proposal: unknown; quoteId: string }>(`/campaigns/${campaignId}/proposals`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  listProposals(campaignId: string) {
+    return this.request<{ proposals: unknown[] }>(`/campaigns/${campaignId}/proposals`);
+  }
+
+  getProposal(id: string) {
+    return this.request<unknown>(`/proposals/${id}`);
+  }
+
+  acceptProposal(id: string, data?: { idempotencyKey?: string }) {
+    return this.request<unknown>(`/proposals/${id}/accept`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  createProposalShare(id: string, data?: { ttlHours?: number }) {
+    return this.request<{ token: string; shareId: string; expiresAt: string; note: string }>(
+      `/proposals/${id}/share`,
+      { method: "POST", body: JSON.stringify(data ?? {}) }
+    );
+  }
+
+  getPublicProposalShare(token: string) {
+    return this.request<unknown>(`/public/proposals/share/${encodeURIComponent(token)}`);
+  }
+
+  seedBookingExecution(bookingId: string) {
+    return this.request<unknown>(`/bookings/${bookingId}/execution/seed`, { method: "POST", body: "{}" });
+  }
+
+  listBookingExecutionTasks(bookingId: string) {
+    return this.request<{ tasks: unknown[] }>(`/bookings/${bookingId}/execution/tasks`);
+  }
+
+  transitionExecutionTask(id: string, data: { status: string; note?: string; blockedReason?: string }) {
+    return this.request<unknown>(`/execution-tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  getCampaignProgress(campaignId: string) {
+    return this.request<unknown>(`/campaigns/${campaignId}/progress`);
+  }
+
+  getCampaignReadiness(campaignId: string) {
+    return this.request<unknown>(`/campaigns/${campaignId}/readiness`);
+  }
+
+  createCampaignCreative(
+    campaignId: string,
+    data: {
+      locationAssetId: string;
+      bookingItemIds?: string[];
+      digital?: boolean;
+      label?: string;
+    }
+  ) {
+    return this.request<unknown>(`/campaigns/${campaignId}/creatives`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  listCampaignCreatives(campaignId: string) {
+    return this.request<{ creatives: unknown[] }>(`/campaigns/${campaignId}/creatives`);
+  }
+
+  submitCreative(id: string) {
+    return this.request<unknown>(`/creatives/${id}/submit`, { method: "POST", body: "{}" });
+  }
+
+  approveCreative(id: string) {
+    return this.request<unknown>(`/creatives/${id}/approve`, { method: "POST", body: "{}" });
+  }
+
+  createCampaignProof(campaignId: string, data: Record<string, unknown>) {
+    return this.request<unknown>(`/campaigns/${campaignId}/proofs`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  listCampaignProofs(campaignId: string) {
+    return this.request<{ proofs: unknown[] }>(`/campaigns/${campaignId}/proofs`);
+  }
+
+  reviewProof(id: string, data: { decision: "APPROVED" | "REJECTED"; rejectReason?: string }) {
+    return this.request<unknown>(`/proofs/${id}/review`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  createBookingInvoice(bookingId: string, data?: { paymentTerms?: string; dueInDays?: number }) {
+    return this.request<{ invoice: unknown }>(`/bookings/${bookingId}/invoices`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  listCampaignInvoices(campaignId: string) {
+    return this.request<{ invoices: unknown[] }>(`/campaigns/${campaignId}/invoices`);
+  }
+
+  issueInvoice(id: string) {
+    return this.request<{ invoice: unknown }>(`/invoices/${id}/issue`, { method: "POST", body: "{}" });
+  }
+
+  recordInvoicePayment(
+    id: string,
+    data: { amountMinor: number; reference: string; idempotencyKey?: string; note?: string }
+  ) {
+    return this.request<unknown>(`/invoices/${id}/payments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  getInvoice(id: string) {
+    return this.request<unknown>(`/invoices/${id}`);
   }
 
   issueQuote(data: {

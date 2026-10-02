@@ -15,10 +15,14 @@ export function itemStatusForMode(
 
 export function bookingStatusForItems(
   itemStatuses: string[]
-): "HELD" | "PENDING_VENDOR_APPROVAL" | "PARTIALLY_APPROVED" | "CONFIRMED" | "CANCELLED" {
+): "HELD" | "PENDING_VENDOR_APPROVAL" | "PARTIALLY_APPROVED" | "CONFIRMED" | "EXPIRED" | "CANCELLED" {
   if (itemStatuses.length === 0) return "CANCELLED";
-  const active = itemStatuses.filter((s) => s !== "CANCELLED" && s !== "REJECTED");
-  if (active.length === 0) return "CANCELLED";
+  const active = itemStatuses.filter(
+    (s) => s !== "CANCELLED" && s !== "REJECTED" && s !== "EXPIRED"
+  );
+  if (active.length === 0) {
+    return itemStatuses.some((s) => s === "EXPIRED") ? "EXPIRED" : "CANCELLED";
+  }
   if (active.every((s) => s === "CONFIRMED")) return "CONFIRMED";
   if (
     active.some((s) => s === "CONFIRMED" || s === "APPROVED") &&

@@ -6,6 +6,7 @@ import {
   canAccessOrganizationPage,
   canWriteLocation,
   getDefaultLandingPath,
+  isInternalUser,
   isReadOnly,
   isVendorRole,
   type AuthUser,
@@ -49,8 +50,26 @@ export function canAccessRoute(user: StoredUser | null, pathname: string): boole
     return canAccessAdmin(authUser);
   }
 
-  if (pathname.startsWith("/campaigns") || pathname.startsWith("/media-plans") || pathname.startsWith("/requests")) {
+  if (pathname.startsWith("/recommendations")) {
+    return isInternalUser(authUser);
+  }
+
+  if (pathname.includes("/orbit-evidence")) {
+    return isInternalUser(authUser);
+  }
+
+  if (
+    pathname.startsWith("/campaigns") ||
+    pathname.startsWith("/bookings") ||
+    pathname.startsWith("/proposals") ||
+    pathname.startsWith("/media-plans") ||
+    pathname.startsWith("/requests")
+  ) {
     return canAccessCampaigns(authUser);
+  }
+
+  if (pathname.startsWith("/share/")) {
+    return true;
   }
 
   if (pathname === "/dashboard") {

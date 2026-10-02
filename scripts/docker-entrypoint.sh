@@ -20,19 +20,21 @@ should_bootstrap() {
   [ "$COUNT" = "0" ]
 }
 
-# Always apply any missing additive SQL migrations (ledger-tracked, idempotent files).
-# Works even when DATABASE_BOOTSTRAP=never — full `prisma db push` is unsafe with PostGIS.
+# Fresh/empty DBs must get Prisma tables before SQL files that ALTER "Location" (0001_postgis).
+# Existing DBs skip push and rely on the additive SQL ledger only.
 chmod +x /app/scripts/apply-sql-migrations.sh
-/app/scripts/apply-sql-migrations.sh prisma/migrations prisma/schema.prisma
 
 if [ "${DATABASE_BOOTSTRAP:-auto}" != "never" ]; then
   if should_bootstrap; then
-    echo "Syncing Prisma schema on fresh database..."
+    echo "Fresh database — prisma db push before SQL migration ledger..."
     pnpm exec prisma db push --skip-generate
   else
     echo "Existing database — skipping prisma db push (SQL migration ledger + additive SQL migrations)."
   fi
 fi
+
+# Always apply any missing additive SQL migrations (ledger-tracked, idempotent files).
+/app/scripts/apply-sql-migrations.sh prisma/migrations prisma/schema.prisma
 
 if should_bootstrap; then
   echo "Empty database detected — applying PostGIS triggers and indexes..."

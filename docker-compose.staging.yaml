@@ -1,0 +1,157 @@
+# Staging stack — isolated Postgres + internal MQTT; publish HTTP only on loopback for reverse proxy.
+# Do not point at production DATABASE_URL or customer dumps.
+#
+# Usage:
+#   cp docs/deploy/env.staging.example .env.staging
+#   docker compose --env-file .env.staging -f docker-compose.staging.yaml up -d --build
+#
+# Public HTTPS terminates on nginx/Caddy (see deploy/staging/reverse-proxy.example.conf).
+# Vercel frontend proxies to https://YOUR_STAGING_API_HOST (API_PROXY_TARGET).
+
+name: skyarc-atlas-staging
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-skyarc_staging}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.staging}
+      POSTGRES_DB: ${POSTGRES_DB:-skyarc_atlas_staging}
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+      - ./prisma/docker-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-skyarc_staging} -d ${POSTGRES_DB:-skyarc_atlas_staging}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
+    # No host port — DB reachable only on compose network.
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    volumes:
+      - ./deploy/staging/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./deploy/staging/mosquitto.passwd:/mosquitto/config/mosquitto.passwd:ro
+      - mosquitto_staging_data:/mosquitto/data
+    restart: unless-stopped
+    # MQTT not published to host; Orbit connects on docker network.
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-3101}:3001"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.staging}
+      DATABASE_BOOTSTRAP: ${DATABASE_BOOTSTRAP:-never}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-skyarc-atlas-staging}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
+      AI_PROVIDER: ${AI_PROVIDER:-stub}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      PORT: 3001
+      NODE_ENV: production
+      ADTECH_BOOKING: ${ADTECH_BOOKING:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      WEB_APP_URL: ${WEB_APP_URL:?Set WEB_APP_URL to Vercel staging URL}
+      ORBIT_CLOUD_URL: ${ORBIT_CLOUD_URL:-http://orbit-cloud:3002}
+      ORBIT_SERVICE_TOKEN: ${ORBIT_SERVICE_TOKEN}
+      ORBIT_WEBHOOK_SECRET: ${ORBIT_WEBHOOK_SECRET}
+      PULSE_SERVICE_TOKEN: ${PULSE_SERVICE_TOKEN:?Set PULSE_SERVICE_TOKEN}
+      # Live Google OIDC — leave unset on staging (routes return configured:false)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  orbit-cloud:
+    build:
+      context: .
+      dockerfile: services/orbit-cloud/Dockerfile
+    ports:
+      - "127.0.0.1:${ORBIT_HOST_PORT:-3102}:3002"
+    environment:
+      ORBIT_DATABASE_URL: ${ORBIT_DATABASE_URL:?Set ORBIT_DATABASE_URL}
+      ORBIT_SERVICE_TOKEN: ${ORBIT_SERVICE_TOKEN:?Set ORBIT_SERVICE_TOKEN}
+      ORBIT_WEBHOOK_SECRET: ${ORBIT_WEBHOOK_SECRET:?Set ORBIT_WEBHOOK_SECRET}
+      ATLAS_INTERNAL_URL: ${ATLAS_INTERNAL_URL:-http://api:3001}
+      ORBIT_PORT: 3002
+      NODE_ENV: production
+      ORBIT_MQTT_URL: ${ORBIT_MQTT_URL:-mqtt://mosquitto:1883}
+      ORBIT_MQTT_USERNAME: ${ORBIT_MQTT_USERNAME:-orbit-staging-consumer}
+      ORBIT_MQTT_PASSWORD: ${ORBIT_MQTT_PASSWORD:?Set ORBIT_MQTT_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+    restart: unless-stopped
+
+  bridge:
+    build:
+      context: .
+      dockerfile: services/bridge/Dockerfile
+    ports:
+      - "127.0.0.1:${BRIDGE_HOST_PORT:-3104}:3004"
+    environment:
+      BRIDGE_DATABASE_URL: ${BRIDGE_DATABASE_URL:?Set BRIDGE_DATABASE_URL}
+      BRIDGE_SERVICE_TOKEN: ${BRIDGE_SERVICE_TOKEN:?Set BRIDGE_SERVICE_TOKEN}
+      BRIDGE_PORT: 3004
+      NODE_ENV: production
+      # WhatsApp Cloud — unset = dry-run test transport (no Meta live)
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  pulse:
+    build:
+      context: .
+      dockerfile: services/pulse/Dockerfile
+    ports:
+      - "127.0.0.1:${PULSE_HOST_PORT:-3103}:3003"
+    environment:
+      PULSE_DATABASE_URL: ${PULSE_DATABASE_URL:?Set PULSE_DATABASE_URL}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      BRIDGE_SERVICE_TOKEN: ${BRIDGE_SERVICE_TOKEN}
+      ATLAS_SERVICE_TOKEN: ${PULSE_SERVICE_TOKEN}
+      BRIDGE_INTERNAL_URL: ${BRIDGE_INTERNAL_URL:-http://bridge:3004}
+      ATLAS_INTERNAL_URL: ${ATLAS_INTERNAL_URL:-http://api:3001}
+      WEB_APP_URL: ${WEB_APP_URL}
+      PULSE_PORT: 3003
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+      bridge:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres_staging_data:
+  mosquitto_staging_data:

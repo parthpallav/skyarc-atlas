@@ -146,6 +146,7 @@ enum BookingStatus {
   PENDING_VENDOR_APPROVAL
   PARTIALLY_APPROVED
   CONFIRMED
+  EXPIRED
   CANCELLED
 }
 
@@ -156,6 +157,7 @@ enum BookingItemStatus {
   APPROVED
   REJECTED
   CONFIRMED
+  EXPIRED
   CANCELLED
 }
 
@@ -187,11 +189,26 @@ enum QuoteRevisionStatus {
   CANCELLED
 }
 
+enum ProposalStatus {
+  DRAFT
+  ISSUED
+  ACCEPTED
+  SUPERSEDED
+  EXPIRED
+  CANCELLED
+}
+
+enum ScenarioKind {
+  COVERAGE
+  CONCENTRATION
+}
+
 
 model User {
   id             String    @id @default(uuid()) @db.Uuid
   email          String    @unique
-  passwordHash   String
+  /// Nullable for Google-only accounts (password login requires a hash).
+  passwordHash   String?
   name           String
   role           UserRole
   organizationId String?   @db.Uuid
@@ -199,11 +216,72 @@ model User {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  organization  Organization? @relation(fields: [organizationId], references: [id])
-  refreshTokens RefreshToken[]
-  locations     Location[]
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  refreshTokens  RefreshToken[]
+  locations      Location[]
+  identities     ExternalIdentity[]
+  invitationsSent OrganizationInvitation[] @relation("InvitationInviter")
 
   @@index([organizationId])
+}
+
+model ExternalIdentity {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  provider       String   // google
+  /// Stable OpenID subject — never email alone
+  subject        String
+  email          String?
+  emailVerified  Boolean  @default(false)
+  rawClaimsJson  Json     @default("{}")
+  linkedAt       DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, subject])
+  @@index([userId])
+  @@index([email])
+}
+
+/// Tenant invitations — join existing org or staff-created CLIENT org. Not auto SaaS per advertiser.
+model OrganizationInvitation {
+  id                   String    @id @default(uuid()) @db.Uuid
+  email                String
+  role                 UserRole  @default(CLIENT_VIEWER)
+  organizationId       String?   @db.Uuid
+  /// When true and organizationId null, accepting creates a CLIENT org named newOrganizationName
+  createOrganization   Boolean   @default(false)
+  newOrganizationName  String?
+  tokenHash            String    @unique
+  invitedByUserId      String    @db.Uuid
+  expiresAt            DateTime
+  acceptedAt           DateTime?
+  revokedAt            DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  invitedBy User @relation("InvitationInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([email, expiresAt])
+  @@index([organizationId])
+}
+
+/// Short-lived Google OIDC pending authorization (state/nonce/PKCE). Encrypted blob; consume once.
+model OAuthPendingState {
+  id                 String    @id @default(uuid()) @db.Uuid
+  stateHash          String    @unique
+  browserSessionHash String
+  mode               String
+  userId             String?   @db.Uuid
+  encryptedBlob      String
+  expiresAt          DateTime
+  consumedAt         DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([expiresAt])
+  @@index([browserSessionHash])
 }
 
 model Organization {
@@ -358,6 +436,7 @@ model Screen {
   inventories   Inventory[]
   devices       Device[]
   externalIds   ScreenExternalId[]
+  deviceMappings DeviceScreenMapping[]
 }
 
 /// External provider ids mapped to a Skyarc screen. Never the primary screen identity.
@@ -390,10 +469,33 @@ model Device {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  screen Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  screen   Screen                @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  mappings DeviceScreenMapping[]
 
   @@unique([provider, externalId])
   @@index([screenId])
+}
+
+/// Effective-dated device ↔ screen assignment (Atlas owns mappings; Orbit owns telemetry).
+model DeviceScreenMapping {
+  id                   String    @id @default(uuid()) @db.Uuid
+  deviceId             String    @db.Uuid
+  screenId             String    @db.Uuid
+  tenantOrganizationId String?   @db.Uuid
+  validFrom            DateTime
+  validTo              DateTime?
+  reason               String?
+  conflictNote         String?
+  createdByUserId      String?   @db.Uuid
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  screen Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, validFrom])
+  @@index([screenId, validFrom])
+  @@index([tenantOrganizationId])
 }
 
 /// Idempotent receipts for Orbit → Atlas domain events.
@@ -401,6 +503,24 @@ model OrbitEventReceipt {
   eventId   String   @id @db.Uuid
   eventType String
   receivedAt DateTime @default(now())
+}
+
+/// Pulse/Atlas operational-risk snapshots from Orbit evidence (not forecasts).
+model OperationalRiskSnapshot {
+  id                   String   @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?  @db.Uuid
+  campaignId           String   @db.Uuid
+  version              Int
+  source               String   @default("orbit_evidence")
+  snapshotJson         Json
+  limitationsJson      Json     @default("[]")
+  createdByUserId      String?  @db.Uuid
+  createdAt            DateTime @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, version])
+  @@index([tenantOrganizationId, createdAt])
 }
 
 model ScreenSpecification {
@@ -548,10 +668,19 @@ model Campaign {
   mediaPlans      MediaPlan[]
   bookings        Booking[]
   quotes          QuoteRevision[]
+  proposals       ProposalRevision[]
   analyses        AIAnalysis[]
   recommendations Recommendation[]
   liveProofAssets LocationAsset[]
   availabilityWindows AvailabilityWindow[]
+  executionTasks  ExecutionTask[]
+  creativeVersions CreativeVersion[]
+  proofRecords    ProofRecord[]
+  invoices        Invoice[]
+  campaignExpenses CampaignExpense[]
+  reminderJobs    ReminderJob[]
+  commercialRecommendations CommercialRecommendation[]
+  operationalRiskSnapshots OperationalRiskSnapshot[]
 
   @@index([lifecycleStatus, startDate, endDate])
 }
@@ -579,6 +708,8 @@ model Inventory {
   /// Concurrent loop slots for digital faces (static stays 1). Digital defaults to 6 in app logic when 1.
   slotCapacity   Int             @default(1)
   staticSpecsJson Json?
+  /// Last time a planner/vendor confirmed commercial availability for this face.
+  availabilityConfirmedAt DateTime?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
@@ -588,6 +719,7 @@ model Inventory {
   recommendations     Recommendation[]
   availabilityWindows AvailabilityWindow[]
   bookingItems        BookingItem[]
+  changeLogs          InventoryChangeLog[]
 }
 
 model AvailabilityWindow {
@@ -674,6 +806,8 @@ model Booking {
   endDate              DateTime
   expiresAt            DateTime?
   idempotencyKey       String?                @unique
+  /// Set when a Phase 3 quote is accepted; optional for internal holds.
+  acceptedQuoteRevisionId String?             @db.Uuid
   createdByUserId      String?                @db.Uuid
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
@@ -681,14 +815,50 @@ model Booking {
   tenantOrganization Organization?       @relation("BookingTenantOrg", fields: [tenantOrganizationId], references: [id], onDelete: SetNull)
   campaign           Campaign            @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   mediaPlan          MediaPlan?          @relation(fields: [mediaPlanId], references: [id], onDelete: SetNull)
+  acceptedQuoteRevision QuoteRevision?   @relation(fields: [acceptedQuoteRevisionId], references: [id], onDelete: SetNull)
   items              BookingItem[]
   transitions        BookingTransition[]
+  changeEvents       BookingChangeOutbox[]
+  executionTasks     ExecutionTask[]
+  invoices           Invoice[]
 
   @@index([campaignId, status])
   @@index([tenantOrganizationId, status])
   @@index([expiresAt])
   @@index([startDate, endDate])
   @@index([mediaPlanId])
+  @@index([acceptedQuoteRevisionId])
+}
+
+model InventoryChangeLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  inventoryId String   @db.Uuid
+  actorUserId String?  @db.Uuid
+  changeType  String
+  beforeJson  Json     @default("{}")
+  afterJson   Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryId, createdAt])
+}
+
+/// Durable booking change feed for Pulse / Bridge (not a second reservation ledger).
+model BookingChangeOutbox {
+  id               String    @id @default(uuid()) @db.Uuid
+  bookingId        String    @db.Uuid
+  eventType        String
+  payloadJson      Json      @default("{}")
+  createdAt        DateTime  @default(now())
+  deliveredAt      DateTime?
+  deliveryAttempts Int       @default(0)
+  lastError        String?
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, createdAt])
+  @@index([deliveredAt])
 }
 
 model BookingItem {
@@ -707,6 +877,9 @@ model BookingItem {
   inventory          Inventory           @relation(fields: [inventoryId], references: [id])
   availabilityWindow AvailabilityWindow? @relation(fields: [availabilityWindowId], references: [id], onDelete: SetNull)
   transitions        BookingTransition[]
+  executionTasks     ExecutionTask[]
+  proofRecords       ProofRecord[]
+  creativeLinks      CreativeBookingItem[]
 
   @@unique([bookingId, inventoryId])
   @@index([status])
@@ -777,6 +950,9 @@ model QuoteRevision {
   updatedAt            DateTime            @updatedAt
 
   campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  acceptedBookings Booking[]
+  proposals ProposalRevision[]
+  invoices Invoice[]
 
   @@index([campaignId, status])
   @@index([tenantOrganizationId, status])
@@ -798,6 +974,674 @@ model LocationAvailabilityRelease {
   @@index([actorUserId])
   @@index([createdAt])
 }
+
+
+model ProposalRevision {
+  id                   String         @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?        @db.Uuid
+  campaignId           String         @db.Uuid
+  revisionNumber       Int            @default(1)
+  status               ProposalStatus @default(ISSUED)
+  scenarioKind         ScenarioKind
+  quoteRevisionId      String?        @db.Uuid
+  currency             String         @default("INR")
+  totalMinor           Int
+  snapshotJson         Json           @default("{}")
+  assumptionsJson      Json           @default("{}")
+  expiresAt            DateTime
+  acceptedBookingId    String?        @db.Uuid
+  acceptedAt           DateTime?
+  createdByUserId      String?        @db.Uuid
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  campaign Campaign             @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  quote    QuoteRevision?       @relation(fields: [quoteRevisionId], references: [id], onDelete: SetNull)
+  shares   ProposalShareToken[]
+
+  @@index([campaignId, status])
+  @@index([tenantOrganizationId, status])
+  @@index([quoteRevisionId])
+}
+
+model ProposalShareToken {
+  id                  String    @id @default(uuid()) @db.Uuid
+  proposalRevisionId  String    @db.Uuid
+  tokenHash           String    @unique
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  createdByUserId     String?   @db.Uuid
+  createdAt           DateTime  @default(now())
+
+  proposal ProposalRevision @relation(fields: [proposalRevisionId], references: [id], onDelete: Cascade)
+
+  @@index([proposalRevisionId])
+}
+
+
+
+// --- Phase 5: ops, proof, billing ---
+
+enum ExecutionTaskKind {
+  CREATIVE_SUBMISSION
+  CREATIVE_APPROVAL
+  PRODUCTION
+  MOUNTING
+  CONTENT_UPLOAD
+  LAUNCH_VERIFICATION
+  MONITORING
+  ISSUE_RESOLUTION
+  REMOVAL
+  CLOSURE
+}
+
+enum ExecutionTaskStatus {
+  PENDING
+  READY
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  SKIPPED
+  CANCELLED
+}
+
+enum CreativeVersionStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  SUPERSEDED
+}
+
+enum CreativeCmsHandoffStatus {
+  NOT_REQUIRED
+  MANUAL_PENDING
+  MANUAL_SENT
+  CONFIRMED_EXTERNAL
+  FAILED
+}
+
+enum ProofKind {
+  PRE_MOUNT
+  LIVE_ON_SITE
+  MID_FLIGHT
+  POST_REMOVAL
+  OTHER
+}
+
+enum ProofReviewStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  REPLACED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  VOID
+  CANCELLED
+}
+
+enum InvoiceLineKind {
+  MEDIA
+  PRODUCTION
+  TAX
+  ADJUSTMENT
+  OTHER
+}
+
+enum InvoicePaymentMethod {
+  MANUAL
+  PROVIDER
+}
+
+enum InvoicePaymentStatus {
+  RECORDED
+  RECONCILED
+  VOID
+  UNAVAILABLE
+}
+
+enum CreditNoteStatus {
+  DRAFT
+  ISSUED
+  APPLIED
+  VOID
+}
+
+enum VendorPoStatus {
+  DRAFT
+  APPROVED
+  CANCELLED
+}
+
+enum VendorBillStatus {
+  DRAFT
+  APPROVED
+  PAID
+  VOID
+}
+
+enum CampaignExpenseStatus {
+  EXPECTED
+  COMMITTED
+  INCURRED
+  PAID
+  VOID
+}
+
+enum ReminderJobStatus {
+  PENDING
+  CONFIGURATION_REQUIRED
+  QUEUED
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum ReminderKind {
+  TASK_DEADLINE
+  MISSING_PROOF
+  OVERDUE_INVOICE
+  OTHER
+}
+
+enum AccountingExportKind {
+  FILE_EXPORT
+  LIVE_SYNC
+}
+
+enum AccountingExportStatus {
+  DRAFT
+  READY
+  EXPORTED
+  RECONCILED
+  FAILED
+  UNAVAILABLE
+}
+
+model ExecutionTask {
+  id                   String              @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?             @db.Uuid
+  campaignId           String              @db.Uuid
+  bookingId            String              @db.Uuid
+  bookingItemId        String?             @db.Uuid
+  /// bookingItemId or "campaign" + kind — unique with bookingId for idempotent seed
+  dedupeKey            String
+  kind                 ExecutionTaskKind
+  status               ExecutionTaskStatus @default(PENDING)
+  templateKey          String
+  title                String
+  ownerUserId          String?             @db.Uuid
+  dueAt                DateTime?
+  dependsOnTaskId      String?             @db.Uuid
+  checklistJson        Json                @default("[]")
+  attachmentsJson      Json                @default("[]")
+  blockedReason        String?
+  sortOrder            Int                 @default(0)
+  completedAt          DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  campaign    Campaign              @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  booking     Booking               @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingItem BookingItem?          @relation(fields: [bookingItemId], references: [id], onDelete: SetNull)
+  dependsOn   ExecutionTask?        @relation("TaskDeps", fields: [dependsOnTaskId], references: [id], onDelete: SetNull)
+  dependents  ExecutionTask[]       @relation("TaskDeps")
+  history     ExecutionTaskHistory[]
+  proofs      ProofRecord[]
+
+  @@unique([bookingId, dedupeKey])
+  @@index([campaignId, status])
+  @@index([bookingId, status])
+  @@index([dueAt, status])
+  @@index([ownerUserId])
+}
+
+model ExecutionTaskHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  taskId    String   @db.Uuid
+  fromStatus String?
+  toStatus  String
+  actorUserId String? @db.Uuid
+  note      String?
+  patchJson Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  task ExecutionTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+}
+
+model CreativeVersion {
+  id                   String                   @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?                  @db.Uuid
+  campaignId           String                   @db.Uuid
+  revisionNumber       Int
+  status               CreativeVersionStatus    @default(DRAFT)
+  label                String?
+  r2Key                String
+  contentType          String
+  byteSize             Int?
+  checksumSha256       String?
+  widthPx              Int?
+  heightPx             Int?
+  durationMs           Int?
+  cmsHandoffStatus     CreativeCmsHandoffStatus @default(NOT_REQUIRED)
+  cmsHandoffNote       String?
+  cmsHandoffAt         DateTime?
+  submittedAt          DateTime?
+  submittedByUserId    String?                  @db.Uuid
+  reviewedAt           DateTime?
+  reviewedByUserId     String?                  @db.Uuid
+  rejectReason         String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  campaign Campaign              @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  bookingItems CreativeBookingItem[]
+
+  @@unique([campaignId, revisionNumber])
+  @@index([campaignId, status])
+}
+
+model CreativeBookingItem {
+  id                String @id @default(uuid()) @db.Uuid
+  creativeVersionId String @db.Uuid
+  bookingItemId     String @db.Uuid
+
+  creative    CreativeVersion @relation(fields: [creativeVersionId], references: [id], onDelete: Cascade)
+  bookingItem BookingItem     @relation(fields: [bookingItemId], references: [id], onDelete: Cascade)
+
+  @@unique([creativeVersionId, bookingItemId])
+  @@index([bookingItemId])
+}
+
+model ProofRecord {
+  id                   String            @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?           @db.Uuid
+  campaignId           String            @db.Uuid
+  bookingId            String?           @db.Uuid
+  bookingItemId        String?           @db.Uuid
+  locationId           String            @db.Uuid
+  locationAssetId      String            @db.Uuid
+  executionTaskId      String?           @db.Uuid
+  kind                 ProofKind         @default(LIVE_ON_SITE)
+  reviewStatus         ProofReviewStatus @default(PENDING_REVIEW)
+  /// Supplied evidence only — not guaranteed authenticity.
+  capturedAt           DateTime?
+  uploadedAt           DateTime          @default(now())
+  capturedLat          Float?
+  capturedLng          Float?
+  capturedAccuracyM    Float?
+  submitterUserId      String?           @db.Uuid
+  provenanceNote       String?
+  reviewedAt           DateTime?
+  reviewedByUserId     String?           @db.Uuid
+  rejectReason         String?
+  replacesProofId      String?           @db.Uuid
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  campaign    Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  bookingItem BookingItem?   @relation(fields: [bookingItemId], references: [id], onDelete: SetNull)
+  task        ExecutionTask? @relation(fields: [executionTaskId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId, reviewStatus])
+  @@index([bookingItemId])
+  @@index([executionTaskId])
+  @@index([locationAssetId])
+}
+
+model InvoiceNumberSequence {
+  id                   String @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String @db.Uuid
+  prefix               String @default("INV")
+  nextNumber           Int    @default(1)
+
+  @@unique([tenantOrganizationId, prefix])
+}
+
+model Invoice {
+  id                   String        @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?       @db.Uuid
+  campaignId           String        @db.Uuid
+  bookingId            String?       @db.Uuid
+  quoteRevisionId      String?       @db.Uuid
+  invoiceNumber        String?       @unique
+  status               InvoiceStatus @default(DRAFT)
+  currency             String        @default("INR")
+  subtotalMinor        Int
+  taxMinor             Int           @default(0)
+  totalMinor           Int
+  amountPaidMinor      Int           @default(0)
+  amountCreditedMinor  Int           @default(0)
+  /// Frozen customer-safe commercial snapshot at issue time.
+  commercialSnapshotJson Json        @default("{}")
+  paymentTerms         String?
+  dueAt                DateTime?
+  issuedAt             DateTime?
+  voidedAt             DateTime?
+  createdByUserId      String?       @db.Uuid
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  campaign Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  booking  Booking?       @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  quote    QuoteRevision? @relation(fields: [quoteRevisionId], references: [id], onDelete: SetNull)
+  lines    InvoiceLine[]
+  payments InvoicePayment[]
+  creditNotes CreditNote[]
+
+  @@index([campaignId, status])
+  @@index([bookingId])
+  @@index([tenantOrganizationId, status])
+  @@index([dueAt, status])
+  @@index([quoteRevisionId])
+}
+
+model InvoiceLine {
+  id          String          @id @default(uuid()) @db.Uuid
+  invoiceId   String          @db.Uuid
+  kind        InvoiceLineKind @default(MEDIA)
+  description String
+  inventoryId String?         @db.Uuid
+  quantity    Int             @default(1)
+  unitMinor   Int
+  amountMinor Int
+  taxMinor    Int             @default(0)
+  sortOrder   Int             @default(0)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model InvoicePayment {
+  id               String               @id @default(uuid()) @db.Uuid
+  invoiceId        String               @db.Uuid
+  amountMinor      Int
+  currency         String               @default("INR")
+  method           InvoicePaymentMethod @default(MANUAL)
+  status           InvoicePaymentStatus @default(RECORDED)
+  reference        String?
+  recordedAt       DateTime             @default(now())
+  recordedByUserId String?              @db.Uuid
+  idempotencyKey   String?              @unique
+  provider         String?
+  providerIntentId String?
+  note             String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  audits  InvoicePaymentAudit[]
+
+  @@index([invoiceId, status])
+}
+
+model InvoicePaymentAudit {
+  id        String   @id @default(uuid()) @db.Uuid
+  paymentId String   @db.Uuid
+  actorUserId String? @db.Uuid
+  action    String
+  detailJson Json    @default("{}")
+  createdAt DateTime @default(now())
+
+  payment InvoicePayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, createdAt])
+}
+
+model CreditNote {
+  id                   String          @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?         @db.Uuid
+  invoiceId            String          @db.Uuid
+  creditNumber         String?         @unique
+  status               CreditNoteStatus @default(DRAFT)
+  amountMinor          Int
+  currency             String          @default("INR")
+  reason               String
+  snapshotJson         Json            @default("{}")
+  issuedAt             DateTime?
+  createdByUserId      String?         @db.Uuid
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId, status])
+}
+
+model VendorPurchaseOrder {
+  id                   String        @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?       @db.Uuid
+  campaignId           String?       @db.Uuid
+  vendorOrganizationId String        @db.Uuid
+  poNumber             String?
+  status               VendorPoStatus @default(DRAFT)
+  currency             String        @default("INR")
+  expectedCostMinor    Int           @default(0)
+  approvedCommitmentMinor Int        @default(0)
+  notes                String?
+  createdByUserId      String?       @db.Uuid
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  bills VendorBill[]
+  expenses CampaignExpense[]
+
+  @@index([campaignId])
+  @@index([vendorOrganizationId, status])
+  @@index([tenantOrganizationId])
+}
+
+model VendorBill {
+  id                   String          @id @default(uuid()) @db.Uuid
+  purchaseOrderId      String?         @db.Uuid
+  tenantOrganizationId String?         @db.Uuid
+  vendorOrganizationId String          @db.Uuid
+  billNumber           String?
+  status               VendorBillStatus @default(DRAFT)
+  currency             String          @default("INR")
+  incurredMinor        Int             @default(0)
+  paidMinor            Int             @default(0)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  purchaseOrder VendorPurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  expenses CampaignExpense[]
+
+  @@index([vendorOrganizationId, status])
+  @@index([purchaseOrderId])
+}
+
+model CampaignExpense {
+  id                   String                @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?               @db.Uuid
+  campaignId           String                @db.Uuid
+  purchaseOrderId      String?               @db.Uuid
+  vendorBillId         String?               @db.Uuid
+  /// Prevents double-attribution of the same external cost key
+  attributionKey       String
+  label                String
+  status               CampaignExpenseStatus @default(EXPECTED)
+  currency             String                @default("INR")
+  expectedMinor        Int                   @default(0)
+  committedMinor       Int                   @default(0)
+  incurredMinor        Int                   @default(0)
+  paidMinor            Int                   @default(0)
+  costMissing          Boolean               @default(false)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  campaign      Campaign             @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  purchaseOrder VendorPurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  vendorBill    VendorBill?          @relation(fields: [vendorBillId], references: [id], onDelete: SetNull)
+
+  @@unique([campaignId, attributionKey])
+  @@index([campaignId, status])
+  @@index([tenantOrganizationId])
+}
+
+model ReminderJob {
+  id                   String            @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?           @db.Uuid
+  campaignId           String?           @db.Uuid
+  kind                 ReminderKind
+  status               ReminderJobStatus @default(PENDING)
+  dueAt                DateTime
+  payloadJson          Json              @default("{}")
+  deliveryChannel      String?           // bridge | email | none
+  deliveryStatusNote   String?
+  sentAt               DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([status, dueAt])
+  @@index([campaignId])
+}
+
+model AccountingExportBatch {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?                @db.Uuid
+  kind                 AccountingExportKind   @default(FILE_EXPORT)
+  status               AccountingExportStatus @default(DRAFT)
+  adapter              String                 @default("tally-file")
+  stableBatchKey       String                 @unique
+  mappingValidationJson Json                  @default("{}")
+  reconciliationStatus String                 @default("UNRECONCILED")
+  payloadJson          Json                   @default("{}")
+  exportedAt           DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  @@index([tenantOrganizationId, status])
+}
+
+
+
+
+enum WhatsAppConfirmAction {
+  RESERVE_INVENTORY
+  ACCEPT_QUOTE
+  AMEND_BOOKING
+  CANCEL_BOOKING
+  VENDOR_APPROVE
+}
+
+/// Verified WhatsApp channel ↔ Atlas user+tenant. Phone alone never grants access.
+model WhatsAppAccountLink {
+  id                   String    @id @default(uuid()) @db.Uuid
+  userId               String    @db.Uuid
+  tenantOrganizationId String    @db.Uuid
+  phoneE164            String
+  verifiedAt           DateTime
+  revokedAt            DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([phoneE164, revokedAt])
+  @@index([userId, revokedAt])
+  @@index([tenantOrganizationId])
+}
+
+model WhatsAppLinkChallenge {
+  id                   String    @id @default(uuid()) @db.Uuid
+  userId               String    @db.Uuid
+  tenantOrganizationId String    @db.Uuid
+  phoneE164            String
+  tokenHash            String    @unique
+  expiresAt            DateTime
+  usedAt               DateTime?
+  createdAt            DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model WhatsAppActionConfirmation {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  userId               String                 @db.Uuid
+  tenantOrganizationId String?                @db.Uuid
+  action               WhatsAppConfirmAction
+  payloadJson          Json                   @default("{}")
+  fingerprint          String
+  tokenHash            String                 @unique
+  expiresAt            DateTime
+  consumedAt           DateTime?
+  createdAt            DateTime               @default(now())
+
+  @@index([userId, expiresAt])
+  @@index([fingerprint])
+}
+
+
+
+
+enum CommercialRecommendationKind {
+  CONTINUITY_REPLACEMENT
+  FILL_RATE_PACKAGE
+}
+
+enum CommercialRecommendationStatus {
+  OPEN
+  APPROVED
+  DISMISSED
+  APPLIED
+  EXPIRED
+  SUPERSEDED
+  FAILED
+}
+
+enum RecommendationMethod {
+  DETERMINISTIC_RULE
+  HEURISTIC
+}
+
+/// Phase 7A continuity / fill-rate recommendations. Not a quote or reservation ledger.
+model CommercialRecommendation {
+  id                   String                          @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?                         @db.Uuid
+  kind                 CommercialRecommendationKind
+  status               CommercialRecommendationStatus  @default(OPEN)
+  method               RecommendationMethod            @default(DETERMINISTIC_RULE)
+  ruleVersion          String                          @default("7a.v1")
+  /// Dedupes repeated triggers (e.g. bookingItem:reject:<id>)
+  triggerKey           String
+  triggerType          String
+  campaignId           String?                         @db.Uuid
+  bookingId            String?                         @db.Uuid
+  bookingItemId        String?                         @db.Uuid
+  observedAt           DateTime                        @default(now())
+  expiresAt            DateTime
+  inputSnapshotJson    Json                            @default("{}")
+  suggestionsJson      Json                            @default("[]")
+  explanation          String?
+  freshnessLabel       String                          @default("fresh")
+  pricingAvailable     Boolean                         @default(true)
+  costDataComplete     Boolean                         @default(false)
+  marginSuppressed     Boolean                         @default(false)
+  reviewedAt           DateTime?
+  reviewedByUserId     String?                         @db.Uuid
+  appliedChangeJson    Json                            @default("{}")
+  actionHistoryJson    Json                            @default("[]")
+  createdAt            DateTime                        @default(now())
+  updatedAt            DateTime                        @updatedAt
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([triggerKey])
+  @@index([tenantOrganizationId, status])
+  @@index([campaignId, status])
+  @@index([kind, status, expiresAt])
+  @@index([bookingId])
+}
+
 
 /// Ledger for prisma/migrations/*.sql — maintained by apply-sql-migrations.sh (not Prisma Migrate).
 model SkyarcSqlMigration {

@@ -675,6 +675,24 @@ export const bookingVendorRespondBodySchema = z.object({
 
 export type BookingVendorRespondBody = z.infer<typeof bookingVendorRespondBodySchema>;
 
+export const bookingAmendBodySchema = z.object({
+  addInventoryIds: z.array(uuidSchema).max(100).optional(),
+  removeInventoryIds: z.array(uuidSchema).max(100).optional(),
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
+});
+
+export type BookingAmendBody = z.infer<typeof bookingAmendBodySchema>;
+
+export const inventoryAvailabilityBlockBodySchema = z.object({
+  startDate: z.string().datetime(),
+  endDate: z.string().datetime(),
+  notes: z.string().max(500).optional(),
+  slotsConsumed: z.number().int().min(1).max(32).optional(),
+});
+
+export type InventoryAvailabilityBlockBody = z.infer<typeof inventoryAvailabilityBlockBodySchema>;
+
 export const issueQuoteBodySchema = z.object({
   campaignId: uuidSchema,
   mediaPlanId: uuidSchema.optional(),
@@ -705,6 +723,8 @@ export const acceptQuoteBodySchema = z.object({
   mode: z.enum(["hold", "book"]).default("book"),
   requireVendorApproval: z.boolean().optional().default(false),
   idempotencyKey: z.string().min(8).max(128).optional(),
+  /** When true, accept with available subset; default requires all inventory */
+  allowPartial: z.boolean().optional().default(false),
 });
 
 export type AcceptQuoteBody = z.infer<typeof acceptQuoteBodySchema>;
@@ -737,3 +757,43 @@ export const orbitEventEnvelopeSchema = z.object({
   correlationId: uuidSchema.optional(),
   payload: z.record(z.unknown()),
 });
+
+/** Phase 7B versioned device telemetry payload (MQTT or HTTPS ingest).
+ * eventId may be a Lunar messageId (non-UUID). deviceId is internal Orbit UUID.
+ */
+export const orbitTelemetryPayloadV1Schema = z
+  .object({
+    schemaVersion: z.literal("7b.v1"),
+    eventId: z.string().min(1).max(128),
+    deviceId: uuidSchema,
+    bootId: z.string().min(1).max(64),
+    sessionId: z.string().min(1).max(64),
+    sequence: z.number().int().min(0),
+    observedAt: z.string().datetime(),
+    firmwareVersion: z.string().min(1).max(64),
+    measurementType: z.string().min(1).max(64),
+    value: z.union([z.number(), z.string(), z.boolean(), z.null()]),
+    unit: z.string().max(32).nullable().optional(),
+    typedValues: z.record(z.union([z.number(), z.string(), z.boolean(), z.null()])).optional(),
+    sensorModelVersion: z.string().max(64).nullable().optional(),
+    confidence: z.number().min(0).max(1).nullable().optional(),
+    qualityFlags: z.array(z.string().max(64)).max(20).optional(),
+    creativeId: z.string().uuid().nullable().optional(),
+    campaignId: z.string().uuid().nullable().optional(),
+    /** Raw camera frames are disabled by default — only explicit false/omit allowed. */
+    includesImage: z.literal(false).optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.measurementType === "playback") {
+      if (!val.creativeId && !val.campaignId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Playback evidence requires creativeId and/or campaignId from supported CMS/player",
+          path: ["creativeId"],
+        });
+      }
+    }
+  });
+
+export const MAX_ORBIT_TELEMETRY_BYTES = 16_384;
+export const MAX_ORBIT_LUNAR_MESSAGE_BYTES = 65_536;

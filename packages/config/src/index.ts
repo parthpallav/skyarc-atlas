@@ -55,6 +55,12 @@ export const envSchema = z.object({
     ),
   /** Public Atlas web origin for password-reset / activation links (e.g. https://atlas.skyarcads.com). */
   WEB_APP_URL: optionalUrl,
+  /** Google OIDC — optional; routes return UNAVAILABLE when unset. Live verify pending. */
+  GOOGLE_CLIENT_ID: z.string().min(8).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().min(8).optional(),
+  GOOGLE_REDIRECT_URI: optionalUrl,
+  /** Shared Pulse↔Atlas service token for Bridge-resolved WhatsApp link lookups */
+  PULSE_SERVICE_TOKEN: z.string().min(16).optional(),
 });
 
 /** Canonical production web origin for emailed / admin-copied reset links. */

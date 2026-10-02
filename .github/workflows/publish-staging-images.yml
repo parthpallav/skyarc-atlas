@@ -1,0 +1,171 @@
+name: Publish staging images
+
+# Builds immutable GHCR images for isolated Hostinger staging (no VPS build context).
+# Local GH_TOKEN lacks packages scope; Actions GITHUB_TOKEN publishes with packages:write.
+# Credentials never echo image pull tokens into logs beyond GHCR digest lines.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (commit SHA or branch)"
+        required: true
+        default: "c4dd197e9a6b1eee413a42178e90ddc38beda7e5"
+  push:
+    branches: [feat/phase2-4-booking-scenarios]
+    paths:
+      - "Dockerfile"
+      - "services/*/Dockerfile"
+      - "deploy/staging/**"
+      - "docker-compose.staging.images.yaml"
+      - ".github/workflows/publish-staging-images.yml"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/skyarc-atlas
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+      api_digest: ${{ steps.push_api.outputs.digest }}
+      pulse_digest: ${{ steps.push_pulse.outputs.digest }}
+      orbit_digest: ${{ steps.push_orbit.outputs.digest }}
+      bridge_digest: ${{ steps.push_bridge.outputs.digest }}
+      mqtt_digest: ${{ steps.push_mqtt.outputs.digest }}
+      postgres_digest: ${{ steps.push_postgres.outputs.digest }}
+    steps:
+      - name: Checkout exact ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.sha }}
+
+      - name: Resolve SHA tag
+        id: meta
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-$SHA" >> "$GITHUB_OUTPUT"
+          echo "Building images for $SHA"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push API
+        id: push_api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/api:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_PREFIX }}/api:staging-rc
+          provenance: false
+
+      - name: Build and push Pulse
+        id: push_pulse
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/pulse/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/pulse:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_PREFIX }}/pulse:staging-rc
+          provenance: false
+
+      - name: Build and push Orbit
+        id: push_orbit
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/orbit-cloud/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/orbit-cloud:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_PREFIX }}/orbit-cloud:staging-rc
+          provenance: false
+
+      - name: Build and push Bridge
+        id: push_bridge
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/bridge/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/bridge:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_PREFIX }}/bridge:staging-rc
+          provenance: false
+
+      - name: Build and push Mosquitto staging
+        id: push_mqtt
+        uses: docker/build-push-action@v6
+        with:
+          context: deploy/staging/mosquitto
+          file: deploy/staging/mosquitto/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/mosquitto-staging:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_PREFIX }}/mosquitto-staging:staging-rc
+          provenance: false
+
+      - name: Build and push Postgres staging
+        id: push_postgres
+        uses: docker/build-push-action@v6
+        with:
+          context: deploy/staging/postgres
+          file: deploy/staging/postgres/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/postgres-staging:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_PREFIX }}/postgres-staging:staging-rc
+          provenance: false
+
+      - name: Write digest manifest (no secrets)
+        run: |
+          {
+            echo "STAGING_IMAGE_TAG=${{ steps.meta.outputs.tag }}"
+            echo "GIT_SHA=${{ steps.meta.outputs.sha }}"
+            echo "API_DIGEST=${{ steps.push_api.outputs.digest }}"
+            echo "PULSE_DIGEST=${{ steps.push_pulse.outputs.digest }}"
+            echo "ORBIT_DIGEST=${{ steps.push_orbit.outputs.digest }}"
+            echo "BRIDGE_DIGEST=${{ steps.push_bridge.outputs.digest }}"
+            echo "MQTT_DIGEST=${{ steps.push_mqtt.outputs.digest }}"
+            echo "POSTGRES_DIGEST=${{ steps.push_postgres.outputs.digest }}"
+          } > staging-image-digests.txt
+          cat staging-image-digests.txt
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-image-digests
+          path: staging-image-digests.txt
+
+      - name: Make staging packages public for Hostinger pull
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Nested image names under ghcr.io/<owner>/skyarc-atlas/<svc>
+          for name in api pulse orbit-cloud bridge mosquitto-staging postgres-staging; do
+            enc=$(python3 -c "import urllib.parse; print(urllib.parse.quote('skyarc-atlas/${name}', safe=''))")
+            code=$(curl -sS -o /tmp/vis.json -w "%{http_code}" -X PUT \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/user/packages/container/${enc}/visibility" \
+              -d '{"visibility":"public"}')
+            echo "visibility $name -> HTTP $code $(head -c 200 /tmp/vis.json)"
+          done

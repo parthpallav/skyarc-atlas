@@ -15,6 +15,11 @@ import {
   type PriceBreakdown,
   type FeasibilityResult,
 } from "@skyarc/shared";
+import { flightCostFromStoredRate } from "../media-planning/rates.js";
+import {
+  selectRateSegmentsForFlight,
+  weightedMediaCostFromSegments,
+} from "./rate-segments.js";
 
 export type BookingQuoteInput = {
   inventoryId: string;
@@ -30,6 +35,12 @@ export type BookingQuoteInput = {
   baseRateAmount?: number;
   ratePeriod?: string;
   gstPercent?: number;
+  /** Optional one-time production charge (customer-facing) */
+  productionCharge?: number;
+  /** Optional mounting / install charge */
+  mountingCharge?: number;
+  /** Floor — total before tax cannot go below this */
+  minimumPrice?: number;
 };
 
 export type BookingQuoteResult = {
@@ -51,7 +62,6 @@ function parseOperatingHoursJson(raw: unknown): OperatingHours | null {
   if (typeof open === "number" && typeof close === "number") {
     return { openMinute: open, closeMinute: close };
   }
-  // Support { open: "08:00", close: "23:00" }
   if (typeof open === "string" && typeof close === "string") {
     const toMin = (s: string) => {
       const [h, m] = s.split(":").map(Number);
@@ -73,17 +83,22 @@ export async function quotePlayBasedBooking(
   prisma: PrismaClient,
   input: BookingQuoteInput
 ): Promise<BookingQuoteResult | { error: string }> {
+  const start = new Date(input.startDate);
+  const end = new Date(input.endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+    return { error: "Invalid campaign dates" };
+  }
+
   const inventory = await prisma.inventory.findUnique({
     where: { id: input.inventoryId },
     include: {
       availabilityWindows: true,
       rateCards: {
         where: {
-          effectiveFrom: { lte: new Date() },
-          OR: [{ effectiveTo: null }, { effectiveTo: { gte: new Date() } }],
+          effectiveFrom: { lte: end },
+          OR: [{ effectiveTo: null }, { effectiveTo: { gte: start } }],
         },
-        take: 1,
-        orderBy: { effectiveFrom: "desc" },
+        orderBy: { effectiveFrom: "asc" },
       },
       screen: {
         include: {
@@ -99,12 +114,6 @@ export async function quotePlayBasedBooking(
   });
 
   if (!inventory) return { error: "Inventory not found" };
-
-  const start = new Date(input.startDate);
-  const end = new Date(input.endDate);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
-    return { error: "Invalid campaign dates" };
-  }
 
   const mode = (input.distributionMode ?? DEFAULT_DISTRIBUTION_MODE) as DistMode;
   const screenHours =
@@ -153,16 +162,46 @@ export async function quotePlayBasedBooking(
   const commercial = parseSkyarcLocationCommercial(
     inventory.screen.location.skyarcCommercialJson
   );
-  const rateCard = inventory.rateCards[0];
-  const baseRateAmount =
-    input.baseRateAmount ??
-    commercial.clientRateAmount ??
-    (rateCard ? Number(rateCard.amount) : 0);
+  const segments = selectRateSegmentsForFlight(inventory.rateCards, start, end);
+  const commercialAmount = commercial.clientRateAmount;
+  let baseRateAmount = input.baseRateAmount ?? 0;
+  let ratePeriod =
+    input.ratePeriod ?? commercial.ratePeriod ?? segments[0]?.period ?? "monthly";
+  let rateMeta: Record<string, unknown> = {};
+
+  if (!(baseRateAmount > 0) && commercialAmount && commercialAmount > 0) {
+    baseRateAmount = commercialAmount;
+  }
+
+  if (!(baseRateAmount > 0) && segments.length > 0) {
+    const weighted = weightedMediaCostFromSegments(segments, flightCostFromStoredRate);
+    if (weighted.mediaCost > 0 && days > 0) {
+      baseRateAmount = weighted.mediaCost / days;
+      ratePeriod = "daily";
+      rateMeta = {
+        rateSegments: segments.map((s) => ({
+          amount: s.amount,
+          period: s.period,
+          segmentStart: s.segmentStart.toISOString(),
+          segmentEnd: s.segmentEnd.toISOString(),
+          rateCardId: s.rateCardId,
+        })),
+        segmentMediaCost: weighted.mediaCost,
+      };
+    } else {
+      baseRateAmount = segments[0]!.amount;
+      ratePeriod = segments[0]!.period;
+    }
+  }
+
   if (!(baseRateAmount > 0)) {
     return { error: "PRICING_UNAVAILABLE" };
   }
-  const ratePeriod =
-    input.ratePeriod ?? commercial.ratePeriod ?? rateCard?.period ?? "monthly";
+
+  const durationFactor =
+    input.creativeDurationSec > 0 && input.creativeDurationSec !== 10
+      ? input.creativeDurationSec / 10
+      : 1;
 
   const price = calculatePlayBasedPrice({
     baseRateAmount,
@@ -170,8 +209,61 @@ export async function quotePlayBasedBooking(
     playsPerDay: input.playsPerDay,
     eligibleDays: days,
     creativeDurationSec: input.creativeDurationSec,
+    durationFactor,
     gstPercent: input.gstPercent,
   });
+
+  const commercialExtra = commercial as {
+    productionCharge?: number;
+    mountingCharge?: number;
+  };
+  const production = input.productionCharge ?? commercialExtra.productionCharge ?? 0;
+  const mounting = input.mountingCharge ?? commercialExtra.mountingCharge ?? 0;
+
+  if (production > 0) {
+    price.lines.push({
+      code: "PRODUCTION",
+      label: "Production",
+      amount: Math.round(production * 100) / 100,
+      kind: "charge",
+    });
+  }
+  if (mounting > 0) {
+    price.lines.push({
+      code: "MOUNTING",
+      label: "Mounting / installation",
+      amount: Math.round(mounting * 100) / 100,
+      kind: "charge",
+    });
+  }
+
+  if (production > 0 || mounting > 0) {
+    price.subtotal = Math.round((price.subtotal + production + mounting) * 100) / 100;
+    const gstPercent = input.gstPercent ?? 18;
+    price.tax = Math.round(Math.max(0, price.subtotal) * (gstPercent / 100) * 100) / 100;
+    const gstLine = price.lines.find((l) => l.code === "GST");
+    if (gstLine) gstLine.amount = price.tax;
+    price.total = Math.round((Math.max(0, price.subtotal) + price.tax) * 100) / 100;
+  }
+
+  const minimum = input.minimumPrice ?? 0;
+  if (minimum > 0 && price.subtotal < minimum) {
+    const topUp = Math.round((minimum - price.subtotal) * 100) / 100;
+    price.lines.push({
+      code: "MINIMUM_FLOOR",
+      label: "Minimum price adjustment",
+      amount: topUp,
+      kind: "charge",
+    });
+    price.subtotal = minimum;
+    const gstPercent = input.gstPercent ?? 18;
+    price.tax = Math.round(minimum * (gstPercent / 100) * 100) / 100;
+    const gstLine = price.lines.find((l) => l.code === "GST");
+    if (gstLine) gstLine.amount = price.tax;
+    price.total = Math.round((minimum + price.tax) * 100) / 100;
+  }
+
+  price.meta = { ...price.meta, ...rateMeta, billingConvention: ratePeriod };
 
   return {
     inventoryId: inventory.id,

@@ -13,7 +13,11 @@ describe("pulse health", () => {
     const app = await buildPulseApp(env);
     const res = await app.inject({ method: "GET", url: "/health" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ status: "ok", service: "pulse" });
+    expect(res.json()).toEqual({
+      status: "ok",
+      service: "pulse",
+      quoteOrchestration: "atlas_authoritative",
+    });
     await app.close();
   });
 });

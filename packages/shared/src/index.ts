@@ -583,3 +583,4 @@ export {
 } from "./pricing-engine.js";
 
 export * from "./orbit.js";
+export * from "./orbit-telemetry.js";

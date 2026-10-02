@@ -5,6 +5,8 @@ import {
   itemStatusForMode,
   type BookingHoldMode,
 } from "./status.js";
+import { assertItemTransition } from "./transitions.js";
+import { enqueueBookingChange } from "./events.js";
 
 export type { BookingHoldMode } from "./status.js";
 export { bookingStatusForItems } from "./status.js";
@@ -39,6 +41,9 @@ async function recordTransition(
   }
 ) {
   if (input.fromStatus === input.toStatus) return;
+  if (input.bookingItemId) {
+    assertItemTransition(input.fromStatus, input.toStatus);
+  }
   await tx.bookingTransition.create({
     data: {
       bookingId: input.bookingId,
@@ -46,6 +51,19 @@ async function recordTransition(
       fromStatus: input.fromStatus,
       toStatus: input.toStatus,
       actorUserId: input.actorUserId ?? null,
+      reason: input.reason ?? null,
+    },
+  });
+  const eventType = input.bookingItemId
+    ? "booking.item_status_changed"
+    : "booking.status_changed";
+  await enqueueBookingChange(tx, {
+    bookingId: input.bookingId,
+    eventType,
+    payload: {
+      bookingItemId: input.bookingItemId ?? null,
+      fromStatus: input.fromStatus,
+      toStatus: input.toStatus,
       reason: input.reason ?? null,
     },
   });
@@ -85,7 +103,7 @@ export async function syncBookingWithWindows(tx: Db, input: SyncBookingInput) {
     where: {
       campaignId: input.campaignId,
       mediaPlanId: input.mediaPlanId ?? null,
-      status: { not: "CANCELLED" },
+      status: { notIn: ["CANCELLED", "EXPIRED"] },
     },
     include: { items: true },
     orderBy: { createdAt: "desc" },
@@ -273,7 +291,7 @@ export async function applyVendorItemDecisions(
     actorUserId?: string | null;
   }
 ) {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const booking = await tx.booking.findUnique({
       where: { id: input.bookingId },
       include: { items: true, campaign: { select: { id: true, startDate: true, endDate: true } } },
@@ -289,19 +307,16 @@ export async function applyVendorItemDecisions(
 
     for (const item of targets) {
       if (input.action === "REJECT") {
-        if (item.availabilityWindowId) {
-          await tx.availabilityWindow.deleteMany({ where: { id: item.availabilityWindowId } });
-        } else {
-          await tx.availabilityWindow.deleteMany({
-            where: {
-              inventoryId: item.inventoryId,
-              OR: [
-                { campaignId: booking.campaignId },
-                { notes: { contains: booking.campaignId } },
-              ],
-              status: { in: ["HELD", "BOOKED"] },
-            },
-          });
+        const windowId =
+          item.availabilityWindowId ??
+          (
+            await tx.availabilityWindow.findFirst({
+              where: { bookingItem: { id: item.id } },
+              select: { id: true },
+            })
+          )?.id;
+        if (windowId) {
+          await tx.availabilityWindow.deleteMany({ where: { id: windowId } });
         }
         await tx.bookingItem.update({
           where: { id: item.id },
@@ -363,6 +378,14 @@ export async function applyVendorItemDecisions(
       },
     });
   });
+
+  if (result && (result.status === "CONFIRMED" || result.status === "PARTIALLY_APPROVED")) {
+    const { seedExecutionTasksForBooking } = await import("../ops/seed-tasks.js");
+    await seedExecutionTasksForBooking(prisma, result.id, {
+      actorUserId: input.actorUserId,
+    });
+  }
+  return result;
 }
 
 /** Expire soft holds past expiresAt and mark linked booking items CANCELLED. */
@@ -398,18 +421,27 @@ export async function expireStaleHolds(prisma: PrismaClient, now = new Date()) {
     });
 
     for (const item of items) {
+      const toStatus = item.status === "HELD" || item.status === "PENDING_VENDOR_APPROVAL" ? "EXPIRED" : "CANCELLED";
       await tx.bookingItem.update({
         where: { id: item.id },
-        data: { status: "CANCELLED", availabilityWindowId: null, updatedAt: now },
+        data: { status: toStatus, availabilityWindowId: null, updatedAt: now },
       });
       await recordTransition(tx, {
         bookingId: item.bookingId,
         bookingItemId: item.id,
         fromStatus: item.status,
-        toStatus: "CANCELLED",
+        toStatus,
         reason: "hold_expired",
       });
       cancelledItems += 1;
+    }
+
+    for (const bookingId of [...new Set(items.map((i) => i.bookingId))]) {
+      await enqueueBookingChange(tx, {
+        bookingId,
+        eventType: "booking.hold_expired",
+        payload: { at: now.toISOString() },
+      });
     }
 
     const bookingIds = [...new Set(items.map((i) => i.bookingId))];

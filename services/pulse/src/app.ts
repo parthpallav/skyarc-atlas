@@ -8,6 +8,15 @@ import { prisma } from "./prisma.js";
 import { fetchMediaPlan, fetchMediaPlanPdf } from "./lib/atlas-client.js";
 import { buildMediaPlanWorkbook, buildShareSummaryText } from "./lib/excel-export.js";
 import { sendWhatsAppViaBridge } from "./lib/bridge-client.js";
+import {
+  advanceConversation,
+  customerSafeStatusReply,
+  explainServiceLimitation,
+  newConversationState,
+  type ConversationState,
+} from "./lib/conversation.js";
+import { defaultAtlasClient, type AtlasOrchestrationClient } from "./lib/atlas-client.js";
+import { resolveInboundIdentity } from "./lib/inbound-identity.js";
 
 type PulseUser = {
   id: string;
@@ -38,6 +47,13 @@ function unauthorized(): Error & { statusCode: number } {
   return err;
 }
 
+function timingSafeEqualStr(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let out = 0;
+  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return out === 0;
+}
+
 const exportQuerySchema = z.object({
   campaignId: z.string().uuid(),
 });
@@ -54,7 +70,11 @@ function bearerToken(request: FastifyRequest): string {
   return header.slice(7);
 }
 
-export async function buildPulseApp(env: PulseEnv) {
+export async function buildPulseApp(
+  env: PulseEnv,
+  opts?: { atlasClient?: AtlasOrchestrationClient }
+) {
+  const atlasClient = opts?.atlasClient ?? defaultAtlasClient;
   const app = Fastify({ logger: true });
   await app.register(helmet);
   await app.register(rateLimit, { max: 200, timeWindow: "1 minute" });
@@ -73,7 +93,11 @@ export async function buildPulseApp(env: PulseEnv) {
     reply.status(status).send({ error: { message: err.message } });
   });
 
-  app.get("/health", async () => ({ status: "ok", service: "pulse" }));
+  app.get("/health", async () => ({
+    status: "ok",
+    service: "pulse",
+    quoteOrchestration: "atlas_authoritative",
+  }));
 
   app.post(
     "/v1/media-plans/:planId/export/xlsx",
@@ -190,6 +214,290 @@ export async function buildPulseApp(env: PulseEnv) {
       return { job };
     }
   );
+
+  /**
+   * Inbound WhatsApp turn — requires prior Atlas link + campaign binding.
+   * Identity from JWT or Bridge service token + Atlas account-link resolve.
+   * Caller-supplied atlasUserId/tenantOrganizationId are never authoritative.
+   */
+  app.post("/v1/whatsapp/inbound", async (request, reply) => {
+    const body = z
+      .object({
+        phoneE164: z.string().min(8).max(20),
+        text: z.string().max(4000),
+        atlasUserId: z.string().uuid().optional(),
+        tenantOrganizationId: z.string().uuid().optional(),
+        campaignId: z.string().uuid().optional(),
+      })
+      .parse(request.body);
+
+    const bridgeHeader = String(request.headers["x-skyarc-bridge-token"] ?? "");
+    const isBridge = bridgeHeader.length > 0 && timingSafeEqualStr(bridgeHeader, env.BRIDGE_SERVICE_TOKEN);
+
+    let accessToken = "";
+    if (!isBridge) {
+      try {
+        await request.jwtVerify();
+        accessToken = bearerToken(request);
+      } catch {
+        throw unauthorized();
+      }
+    } else {
+      // Bridge channel: Atlas calls use ATLAS_SERVICE_TOKEN via dedicated client paths later;
+      // confirmation execute still needs a user-scoped Atlas JWT — Bridge must mint via Atlas
+      // after link resolve. For RC we require ATLAS_SERVICE_TOKEN for link resolve only and
+      // reject mutation paths that need user JWT unless Bridge supplies X-Atlas-Access-Token.
+      accessToken = String(request.headers["x-atlas-access-token"] ?? "");
+      if (!accessToken) {
+        return reply.status(403).send({
+          error: {
+            message:
+              "Bridge inbound requires X-Atlas-Access-Token for Atlas-authorized mutations after link resolve",
+          },
+          orchestration: "blocked_missing_atlas_token",
+        });
+      }
+    }
+
+    const resolved = await resolveInboundIdentity({
+      env,
+      user: request.user ?? { id: "", organizationId: null },
+      phoneE164: body.phoneE164,
+      bodyAtlasUserId: body.atlasUserId,
+      bodyTenantOrganizationId: body.tenantOrganizationId,
+      bridgeToken: isBridge ? bridgeHeader : null,
+    });
+
+    if (!resolved.ok) {
+      return reply.status(resolved.status).send({
+        reply: customerSafeStatusReply(newConversationState()),
+        phase: "AWAIT_LINK",
+        note: resolved.error,
+        orchestration: resolved.orchestration,
+      });
+    }
+
+    const { atlasUserId, tenantOrganizationId } = resolved.identity;
+
+    let session = await prisma.conversationSession.findFirst({
+      where: {
+        phoneE164: body.phoneE164,
+        atlasUserId,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    let state: ConversationState = session
+      ? (session.stateJson as ConversationState)
+      : { ...newConversationState(), phase: "COLLECT_BRIEF" };
+
+    const campaignId = body.campaignId ?? session?.campaignId ?? state.campaignId;
+    if (!campaignId) {
+      return {
+        reply:
+          "Link an Atlas campaignId to this session before planning (Pulse does not create a second quote ledger). Include campaignId on the next message.",
+        phase: state.phase,
+        orchestration: "blocked_missing_campaign",
+      };
+    }
+
+    if (!session) {
+      session = await prisma.conversationSession.create({
+        data: {
+          phoneE164: body.phoneE164,
+          atlasUserId,
+          tenantOrganizationId,
+          campaignId,
+          phase: state.phase,
+          stateJson: state as object,
+          expiresAt: new Date(state.expiresAt),
+        },
+      });
+    } else if (!session.campaignId && campaignId) {
+      await prisma.conversationSession.update({
+        where: { id: session.id },
+        data: { campaignId },
+      });
+    }
+
+    // Session tenant must match resolved identity
+    if (session.tenantOrganizationId !== tenantOrganizationId) {
+      return reply.status(403).send({
+        error: { message: "Session tenant does not match authenticated identity" },
+        orchestration: "blocked_identity_mismatch",
+      });
+    }
+
+    const priorActions = (session.actionResultsJson ?? {}) as Record<string, unknown>;
+
+    const result = await advanceConversation({
+      env,
+      accessToken,
+      state,
+      text: body.text,
+      campaignId,
+      atlasUserId,
+      tenantOrganizationId,
+      priorActions,
+      client: atlasClient,
+    });
+
+    if (result.actionKey && result.actionResult !== undefined) {
+      const nextResults = { ...priorActions, [result.actionKey]: result.actionResult };
+      await prisma.conversationAction.upsert({
+        where: {
+          sessionId_actionKey: { sessionId: session.id, actionKey: result.actionKey },
+        },
+        create: {
+          sessionId: session.id,
+          actionKey: result.actionKey,
+          status: "succeeded",
+          responseJson: result.actionResult as object,
+        },
+        update: {
+          status: "succeeded",
+          responseJson: result.actionResult as object,
+          updatedAt: new Date(),
+        },
+      });
+      await prisma.conversationSession.update({
+        where: { id: session.id },
+        data: {
+          phase: result.state.phase,
+          stateJson: result.state as object,
+          actionResultsJson: nextResults as object,
+          campaignId,
+          updatedAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.conversationSession.update({
+        where: { id: session.id },
+        data: {
+          phase: result.state.phase,
+          stateJson: result.state as object,
+          campaignId,
+          updatedAt: new Date(),
+        },
+      });
+    }
+
+    await prisma.conversationTurn.create({
+      data: {
+        sessionId: session.id,
+        role: "user",
+        text: body.text,
+        actionJson: {},
+      },
+    });
+    await prisma.conversationTurn.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        text: result.reply,
+        actionJson: {
+          phase: result.state.phase,
+          atlasRefs: (result.atlasRefs ?? {}) as object,
+          actionKey: result.actionKey ?? null,
+        },
+      },
+    });
+
+    return {
+      sessionId: session.id,
+      phase: result.state.phase,
+      reply: result.reply,
+      atlasRefs: result.atlasRefs ?? {
+        campaignId,
+        quoteId: result.state.quoteId ?? null,
+        bookingId: result.state.bookingId ?? null,
+        proposalId: result.state.proposalId ?? null,
+      },
+      orchestration: "atlas_authoritative",
+      identitySource: resolved.identity.source,
+      note: explainServiceLimitation("unconfigured"),
+    };
+  });
+
+  /** Operational reminder fan-out — scoped text only; Bridge tracks receipts. */
+  app.post("/v1/ops-notifications/whatsapp", { preHandler: [app.authenticate] }, async (request) => {
+    const body = z
+      .object({
+        kind: z.enum([
+          "VENDOR_APPROVAL",
+          "HOLD_EXPIRY",
+          "LAUNCH_READY",
+          "OVERDUE_TASK",
+          "MISSING_PROOF",
+          "INVOICE_REMINDER",
+          "BOOKING_UPDATE",
+          "RECOMMENDATION_APPROVED",
+          "CONTINUITY_ALERT",
+        ]),
+        toE164: z.string().min(8).max(20),
+        atlasReminderId: z.string().uuid().optional(),
+        scopedLink: z.string().url().optional(),
+        summary: z.string().max(280),
+      })
+      .parse(request.body);
+
+    const text = [
+      `Skyarc Atlas: ${body.kind.replace(/_/g, " ").toLowerCase()}`,
+      body.summary,
+      body.scopedLink ? `Open: ${body.scopedLink}` : null,
+      "Internal costs and margins are not included.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const job = await prisma.opsNotificationJob.create({
+      data: {
+        kind: body.kind,
+        toE164: body.toE164,
+        atlasReminderId: body.atlasReminderId,
+        status: "pending",
+        payloadJson: { summary: body.summary, scopedLink: body.scopedLink ?? null },
+      },
+    });
+
+    try {
+      const bridge = await sendWhatsAppViaBridge(env, {
+        toE164: body.toE164,
+        text,
+        idempotencyKey: body.atlasReminderId
+          ? `ops-reminder:${body.atlasReminderId}`
+          : `ops-notif:${job.id}`,
+        hasConsent: true,
+      });
+      const deliveryStatus = bridge.deliveryStatus ?? (bridge.dryRun ? "dry_run" : "submitted");
+      await prisma.opsNotificationJob.update({
+        where: { id: job.id },
+        data: {
+          status: bridge.dryRun ? "dry_run" : "submitted",
+          bridgeMessageId: bridge.id,
+          deliveryStatus,
+        },
+      });
+      return {
+        jobId: job.id,
+        bridgeMessageId: bridge.id,
+        deliveryStatus,
+        delivered: bridge.delivered === true,
+        dryRun: bridge.dryRun === true,
+        note: bridge.delivered
+          ? undefined
+          : "Queued/submitted only — delivery requires provider receipt (or dry-run pending Meta credentials)",
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "notify failed";
+      await prisma.opsNotificationJob.update({
+        where: { id: job.id },
+        data: { status: "failed", error: message },
+      });
+      throw err;
+    }
+  });
 
   return app;
 }

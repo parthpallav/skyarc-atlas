@@ -7,6 +7,7 @@ import { createWebApiClient } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { formatInventoryType } from "@skyarc/shared";
 import { ConfirmModal } from "@/components/confirm-modal";
+import { InventoryAvailabilityCalendar } from "@/components/inventory-availability-calendar";
 
 interface ScreenRow {
   id: string;
@@ -458,6 +459,9 @@ export function LocationInventoryPanel({
                               </div>
                             )}
                           </div>
+                          {editingId !== inv.id ? (
+                            <InventoryAvailabilityCalendar inventoryId={inv.id} canWrite={writable} />
+                          ) : null}
                         </>
                       )}
                     </li>

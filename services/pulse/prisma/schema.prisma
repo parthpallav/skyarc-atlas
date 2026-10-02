@@ -39,3 +39,76 @@ model ExportArtifact {
   @@index([planId, createdAt(sort: Desc)])
   @@schema("pulse")
 }
+
+/// WhatsApp conversation orchestration state (Pulse). Atlas owns quotes/bookings.
+model ConversationSession {
+  id                   String   @id @default(uuid()) @db.Uuid
+  phoneE164            String
+  atlasUserId          String?  @db.Uuid
+  tenantOrganizationId String?  @db.Uuid
+  campaignId           String?  @db.Uuid
+  phase                String   @default("AWAIT_LINK")
+  stateJson            Json     @default("{}")
+  /// Successful Atlas action results keyed by actionKey — recovery if Pulse loses HTTP response
+  actionResultsJson    Json     @default("{}")
+  expiresAt            DateTime
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  turns   ConversationTurn[]
+  actions ConversationAction[]
+
+  @@index([phoneE164, expiresAt])
+  @@index([campaignId])
+  @@schema("pulse")
+}
+
+model ConversationTurn {
+  id         String   @id @default(uuid()) @db.Uuid
+  sessionId  String   @db.Uuid
+  role       String
+  text       String
+  actionJson Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@schema("pulse")
+}
+
+/// Durable record of Atlas calls so retries do not double-reserve.
+model ConversationAction {
+  id           String   @id @default(uuid()) @db.Uuid
+  sessionId    String   @db.Uuid
+  actionKey    String
+  status       String   @default("pending") // pending | succeeded | failed
+  requestJson  Json     @default("{}")
+  responseJson Json     @default("{}")
+  error        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, actionKey])
+  @@index([sessionId, status])
+  @@schema("pulse")
+}
+
+model OpsNotificationJob {
+  id               String   @id @default(uuid()) @db.Uuid
+  kind             String
+  toE164           String
+  atlasReminderId  String?  @db.Uuid
+  status           String   @default("pending")
+  bridgeMessageId  String?  @db.Uuid
+  deliveryStatus   String?
+  payloadJson      Json     @default("{}")
+  error            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@schema("pulse")
+}

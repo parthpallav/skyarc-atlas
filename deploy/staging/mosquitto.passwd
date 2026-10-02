@@ -1,0 +1,5 @@
+# Placeholder — regenerate on VPS before deploy:
+#   docker run --rm -it eclipse-mosquitto:2 mosquitto_passwd -c -b /mosquitto/config/mosquitto.passwd orbit-staging-consumer YOUR_MQTT_PASSWORD
+#   docker run --rm -it eclipse-mosquitto:2 mosquitto_passwd -b /mosquitto/config/mosquitto.passwd ORBIT-SIM-DEVICE-001 YOUR_DEVICE_MQTT_PASSWORD
+#
+# Do not commit real password hashes.
