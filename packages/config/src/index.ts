@@ -59,6 +59,8 @@ export const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().min(8).optional(),
   GOOGLE_CLIENT_SECRET: z.string().min(8).optional(),
   GOOGLE_REDIRECT_URI: optionalUrl,
+  /** Shared Pulse↔Atlas service token for Bridge-resolved WhatsApp link lookups */
+  PULSE_SERVICE_TOKEN: z.string().min(16).optional(),
 });
 
 /** Canonical production web origin for emailed / admin-copied reset links. */

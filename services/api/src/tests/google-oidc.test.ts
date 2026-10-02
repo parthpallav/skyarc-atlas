@@ -36,14 +36,24 @@ describe("google oidc helpers", () => {
     expect(ok).toEqual({ ok: true });
 
     expect(
-      assertGoogleClaims({ sub: "s", aud: "other", exp: 9999999999 }, "client").ok
+      assertGoogleClaims({ sub: "s", aud: "other", iss: "https://accounts.google.com", exp: 9999999999 }, "client").ok
     ).toBe(false);
     expect(
       assertGoogleClaims(
-        { sub: "s", aud: "client", exp: 1 },
+        { sub: "s", aud: "client", iss: "https://accounts.google.com", exp: 1 },
         "client",
         { nowMs: 10_000 }
       ).ok
+    ).toBe(false);
+    expect(
+      assertGoogleClaims(
+        { sub: "s", aud: "client", iss: "https://accounts.google.com", exp: 9999999999 },
+        "client",
+        { expectedNonce: "required" }
+      ).ok
+    ).toBe(false);
+    expect(
+      assertGoogleClaims({ sub: "s", aud: "client", exp: 9999999999 }, "client").ok
     ).toBe(false);
   });
 

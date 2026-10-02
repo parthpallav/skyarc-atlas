@@ -11,8 +11,13 @@ Living ownership map. Update as capabilities ship.
 **Phase 6 WhatsApp:** Atlas link+confirm; Pulse **Atlas-backed** quote→reserve orchestration; Bridge durable delivery; `docs/contracts/WHATSAPP_API.md`
 **Google OIDC:** config-gated start/callback/link + invitations (`0016`); `docs/contracts/AUTH_GOOGLE_OIDC.md`; live Google pending
 **Phase 7A recommendations:** Continuity + fill-rate via `CommercialRecommendation`; `docs/contracts/RECOMMENDATIONS_API.md`; Orbit intelligence deferred to 7B
-**Phase 7B telemetry:** Lunar MQTT Spec v1.0 wire compatibility + durable inbox; Atlas mappings + evidence; Orbit unit = **handler/simulator only (not broker-verified)**; `ORBIT_TELEMETRY_API.md` + `ORBIT_MQTT_LUNAR_COMPATIBILITY.md`
-**Product integrations evidence:** `docs/contracts/PRODUCT_INTEGRATIONS_EVIDENCE.md`
+**Phase 7B telemetry:** Lunar MQTT Spec v1.0 wire compatibility + durable inbox; Atlas mappings + evidence; Orbit unit = handler/simulator; **local Aedes broker integration verified**; physical-device + production-broker pending; `ORBIT_TELEMETRY_API.md` + `ORBIT_MQTT_LUNAR_COMPATIBILITY.md`
+**Product integrations evidence:** `docs/contracts/PRODUCT_INTEGRATIONS_EVIDENCE.md` (hardened RC after `52a817d`)
+**Google OIDC:** shared expiring `OAuthPendingState` (`0017`) + PKCE/session binding + controlled-provider protocol **integration verified**; live Google pending
+**Pulse quote loop:** Atlas-backed orchestration + inbound JWT/Bridge identity binding + PG quote/accept + ConversationAction recovery **integration verified**; Meta pending
+**Orbit MQTT:** broker-auth + topic identity; payload `__mqttSecret` **rejected**; local Aedes = MQTT **3.1.1**; MQTT 5 Mosquitto suite gated; physical/prod pending
+**Local browser RC:** `docs/contracts/RC_BROWSER_VERIFICATION.md` (≠ staging)
+**Migration/recovery:** `docs/contracts/RC_MIGRATION_RECOVERY_RUNBOOK.md` (`0016`+`0017`)
 
 ## Service ownership
 
@@ -35,8 +40,8 @@ Living ownership map. Update as capabilities ship.
 | Device credentials, MQTT/HTTPS ingest, measurements, aggregates, incidents | Orbit Cloud | No booking/quote ledger |
 | Operational-risk snapshots from Orbit evidence | Atlas/Pulse | Not audience forecasts |
 | Campaigns, media plans, optimizer | Atlas API | — |
-| Excel/WhatsApp quote→reserve orchestration | Pulse | **Atlas-backed orchestration implemented**; PG e2e + Meta pending |
-| Device telemetry / MQTT live hardware | Orbit Cloud | Handler/simulator verified; **not broker-verified**; live pending |
+| Excel/WhatsApp quote→reserve orchestration | Pulse | **Atlas-backed + PG integration verified**; Meta pending |
+| Device telemetry / MQTT | Orbit Cloud | Handler + **local Aedes MQTT 3.1.1 broker verified** (no payload secrets); MQTT 5 gated; physical/prod pending |
 
 ## Phase 1 evidence
 
@@ -122,8 +127,10 @@ Living ownership map. Update as capabilities ship.
 - Does **not** infer screen power from voltage or playback from heartbeat
 - Atlas: `DeviceScreenMapping` (`0015`), relocate, `GET /campaigns/:id/orbit-evidence`, operational-risk snapshots
 - UI: `/campaigns/[id]/orbit-evidence`
-- Unit: Orbit phase7b 22 tests; Atlas phase7b-orbit-evidence
-- **Backend implemented / Simulator verified** vs **Physical-device verified (blocked)** vs **Pending Lunar §10** vs **Pending production broker config** — reported separately
+- Unit: Orbit phase7b handler/simulator tests; Atlas phase7b-orbit-evidence
+- **Local broker verified:** `mqtt-broker.integration.test.ts` (Aedes **MQTT 3.1.1** auth+ACL+topic identity → ingest → Postgres; payload secrets rejected)
+- **MQTT 5.0:** `mqtt5-broker.integration.test.ts` gated on `MQTT5_BROKER_URL` (Mosquitto); Lunar firmware session/message-expiry **unconfirmed**
+- **Backend implemented / Local-broker verified** vs **Physical-device verified (blocked)** vs **Pending Lunar §10** vs **Pending production broker TLS/ACL** — reported separately
 - Audience/impressions/reach/verified delivery: **still blocked**
 
 ## Still open / blocked
@@ -131,11 +138,11 @@ Living ownership map. Update as capabilities ship.
 - Live paid checkout (credentials + adapter enablement) — **not production-ready**
 - Live Tally synchronization (file export only for now)
 - Live WhatsApp Meta delivery + webhook verification + approved template catalog (adapters ready; dry-run without credentials)
-- Pulse Excel/WhatsApp **quote→reserve** orchestration (XLSX export + conversation slice done; full Atlas quote loop pending)
-- Google sign-up/onboarding — **deferred** (email/password only; no Google OAuth in repo)
-- Live MQTT broker ACLs + physical Orbit Edge/Sense verification
+- Live Google OIDC (protocol + shared pending store verified; credentials pending)
+- Production MQTT broker TLS/ACLs + physical Orbit Edge/Sense + MQTT 5 firmware confirmation (local Aedes 3.1.1 does not replace)
 - Campaign intelligence forecasts (blocked on validated evidence sources)
-- Creative r2Key / proof asset auth: **resolved** (locationAssetId + UPLOADED checks)
+- Staging browser smoke + staging backup/restore drill (local browser RC ≠ staging)
+- Formal security sign-off before enabling gated live integrations
 - Remaining medium: stronger invoice sequence serializable TX under load
 
 ## Cognitive load rules

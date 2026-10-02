@@ -1,8 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import type { Env } from "@skyarc/config";
+import { timingSafeEqual, createHash } from "node:crypto";
 import { prisma } from "../../lib/prisma.js";
 import { success } from "../../lib/response.js";
-import { forbidden, validationError } from "../../lib/errors.js";
+import { forbidden, unauthorized, validationError } from "../../lib/errors.js";
 import { assertSameTenant, requireTenantUnlessInternal } from "../../lib/tenant-context.js";
 import {
   completeWhatsAppLink,
@@ -16,7 +18,18 @@ import {
 } from "../../lib/whatsapp/confirmations.js";
 import { acceptQuoteRevision } from "../../lib/booking/quote-revision.js";
 
-export async function whatsappRoutes(fastify: FastifyInstance) {
+function pulseServiceAuthorized(request: { headers: Record<string, unknown> }, env: Env): boolean {
+  const expected = env.PULSE_SERVICE_TOKEN;
+  if (!expected) return false;
+  const header = String(request.headers.authorization ?? "");
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!token) return false;
+  const a = createHash("sha256").update(token).digest();
+  const b = createHash("sha256").update(expected).digest();
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export async function whatsappRoutes(fastify: FastifyInstance, env: Env) {
   fastify.post("/whatsapp/link/challenges", { preHandler: [fastify.authenticate] }, async (request) => {
     const body = z
       .object({
@@ -65,7 +78,15 @@ export async function whatsappRoutes(fastify: FastifyInstance) {
     return success({ revoked: true });
   });
 
-  fastify.get("/whatsapp/link/resolve", { preHandler: [fastify.authenticate] }, async (request) => {
+  fastify.get("/whatsapp/link/resolve", async (request) => {
+    const serviceOk = pulseServiceAuthorized(request, env);
+    if (!serviceOk) {
+      try {
+        await request.jwtVerify();
+      } catch {
+        throw unauthorized("Authentication required");
+      }
+    }
     const phone = z.string().min(8).parse((request.query as { phoneE164?: string }).phoneE164);
     const result = await resolveLinkedUser(prisma, phone);
     if ("error" in result) throw validationError(result.error ?? "Request failed");

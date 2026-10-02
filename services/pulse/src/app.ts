@@ -16,6 +16,7 @@ import {
   type ConversationState,
 } from "./lib/conversation.js";
 import { defaultAtlasClient, type AtlasOrchestrationClient } from "./lib/atlas-client.js";
+import { resolveInboundIdentity } from "./lib/inbound-identity.js";
 
 type PulseUser = {
   id: string;
@@ -44,6 +45,13 @@ function unauthorized(): Error & { statusCode: number } {
   const err = new Error("Unauthorized") as Error & { statusCode: number };
   err.statusCode = 401;
   return err;
+}
+
+function timingSafeEqualStr(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let out = 0;
+  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return out === 0;
 }
 
 const exportQuerySchema = z.object({
@@ -209,36 +217,72 @@ export async function buildPulseApp(
 
   /**
    * Inbound WhatsApp turn — requires prior Atlas link + campaign binding.
-   * Executes real Atlas scenario → proposal/quote → confirmation → accept/reserve.
-   * Meta transport may be mocked; Atlas pricing/reservation must not be mocked in integration.
+   * Identity from JWT or Bridge service token + Atlas account-link resolve.
+   * Caller-supplied atlasUserId/tenantOrganizationId are never authoritative.
    */
-  app.post("/v1/whatsapp/inbound", { preHandler: [app.authenticate] }, async (request) => {
+  app.post("/v1/whatsapp/inbound", async (request, reply) => {
     const body = z
       .object({
         phoneE164: z.string().min(8).max(20),
         text: z.string().max(4000),
         atlasUserId: z.string().uuid().optional(),
         tenantOrganizationId: z.string().uuid().optional(),
-        /** Required for quote orchestration — Atlas campaign with flight dates */
         campaignId: z.string().uuid().optional(),
       })
       .parse(request.body);
 
-    if (!body.atlasUserId || !body.tenantOrganizationId) {
-      return {
-        reply: customerSafeStatusReply(newConversationState()),
-        phase: "AWAIT_LINK",
-        note: "Phone alone does not grant Atlas access — complete linking first",
-        orchestration: "blocked_unlinked",
-      };
+    const bridgeHeader = String(request.headers["x-skyarc-bridge-token"] ?? "");
+    const isBridge = bridgeHeader.length > 0 && timingSafeEqualStr(bridgeHeader, env.BRIDGE_SERVICE_TOKEN);
+
+    let accessToken = "";
+    if (!isBridge) {
+      try {
+        await request.jwtVerify();
+        accessToken = bearerToken(request);
+      } catch {
+        throw unauthorized();
+      }
+    } else {
+      // Bridge channel: Atlas calls use ATLAS_SERVICE_TOKEN via dedicated client paths later;
+      // confirmation execute still needs a user-scoped Atlas JWT — Bridge must mint via Atlas
+      // after link resolve. For RC we require ATLAS_SERVICE_TOKEN for link resolve only and
+      // reject mutation paths that need user JWT unless Bridge supplies X-Atlas-Access-Token.
+      accessToken = String(request.headers["x-atlas-access-token"] ?? "");
+      if (!accessToken) {
+        return reply.status(403).send({
+          error: {
+            message:
+              "Bridge inbound requires X-Atlas-Access-Token for Atlas-authorized mutations after link resolve",
+          },
+          orchestration: "blocked_missing_atlas_token",
+        });
+      }
     }
 
-    const token = bearerToken(request);
+    const resolved = await resolveInboundIdentity({
+      env,
+      user: request.user ?? { id: "", organizationId: null },
+      phoneE164: body.phoneE164,
+      bodyAtlasUserId: body.atlasUserId,
+      bodyTenantOrganizationId: body.tenantOrganizationId,
+      bridgeToken: isBridge ? bridgeHeader : null,
+    });
+
+    if (!resolved.ok) {
+      return reply.status(resolved.status).send({
+        reply: customerSafeStatusReply(newConversationState()),
+        phase: "AWAIT_LINK",
+        note: resolved.error,
+        orchestration: resolved.orchestration,
+      });
+    }
+
+    const { atlasUserId, tenantOrganizationId } = resolved.identity;
 
     let session = await prisma.conversationSession.findFirst({
       where: {
         phoneE164: body.phoneE164,
-        atlasUserId: body.atlasUserId,
+        atlasUserId,
         expiresAt: { gt: new Date() },
       },
       orderBy: { createdAt: "desc" },
@@ -262,8 +306,8 @@ export async function buildPulseApp(
       session = await prisma.conversationSession.create({
         data: {
           phoneE164: body.phoneE164,
-          atlasUserId: body.atlasUserId,
-          tenantOrganizationId: body.tenantOrganizationId,
+          atlasUserId,
+          tenantOrganizationId,
           campaignId,
           phase: state.phase,
           stateJson: state as object,
@@ -277,16 +321,24 @@ export async function buildPulseApp(
       });
     }
 
+    // Session tenant must match resolved identity
+    if (session.tenantOrganizationId !== tenantOrganizationId) {
+      return reply.status(403).send({
+        error: { message: "Session tenant does not match authenticated identity" },
+        orchestration: "blocked_identity_mismatch",
+      });
+    }
+
     const priorActions = (session.actionResultsJson ?? {}) as Record<string, unknown>;
 
     const result = await advanceConversation({
       env,
-      accessToken: token,
+      accessToken,
       state,
       text: body.text,
       campaignId,
-      atlasUserId: body.atlasUserId,
-      tenantOrganizationId: body.tenantOrganizationId,
+      atlasUserId,
+      tenantOrganizationId,
       priorActions,
       client: atlasClient,
     });
@@ -363,6 +415,7 @@ export async function buildPulseApp(
         proposalId: result.state.proposalId ?? null,
       },
       orchestration: "atlas_authoritative",
+      identitySource: resolved.identity.source,
       note: explainServiceLimitation("unconfigured"),
     };
   });

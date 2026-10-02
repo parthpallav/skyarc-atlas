@@ -23,6 +23,8 @@ import {
   googleOidcConfigured,
   hashOAuthState,
   newOAuthState,
+  newPkceVerifier,
+  pkceChallengeS256,
   verifyGoogleAuthorizationCode,
   type GoogleTokenVerifier,
 } from "../../lib/auth/google-oidc.js";
@@ -31,10 +33,35 @@ import {
   linkGoogleToAuthenticatedUser,
   upsertGoogleSignIn,
 } from "../../lib/auth/google-identity.js";
+import {
+  OAUTH_BROWSER_COOKIE,
+  OAUTH_PENDING_TTL_MS,
+  consumeOAuthPending,
+  newBrowserSessionId,
+  putOAuthPending,
+  redactOAuthPending,
+} from "../../lib/auth/oauth-pending-store.js";
 import { z } from "zod";
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+function parseCookieHeader(header: string | undefined, name: string): string | null {
+  if (!header) return null;
+  for (const part of header.split(";")) {
+    const [k, ...rest] = part.trim().split("=");
+    if (k === name) return decodeURIComponent(rest.join("=") || "");
+  }
+  return null;
+}
+
+function setBrowserSessionCookie(reply: { header: (k: string, v: string) => unknown }, raw: string) {
+  const maxAge = Math.floor(OAUTH_PENDING_TTL_MS / 1000);
+  reply.header(
+    "Set-Cookie",
+    `${OAUTH_BROWSER_COOKIE}=${encodeURIComponent(raw)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`
+  );
 }
 
 function parseExpiry(exp: string): number {
@@ -107,17 +134,13 @@ async function issueSession(
   };
 }
 
-const pendingGoogleStates = new Map<
-  string,
-  { nonce: string; mode: "login" | "link"; inviteToken?: string; expiresAt: number }
->();
-
 export async function authRoutes(
   fastify: FastifyInstance,
   env: Env,
   opts?: { googleVerifier?: GoogleTokenVerifier }
 ) {
   const googleVerifier = opts?.googleVerifier ?? verifyGoogleAuthorizationCode;
+  const oauthSecret = env.JWT_ACCESS_SECRET;
 
   fastify.post("/auth/login", async (request) => {
     const body = loginBodySchema.parse(request.body);
@@ -185,7 +208,7 @@ export async function authRoutes(
     });
   });
 
-  fastify.get("/auth/google/start", async (request) => {
+  fastify.get("/auth/google/start", async (request, reply) => {
     const cfg = googleOidcConfigured(env);
     if (!cfg) {
       throw validationError(
@@ -198,18 +221,63 @@ export async function authRoutes(
         mode: z.enum(["login", "link"]).optional().default("login"),
       })
       .parse(request.query ?? {});
+
+    let linkUserId: string | undefined;
+    if (q.mode === "link") {
+      try {
+        await request.jwtVerify();
+      } catch {
+        throw unauthorized("Sign in before linking Google");
+      }
+      linkUserId = request.user.id;
+    }
+
     const state = newOAuthState();
     const nonce = newOAuthState();
-    pendingGoogleStates.set(hashOAuthState(state), {
-      nonce,
-      mode: q.mode,
-      inviteToken: q.inviteToken,
-      expiresAt: Date.now() + 10 * 60_000,
-    });
-    return success({
-      authorizeUrl: buildGoogleAuthorizeUrl({ config: cfg, state, nonce }),
+    const codeVerifier = newPkceVerifier();
+    let browserSessionId = parseCookieHeader(
+      typeof request.headers.cookie === "string" ? request.headers.cookie : undefined,
+      OAUTH_BROWSER_COOKIE
+    );
+    if (!browserSessionId) {
+      browserSessionId = newBrowserSessionId();
+      setBrowserSessionCookie(reply, browserSessionId);
+    }
+
+    const stored = await putOAuthPending(prisma, {
       state,
-      expiresInSeconds: 600,
+      encryptionSecret: oauthSecret,
+      payload: {
+        nonce,
+        codeVerifier,
+        mode: q.mode,
+        inviteToken: q.inviteToken,
+        userId: linkUserId,
+        browserSessionId,
+        action: q.mode === "link" ? "google_link" : "google_login",
+      },
+    });
+
+    // Never log codeVerifier/nonce — only redacted metadata
+    request.log.info(
+      redactOAuthPending({
+        stateHash: hashOAuthState(state),
+        mode: q.mode,
+        expiresAt: stored.expiresAt,
+        consumedAt: null,
+      }),
+      "oauth_pending_created"
+    );
+
+    return success({
+      authorizeUrl: buildGoogleAuthorizeUrl({
+        config: cfg,
+        state,
+        nonce,
+        codeChallenge: pkceChallengeS256(codeVerifier),
+      }),
+      state,
+      expiresInSeconds: stored.expiresInSeconds,
     });
   });
 
@@ -217,19 +285,24 @@ export async function authRoutes(
     const cfg = googleOidcConfigured(env);
     if (!cfg) throw validationError("Google sign-in unavailable");
     const q = z.object({ code: z.string().min(1), state: z.string().min(1) }).parse(request.query);
-    const key = hashOAuthState(q.state);
-    const pending = pendingGoogleStates.get(key);
-    pendingGoogleStates.delete(key);
-    if (!pending || pending.expiresAt < Date.now()) {
-      throw unauthorized("OAuth state invalid or expired");
-    }
-    if (pending.mode === "link") {
-      throw validationError("Use POST /auth/google/link with an authenticated session to link Google");
+    const browserSessionId = parseCookieHeader(
+      typeof request.headers.cookie === "string" ? request.headers.cookie : undefined,
+      OAUTH_BROWSER_COOKIE
+    );
+    const pending = await consumeOAuthPending(prisma, {
+      state: q.state,
+      browserSessionId,
+      encryptionSecret: oauthSecret,
+      expectedMode: "login",
+    });
+    if (!pending) {
+      throw unauthorized("OAuth state invalid, expired, or already used");
     }
     const claims = await googleVerifier({
       code: q.code,
       config: cfg,
       expectedNonce: pending.nonce,
+      codeVerifier: pending.codeVerifier,
     });
     const result = await upsertGoogleSignIn(prisma, {
       claims,
@@ -252,16 +325,25 @@ export async function authRoutes(
     const cfg = googleOidcConfigured(env);
     if (!cfg) throw validationError("Google sign-in unavailable");
     const body = z.object({ code: z.string().min(1), state: z.string().min(1) }).parse(request.body);
-    const key = hashOAuthState(body.state);
-    const pending = pendingGoogleStates.get(key);
-    pendingGoogleStates.delete(key);
-    if (!pending || pending.expiresAt < Date.now() || pending.mode !== "link") {
+    const browserSessionId = parseCookieHeader(
+      typeof request.headers.cookie === "string" ? request.headers.cookie : undefined,
+      OAUTH_BROWSER_COOKIE
+    );
+    const pending = await consumeOAuthPending(prisma, {
+      state: body.state,
+      browserSessionId,
+      encryptionSecret: oauthSecret,
+      expectedMode: "link",
+      expectedUserId: request.user.id,
+    });
+    if (!pending) {
       throw unauthorized("OAuth state invalid — start link from /auth/google/start?mode=link");
     }
     const claims = await googleVerifier({
       code: body.code,
       config: cfg,
       expectedNonce: pending.nonce,
+      codeVerifier: pending.codeVerifier,
     });
     const linked = await linkGoogleToAuthenticatedUser(prisma, {
       userId: request.user.id,

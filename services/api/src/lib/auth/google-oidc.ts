@@ -52,6 +52,15 @@ export function newOAuthState(): string {
   return randomBytes(24).toString("base64url");
 }
 
+/** PKCE S256 — required for public/native clients; used for Google authorize+token. */
+export function newPkceVerifier(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+export function pkceChallengeS256(verifier: string): string {
+  return createHash("sha256").update(verifier).digest("base64url");
+}
+
 export function hashInviteToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
 }
@@ -71,8 +80,10 @@ export function assertGoogleClaims(
   if (!claims.sub || typeof claims.sub !== "string") {
     return { ok: false, reason: "Missing stable subject" };
   }
+  if (!claims.iss) {
+    return { ok: false, reason: "Missing issuer" };
+  }
   const issOk =
-    !claims.iss ||
     claims.iss === GOOGLE_OIDC_ISSUER ||
     claims.iss === "accounts.google.com" ||
     claims.iss === "https://accounts.google.com";
@@ -86,8 +97,11 @@ export function assertGoogleClaims(
   if (typeof claims.exp === "number" && claims.exp < now) {
     return { ok: false, reason: "ID token expired" };
   }
-  if (opts?.expectedNonce && claims.nonce && claims.nonce !== opts.expectedNonce) {
-    return { ok: false, reason: "Nonce mismatch" };
+  if (opts?.expectedNonce) {
+    if (!claims.nonce) return { ok: false, reason: "Missing nonce" };
+    if (claims.nonce !== opts.expectedNonce) {
+      return { ok: false, reason: "Nonce mismatch" };
+    }
   }
   return { ok: true };
 }
@@ -96,21 +110,23 @@ export type GoogleTokenVerifier = (input: {
   code: string;
   config: GoogleOidcConfig;
   expectedNonce?: string;
+  codeVerifier?: string;
 }) => Promise<GoogleIdTokenClaims>;
 
 function b64urlJson(part: string): unknown {
   return JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
 }
 
-/**
- * Exchange authorization code and validate ID token signature via Google JWKS.
- * Uses maintained fetch + crypto (openid-client optional when installed).
- */
 export async function verifyGoogleAuthorizationCode(input: {
   code: string;
   config: GoogleOidcConfig;
   expectedNonce?: string;
+  codeVerifier?: string;
   fetchImpl?: typeof fetch;
+  tokenUri?: string;
+  jwksUri?: string;
+  /** When set, accept this issuer in claims (controlled OIDC test provider). */
+  allowedIssuers?: string[];
 }): Promise<GoogleIdTokenClaims> {
   const fetchFn = input.fetchImpl ?? fetch;
   const body = new URLSearchParams({
@@ -120,7 +136,10 @@ export async function verifyGoogleAuthorizationCode(input: {
     redirect_uri: input.config.redirectUri,
     grant_type: "authorization_code",
   });
-  const tokenRes = await fetchFn(GOOGLE_TOKEN_URI, {
+  if (input.codeVerifier) {
+    body.set("code_verifier", input.codeVerifier);
+  }
+  const tokenRes = await fetchFn(input.tokenUri ?? GOOGLE_TOKEN_URI, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
@@ -136,7 +155,7 @@ export async function verifyGoogleAuthorizationCode(input: {
   const header = b64urlJson(h) as { kid?: string; alg?: string };
   const payload = b64urlJson(p) as GoogleIdTokenClaims;
 
-  const jwksRes = await fetchFn(GOOGLE_JWKS_URI);
+  const jwksRes = await fetchFn(input.jwksUri ?? GOOGLE_JWKS_URI);
   if (!jwksRes.ok) throw new Error("Failed to fetch Google JWKS");
   const jwks = (await jwksRes.json()) as {
     keys: Array<{ kid?: string; kty: string; n: string; e: string; alg?: string }>;
@@ -151,10 +170,21 @@ export async function verifyGoogleAuthorizationCode(input: {
   const sigOk = verifier.verify(pub, Buffer.from(s, "base64url"));
   if (!sigOk) throw new Error("Google ID token signature invalid");
 
-  const check = assertGoogleClaims(payload, input.config.clientId, {
-    expectedNonce: input.expectedNonce,
-  });
+  if (input.allowedIssuers?.length && payload.iss) {
+    if (!input.allowedIssuers.includes(payload.iss)) {
+      throw new Error("Unexpected issuer");
+    }
+  }
+
+  const check = assertGoogleClaims(
+    input.allowedIssuers?.length
+      ? { ...payload, iss: GOOGLE_OIDC_ISSUER }
+      : payload,
+    input.config.clientId,
+    { expectedNonce: input.expectedNonce }
+  );
   if (!check.ok) throw new Error(check.reason);
+  if (!payload.sub) throw new Error("Missing stable subject");
   return payload;
 }
 
@@ -162,6 +192,7 @@ export function buildGoogleAuthorizeUrl(input: {
   config: GoogleOidcConfig;
   state: string;
   nonce: string;
+  codeChallenge?: string;
   loginHint?: string;
 }): string {
   const u = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -173,6 +204,10 @@ export function buildGoogleAuthorizeUrl(input: {
   u.searchParams.set("nonce", input.nonce);
   u.searchParams.set("access_type", "online");
   u.searchParams.set("prompt", "select_account");
+  if (input.codeChallenge) {
+    u.searchParams.set("code_challenge", input.codeChallenge);
+    u.searchParams.set("code_challenge_method", "S256");
+  }
   if (input.loginHint) u.searchParams.set("login_hint", input.loginHint);
   return u.toString();
 }

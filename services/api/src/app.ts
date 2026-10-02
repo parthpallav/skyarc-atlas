@@ -69,7 +69,7 @@ export async function buildApp() {
       await proposalRoutes(api);
       await opsRoutes(api);
       await billingRoutes(api);
-      await whatsappRoutes(api);
+      await whatsappRoutes(api, env);
       await recommendationRoutes(api);
       await deviceRoutes(api, env);
     },
