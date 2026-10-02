@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { createWebApiClient } from "@/lib/api";
@@ -31,6 +32,7 @@ const STATUS_LABEL: Record<string, string> = {
   PENDING_VENDOR_APPROVAL: "Awaiting approval",
   PARTIALLY_APPROVED: "Partly approved",
   CANCELLED: "Cancelled",
+  EXPIRED: "Expired",
   REQUESTED: "Requested",
 };
 
@@ -60,7 +62,12 @@ export function CampaignReservationPanel({
 }: Props) {
   const queryClient = useQueryClient();
   const [feedback, setFeedback] = useState("");
-  const [pendingQuoteId, setPendingQuoteId] = useState<string | null>(null);
+  const [pendingQuote, setPendingQuote] = useState<{
+    id: string;
+    revisionNumber?: number;
+    total?: number;
+    currency?: string;
+  } | null>(null);
 
   const bookingsQuery = useQuery({
     queryKey: ["campaign-bookings", campaignId],
@@ -94,11 +101,23 @@ export function CampaignReservationPanel({
       });
     },
     onSuccess: (result) => {
-      const data = result.data as { id?: string; total?: number; currency?: string };
-      if (data.id) setPendingQuoteId(data.id);
+      const data = result.data as {
+        id?: string;
+        revisionNumber?: number;
+        total?: number;
+        currency?: string;
+      };
+      if (data.id) {
+        setPendingQuote({
+          id: data.id,
+          revisionNumber: data.revisionNumber,
+          total: data.total,
+          currency: data.currency,
+        });
+      }
       setFeedback(
         data.total != null
-          ? `Quote ready · ${data.currency === "INR" ? formatInr(data.total) : `${data.currency} ${data.total}`}`
+          ? `Quote r${data.revisionNumber ?? "?"} · ${data.currency === "INR" ? formatInr(data.total) : `${data.currency} ${data.total}`}`
           : "Quote ready"
       );
     },
@@ -113,10 +132,18 @@ export function CampaignReservationPanel({
         idempotencyKey: `ui-accept-${quoteId}`,
       });
     },
-    onSuccess: async () => {
-      setPendingQuoteId(null);
-      setFeedback("Reserved");
+    onSuccess: async (result) => {
+      setPendingQuote(null);
+      const data = result.data as { booking?: { id?: string }; idempotent?: boolean };
+      setFeedback(
+        data.idempotent
+          ? "Already reserved"
+          : data.booking?.id
+            ? "Reserved — view booking"
+            : "Reserved"
+      );
       await queryClient.invalidateQueries({ queryKey: ["campaign-bookings", campaignId] });
+      await queryClient.invalidateQueries({ queryKey: ["bookings"] });
     },
     onError: (err) => setFeedback(err instanceof Error ? err.message : "Could not reserve"),
   });
@@ -124,7 +151,7 @@ export function CampaignReservationPanel({
   const bookings = bookingsQuery.data?.bookings ?? [];
   const summary = summarize(bookings);
   const busy = issueMutation.isPending || acceptMutation.isPending;
-  const nextAction = pendingQuoteId
+  const nextAction = pendingQuote
     ? ("accept" as const)
     : canEdit && mediaPlanId && startDate && endDate
       ? ("quote" as const)
@@ -134,10 +161,19 @@ export function CampaignReservationPanel({
     <section className={cn(workspacePanel, "md:col-span-2")}>
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-primary/10 px-3 py-2.5">
         <div className="min-w-0">
-          <h2 className="text-sm font-bold text-slate-900">Reservation</h2>
+          <h2 className="text-sm font-bold text-slate-900">Quote & reservation</h2>
           <p className="mt-0.5 text-[12px] text-slate-600">
             {bookingsQuery.isLoading ? "Checking…" : summary}
           </p>
+          {pendingQuote ? (
+            <p className="mt-1 text-[11px] text-violet-800">
+              Revision {pendingQuote.revisionNumber ?? "—"} ready
+              {pendingQuote.total != null
+                ? ` · ${pendingQuote.currency === "INR" ? formatInr(pendingQuote.total) : pendingQuote.total}`
+                : ""}
+              . Accept to reserve capacity.
+            </p>
+          ) : null}
           {feedback ? <p className="mt-1 text-[11px] text-slate-500">{feedback}</p> : null}
         </div>
 
@@ -155,14 +191,14 @@ export function CampaignReservationPanel({
           </button>
         ) : null}
 
-        {nextAction === "accept" && pendingQuoteId ? (
+        {nextAction === "accept" && pendingQuote ? (
           <button
             type="button"
             className="btn-primary shrink-0 px-3 py-1.5 text-xs"
             disabled={busy}
-            onClick={() => acceptMutation.mutate(pendingQuoteId)}
+            onClick={() => acceptMutation.mutate(pendingQuote.id)}
           >
-            {acceptMutation.isPending ? "Reserving…" : "Confirm & reserve"}
+            {acceptMutation.isPending ? "Reserving…" : "Accept & reserve"}
           </button>
         ) : null}
       </div>
@@ -170,18 +206,26 @@ export function CampaignReservationPanel({
       {bookings.length > 0 ? (
         <details className={workspacePanelScroll}>
           <summary className="cursor-pointer px-3 py-2 text-[11px] font-semibold text-muted hover:text-slate-800">
-            Details
+            Booking status
           </summary>
           <ul className="divide-y divide-violet-50 border-t border-violet-50">
             {bookings.map((booking) => (
-              <li key={booking.id} className="px-3 py-2.5">
-                <p className="text-sm font-medium text-slate-900">{labelStatus(booking.status)}</p>
-                <p className="text-[11px] text-muted">
-                  {formatDateIn(booking.startDate)} – {formatDateIn(booking.endDate)}
-                  {(booking.items ?? []).length
-                    ? ` · ${(booking.items ?? []).length} sites`
-                    : ""}
-                </p>
+              <li key={booking.id} className="px-3 py-2.5 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">{labelStatus(booking.status)}</p>
+                  <p className="text-[11px] text-muted">
+                    {formatDateIn(booking.startDate)} – {formatDateIn(booking.endDate)}
+                    {(booking.items ?? []).length
+                      ? ` · ${(booking.items ?? []).length} sites`
+                      : ""}
+                  </p>
+                </div>
+                <Link
+                  href={`/bookings/${booking.id}`}
+                  className="text-[11px] font-medium text-primary hover:underline shrink-0"
+                >
+                  Open
+                </Link>
               </li>
             ))}
           </ul>

@@ -9,7 +9,9 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'no lint configured'",
-    "test": "vitest run",
+    "test": "vitest run --config vitest.config.ts",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "openapi:generate": "node scripts/generate-openapi.js"
   },
   "dependencies": {

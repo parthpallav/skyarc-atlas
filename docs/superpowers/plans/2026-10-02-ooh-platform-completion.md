@@ -4,109 +4,116 @@
 
 **Goal:** Deliver dependable inventory → availability → planning → pricing → proposal → approval → reservation → execution → proof → billing workflows on Atlas/Pulse/Bridge/Orbit without duplicate ledgers.
 
-**Architecture:** Atlas owns inventory, availability windows, bookings/reservations, and tenant-scoped records. Pulse owns quotes, exports, planning orchestration, and campaign intelligence snapshots. Bridge owns provider delivery. Orbit Cloud owns telemetry ingestion and device state. No second reservation ledger.
+**Architecture:** Atlas owns inventory, availability windows, bookings/reservations, base rates, and immutable quote revisions (ADR-0003). Pulse owns Excel/WhatsApp orchestration and future commercial packaging calling Atlas. Bridge owns provider delivery. Orbit Cloud owns telemetry. No second reservation or quote ledger.
 
 **Tech Stack:** Fastify + Prisma + Postgres/PostGIS (Atlas API), Pulse/Bridge Fastify services, Next.js web, Orbit Cloud, Vitest.
 
-**Baseline:** `df5cd9c` (main tip at plan start). Graph memory files (`Skyarc_Atlas_Graph_Memory.md`, `atlas-graph.json`, `CURSOR_CONTEXT.md`) were **not present** in repo — reconcile from live code.
+**Baseline:** `df5cd9c` (main tip at plan start).
 
 ## Global Constraints
 
-- One authoritative owner per domain (see matrix).
+- One authoritative owner per domain (see matrix + ADR-0003).
 - Customer responses must not expose internal costs, margins, or mix targets.
 - Missing rates → `PRICING_UNAVAILABLE`, never invent zeros as real prices for write paths.
 - Credentials unavailable → implement adapters + report blocked live verification.
 - Prefer migrations + compatibility over rewrites.
+- Unit tests run without DB; integration tests require `INTEGRATION_DATABASE_URL`.
 
 ---
+
+
 
 ## Domain ownership
 
-| Domain | Owner | Notes |
-|--------|--------|------|
-| Inventory, screens, locations | Atlas | CRUD + photos + specs |
-| Availability windows / capacity | Atlas | Authoritative occupancy |
-| Soft holds / bookings / reservations | Atlas | Atomic capacity recheck |
-| Campaigns / media plans / optimizer | Atlas | Planning + proposal records |
-| Rate cards / commercial JSON (current) | Atlas | Foundation until versioned pricing |
-| Quotes / Excel / WhatsApp orchestration | Pulse | Calls Atlas for reserve |
-| Provider WhatsApp / webhooks | Bridge | Signature verify in prod |
-| Device telemetry / MQTT | Orbit Cloud | Evidence only |
-| Campaign intelligence snapshots | Pulse | Joins Orbit + Atlas bookings |
+
+| Domain                                     | Owner       | Notes                                              |
+| ------------------------------------------ | ----------- | -------------------------------------------------- |
+| Inventory, screens, locations              | Atlas       | CRUD + photos + specs                              |
+| Availability windows / capacity            | Atlas       | Authoritative occupancy                            |
+| Soft holds / bookings / reservations       | Atlas       | Atomic capacity recheck + Serializable retry       |
+| Campaigns / media plans / optimizer        | Atlas       | Planning + proposal records                        |
+| Rate cards / base commercial rates         | Atlas       | Effective-dated; foundation for quotes             |
+| QuoteRevision persistence + accept→reserve | Atlas       | ADR-0003 — retain; no Pulse duplicate              |
+| Excel / WhatsApp quote orchestration       | Pulse       | Calls Atlas quote + reserve APIs (**pending**)     |
+| Provider WhatsApp / webhooks               | Bridge      | Signature verify in prod                           |
+| Device telemetry / MQTT                    | Orbit Cloud | Evidence only — separate workstream                |
+| Campaign intelligence snapshots            | Pulse       | **Blocked** until Orbit telemetry + campaign joins |
+
 
 ---
+
+
 
 ## Implementation matrix (living)
 
-| Capability | Current evidence | Required outcome | Owner | Dependencies | Status | Validation |
-|------------|------------------|------------------|-------|--------------|--------|------------|
-| Occupancy peak-concurrent | `slotsConsumedForFlight` peak sweep | Peak concurrent slots in flight | shared/Atlas | — | **done** | availability unit tests |
-| Hold atomic recheck | `holdInventoryForCampaign` Serializable + recheck | Skip/fail when no capacity | Atlas | occupancy | **done** | code path + unit occupancy |
-| Location upsert authz | POST `/locations` checks `canWriteLocation` | Deny cross-tenant update | Atlas | rbac | **done** | code path |
-| Quote inventory authz | `/booking/quote` inventory access + override lock | Scope + no client rate override | Atlas | rbac | **done** | code path |
-| Geography gate | City/focus before state | No unintended city via state | Atlas | goal-fit | **done** | goal-fit tests |
-| Optimizer duration pricing | `flightCostFromStoredRate` | Pro-rate monthly by days | Atlas | rates | **done** | rates + optimizer tests |
-| CI optimizer imports | Import `rates.ts` not prisma module | Unit suite without DATABASE_URL | Atlas | — | **done** | vitest w/ fake URL |
-| Tenant isolation | `tenant-context.ts` foundation | Expand on mutating routes | Atlas | auth | **partial** | helper added |
-| Booking records | Booking + BookingItem + transitions linked to windows | Explicit Booking/BookingItem | Atlas | Phase 2 | **done (core)** | unit status + reserve API |
-| Versioned pricing/quotes | QuoteRevision + RateCard effective dates | Immutable quotes + accept→reserve | Atlas (+Pulse orch) | Phase 3 | **partial** | money unit + accept path |
-| WhatsApp production | Bridge dry-run; UI hidden | Signed webhooks + delivery jobs | Bridge+Pulse | Meta creds | partial | — |
-| MQTT telemetry | OrbitTelemetry/DeviceState | Auth MQTT + contracts | Orbit | Phase Orbit | not started | — |
+
+| Capability                         | Current evidence                                    | Required outcome                   | Owner        | Dependencies | Status          | Validation                                                  |
+| ---------------------------------- | --------------------------------------------------- | ---------------------------------- | ------------ | ------------ | --------------- | ----------------------------------------------------------- |
+| Occupancy peak-concurrent          | `slotsConsumedForFlight` peak sweep                 | Peak concurrent slots in flight    | shared/Atlas | —            | **done**        | availability unit tests                                     |
+| Hold atomic recheck                | Serializable + `FOR UPDATE` + retry                 | Skip/fail when no capacity         | Atlas        | occupancy    | **done**        | PG integration concurrent hold                              |
+| Location upsert authz              | POST `/locations` `canWriteLocation`                | Deny cross-tenant update           | Atlas        | rbac         | **done**        | code path                                                   |
+| Quote inventory authz              | `/booking/quote` access + override lock             | Scope + no client rate override    | Atlas        | rbac         | **done**        | code path                                                   |
+| Geography gate                     | City/focus before state                             | No unintended city via state       | Atlas        | goal-fit     | **done**        | goal-fit tests                                              |
+| Optimizer duration pricing         | `flightCostFromStoredRate`                          | Pro-rate monthly by days           | Atlas        | rates        | **done**        | rates + optimizer tests                                     |
+| CI unit suite                      | `vitest.config.ts` excludes `*.integration.test.ts` | Unit suite without DATABASE_URL    | Atlas        | —            | **done**        | `pnpm test:unit` (120 tests)                                |
+| Tenant isolation                   | `assertSameTenant` on quotes/bookings               | Deny cross-tenant                  | Atlas        | auth         | **partial**     | unit + integration assert; campaign surface still expanding |
+| Booking records                    | Booking + items + outbox + UI                       | List/detail/amend/events           | Atlas        | Phase 2      | **done**        | transitions unit + PG partial/expiry                        |
+| Inventory calendar                 | availability-calendar API + UI                      | Freshness + day buckets            | Atlas        | Phase 2      | **done**        | API + location panel                                        |
+| Concurrent reservation             | `reservation.integration.test.ts`                   | One winner for last slot           | Atlas        | PG           | **done**        | INTEGRATION_DATABASE_URL                                    |
+| Hold expiry / amend / cross-tenant | same integration file                               | Restore capacity; preserve on fail | Atlas        | PG           | **done**        | INTEGRATION_DATABASE_URL                                    |
+| QuoteRevision + accept→reserve     | quote-revision + quote-http                         | Immutable issue/accept             | Atlas        | rates        | **done (core)** | money unit + accept path + UI                               |
+| Effective-dated / segmented rates  | `rate-segments.ts` + quote.ts                       | Mid-flight rate changes            | Atlas        | RateCard     | **done (core)** | rate-segments unit                                          |
+| Customer-safe breakdowns           | `customer-safe-price.ts`                            | No margin/cost leakage             | Atlas        | —            | **done**        | unit                                                        |
+| Payment provider                   | `payment-adapter.ts` + `/payment-intent`            | Live capture when configured       | Atlas        | creds        | **pending**     | UNAVAILABLE without creds (by design)                       |
+| Live paid checkout                 | —                                                   | Hold/payment/refund policy live    | Atlas        | payment      | **pending**     | blocked on credentials                                      |
+| Pulse quote orchestration          | —                                                   | Excel/WhatsApp via Atlas APIs      | Pulse        | Atlas quotes | **pending**     | —                                                           |
+| WhatsApp production                | Bridge dry-run                                      | Signed webhooks + delivery jobs    | Bridge+Pulse | Meta creds   | **pending**     | —                                                           |
+| MQTT telemetry                     | OrbitTelemetry/DeviceState                          | Auth MQTT + contracts              | Orbit        | Phase Orbit  | **not started** | —                                                           |
+| Campaign intelligence              | —                                                   | After telemetry + associations     | Pulse        | Orbit        | **blocked**     | —                                                           |
+
 
 ---
 
-## Phase 1 tasks (execute first)
 
-### Task 1: Peak-concurrent occupancy
-- [ ] Add failing tests for nonconcurrent bookings across a flight
-- [ ] Replace sum with sweep-line peak in `packages/shared/src/slot-occupancy.ts`
-- [ ] Keep digital slot capacity semantics; static remains exclusive
 
-### Task 2: Atomic hold capacity recheck
-- [ ] In `holdInventoryForCampaign`, lock inventory rows, recompute occupancy, only create windows with remaining capacity
-- [ ] Return skipped inventory IDs / throw on hard book when capacity gone
+## Phase 1 tasks
 
-### Task 3: Location upsert write authorization
-- [ ] On upsert update path, load existing location and enforce `canWriteLocation` / ownership
-- [ ] Tests for cross-org id spoofing
 
-### Task 4: Quote authz + rate override lockdown
-- [ ] Authorize inventory access for requester
-- [ ] Ignore client `baseRateAmount` / privileged overrides unless internal role
-- [ ] Return `PRICING_UNAVAILABLE` when no rate exists (write-adjacent quote)
 
-### Task 5: Geography gate
-- [ ] When cities or geographicFocus present, do not admit via state alone
-- [ ] State-only briefs still match state
+### Task 1–7: ✅ delivered (see matrix)
 
-### Task 6: Optimizer flight pricing
-- [ ] Pro-rate monthly/daily rates by campaign duration when scoring allocations
-- [ ] Tests with 15-day flight vs monthly card
 
-### Task 7: CI-safe optimizer tests
-- [ ] Extract `customerRateForInventory` (or test-only fixtures) away from prisma side-effect module
-- [ ] Ensure `pnpm --filter api test` runs without DATABASE_URL for unit suite
 
-### Task 8: Tenant context foundation
-- [ ] Document + introduce `requireTenantContext` helper for mutating routes touched in Phase 1–2
-- [ ] Add regression tests that cross-tenant reads/writes fail
+### Task 8: Tenant context
+
+- [x] `resolveTenantContext` / `assertSameTenant` / `requireTenantUnlessInternal`
+- [x] Applied on quote get/accept/issue and booking payment-intent
+- [ ] Expand to every campaign mutating route (remaining — mark pending)
 
 ---
 
-## Later phases (dependency order)
 
-- **Phase 2:** Booking/BookingItem model, timelines, amendments, expiry jobs
-- **Phase 3:** Versioned rates, immutable quotes, accept→Atlas reserve, payments adapter
+
+## Later phases
+
+- **Phase 2:** ✅ Booking ledger, calendar, holds/expiry, vendor partial approval, outbox, bookings UI
+- **Phase 3:** ✅ Core quote→accept→reserve (Atlas); ⏳ live payments; ⏳ Pulse orchestration
 - **Phase 4:** Scenario planning, customer-safe proposals, PPT after booking works
 - **Phase 5:** Ops tasks, proof photos, invoices, Tally adapter
 - **Phase 6:** WhatsApp delivery jobs, inbound state, confirmation before reserve
 - **Phase 7:** Continuity / fill-rate / Orbit-aware risk (after evidence foundation)
-- **Orbit MQTT:** Ingestion contracts, retention, campaign association joins
+- **Orbit MQTT:** Separate workstream — ingestion contracts, retention, campaign association joins
 
 ---
 
-## First working increments after Phase 1
+## Test commands
 
-1. Inventory calendar + hold/book API with atomic capacity
-2. Quote → accept → reserve → track status UI
-3. Tenant-scoped booking list
+```bash
+# Pure unit — no database required
+pnpm --filter @skyarc/api test:unit
+
+# Postgres integration — isolated DB URL required
+INTEGRATION_DATABASE_URL=postgres://... pnpm --filter @skyarc/api test:integration
+```
+
+Do **not** set a fake DATABASE_URL for unit tests. Integration never falls back to `DATABASE_URL` silently.

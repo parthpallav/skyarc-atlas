@@ -448,15 +448,98 @@ export class ApiClient {
     });
   }
 
-  listBookings(params?: { campaignId?: string; status?: string; upcoming?: boolean }) {
+  listBookings(params?: {
+    campaignId?: string;
+    status?: string;
+    upcoming?: boolean;
+    expiringHolds?: boolean;
+  }) {
     const q = new URLSearchParams();
     if (params?.campaignId) q.set("campaignId", params.campaignId);
     if (params?.status) q.set("status", params.status);
     if (params?.upcoming) q.set("upcoming", "true");
+    if (params?.expiringHolds) q.set("expiringHolds", "true");
     const qs = q.toString();
     return this.request<{ bookings: unknown[]; summary: Record<string, number> }>(
       `/bookings${qs ? `?${qs}` : ""}`
     );
+  }
+
+  requestBooking(data: {
+    campaignId: string;
+    inventoryIds: string[];
+    mediaPlanId?: string;
+    requireVendorApproval?: boolean;
+    idempotencyKey?: string;
+  }) {
+    return this.request<{ held: string[]; skipped: string[]; booking: unknown | null }>(
+      "/bookings/request",
+      { method: "POST", body: JSON.stringify(data) }
+    );
+  }
+
+  amendBooking(
+    id: string,
+    data: {
+      addInventoryIds?: string[];
+      removeInventoryIds?: string[];
+      startDate?: string;
+      endDate?: string;
+    }
+  ) {
+    return this.request<unknown>(`/bookings/${id}/amend`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  getBookingEvents(id: string) {
+    return this.request<{
+      timeline: Array<{
+        kind: "transition";
+        id: string;
+        bookingItemId: string | null;
+        fromStatus: string;
+        toStatus: string;
+        actorUserId: string | null;
+        reason: string | null;
+        createdAt: string;
+      }>;
+      integrationEvents: Array<{
+        kind: "outbox";
+        id: string;
+        eventType: string;
+        payloadJson: unknown;
+        createdAt: string;
+        deliveredAt: string | null;
+        deliveryAttempts: number;
+      }>;
+    }>(`/bookings/${id}/events`);
+  }
+
+  getInventoryAvailabilityCalendar(
+    inventoryId: string,
+    params: { from: string; to: string }
+  ) {
+    const q = new URLSearchParams({ from: params.from, to: params.to });
+    return this.request<unknown>(`/inventories/${inventoryId}/availability-calendar?${q}`);
+  }
+
+  confirmInventoryAvailability(inventoryId: string) {
+    return this.request<unknown>(`/inventories/${inventoryId}/confirm-availability`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
+  createInventoryAvailabilityBlock(
+    inventoryId: string,
+    data: { startDate: string; endDate: string; reason?: string }
+  ) {
+    return this.request<unknown>(`/inventories/${inventoryId}/availability-blocks`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
   }
 
   getBooking(id: string) {

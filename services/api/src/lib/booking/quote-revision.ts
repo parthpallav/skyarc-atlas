@@ -2,7 +2,11 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { INVENTORY_HOLD_TTL_MINUTES } from "@skyarc/shared";
 import { quotePlayBasedBooking, type BookingQuoteInput } from "./quote.js";
 import { fromMinorUnits, toMinorUnits, totalsMatch } from "./money.js";
-import { holdInventoryForCampaign } from "../media-planning/run-optimization.js";
+import { customerSafePriceBreakdown } from "./customer-safe-price.js";
+import {
+  holdInventoryForCampaign,
+  releaseInventoryForCampaign,
+} from "../media-planning/run-optimization.js";
 
 const DEFAULT_QUOTE_TTL_HOURS = 48;
 
@@ -12,7 +16,6 @@ export type IssueQuoteInput = {
   tenantOrganizationId?: string | null;
   actorUserId?: string | null;
   inventoryQuotes: BookingQuoteInput[];
-  /** Optional override — default 48h */
   expiresAt?: Date;
 };
 
@@ -34,9 +37,10 @@ export async function issueQuoteRevision(prisma: PrismaClient, input: IssueQuote
       return { error: result.error as string };
     }
     currency = result.price.currency || currency;
-    const lineSub = toMinorUnits(result.price.subtotal, currency);
-    const lineTax = toMinorUnits(result.price.tax, currency);
-    const lineTotal = toMinorUnits(result.price.total, currency);
+    const safePrice = customerSafePriceBreakdown(result.price);
+    const lineSub = toMinorUnits(safePrice.subtotal, currency);
+    const lineTax = toMinorUnits(safePrice.tax, currency);
+    const lineTotal = toMinorUnits(safePrice.total, currency);
     subtotalMinor += lineSub;
     taxMinor += lineTax;
     inventoryIds.push(result.inventoryId);
@@ -44,7 +48,7 @@ export async function issueQuoteRevision(prisma: PrismaClient, input: IssueQuote
       inventoryId: result.inventoryId,
       locationId: result.locationId,
       screenId: result.screenId,
-      charges: result.price.lines,
+      charges: safePrice.lines,
       subtotalMinor: lineSub,
       taxMinor: lineTax,
       totalMinor: lineTotal,
@@ -56,8 +60,8 @@ export async function issueQuoteRevision(prisma: PrismaClient, input: IssueQuote
     });
     rateVersions.push({
       inventoryId: result.inventoryId,
-      model: result.price.model,
-      meta: result.price.meta,
+      model: safePrice.model,
+      meta: safePrice.meta,
     });
   }
 
@@ -69,12 +73,8 @@ export async function issueQuoteRevision(prisma: PrismaClient, input: IssueQuote
     input.expiresAt ??
     new Date(Date.now() + DEFAULT_QUOTE_TTL_HOURS * 60 * 60 * 1000);
 
-  // Supersede prior issued quotes for same campaign
   await prisma.quoteRevision.updateMany({
-    where: {
-      campaignId: input.campaignId,
-      status: "ISSUED",
-    },
+    where: { campaignId: input.campaignId, status: "ISSUED" },
     data: { status: "SUPERSEDED", updatedAt: new Date() },
   });
 
@@ -93,11 +93,9 @@ export async function issueQuoteRevision(prisma: PrismaClient, input: IssueQuote
         holdTtlMinutes: INVENTORY_HOLD_TTL_MINUTES,
         quoteTtlHours: DEFAULT_QUOTE_TTL_HOURS,
         pricingEngine: "play-based-v1",
+        customerSafe: true,
       },
-      quantitiesJson: {
-        lineCount: lines.length,
-        inventoryIds,
-      },
+      quantitiesJson: { lineCount: lines.length, inventoryIds },
       rateVersionsJson: rateVersions as Prisma.InputJsonValue,
       chargesJson: lines as Prisma.InputJsonValue,
       inventoryIds: inventoryIds as Prisma.InputJsonValue,
@@ -116,9 +114,9 @@ export async function acceptQuoteRevision(
     actorUserId?: string | null;
     tenantOrganizationId?: string | null;
     idempotencyKey?: string | null;
-    /** When true, create BOOKED windows; otherwise soft HELD pending vendor */
     mode?: "hold" | "book";
     requireVendorApproval?: boolean;
+    allowPartial?: boolean;
   }
 ) {
   const quote = await prisma.quoteRevision.findUnique({ where: { id: input.quoteId } });
@@ -130,6 +128,29 @@ export async function acceptQuoteRevision(
       include: { items: true },
     });
     return { quote, booking, idempotent: true as const };
+  }
+
+  if (quote.status === "ISSUED" && input.idempotencyKey) {
+    const orphan = await prisma.booking.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+      include: { items: true },
+    });
+    if (orphan) {
+      const updated = await prisma.quoteRevision.update({
+        where: { id: quote.id },
+        data: {
+          status: "ACCEPTED",
+          acceptedBookingId: orphan.id,
+          acceptedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      await prisma.booking.update({
+        where: { id: orphan.id },
+        data: { acceptedQuoteRevisionId: quote.id, updatedAt: new Date() },
+      });
+      return { quote: updated, booking: orphan, idempotent: true as const, recovered: true as const };
+    }
   }
 
   if (quote.status !== "ISSUED") {
@@ -148,12 +169,13 @@ export async function acceptQuoteRevision(
     return { error: "Quote is missing campaignId" as const };
   }
 
-  const charges = Array.isArray(quote.chargesJson) ? (quote.chargesJson as Array<Record<string, unknown>>) : [];
+  const charges = Array.isArray(quote.chargesJson)
+    ? (quote.chargesJson as Array<Record<string, unknown>>)
+    : [];
   const inventoryIds = Array.isArray(quote.inventoryIds)
     ? (quote.inventoryIds as string[])
     : charges.map((c) => String(c.inventoryId));
 
-  // Revalidate price + availability for each line
   let recomputedTotal = 0;
   for (const line of charges) {
     const quoteInput = line.quoteInput as BookingQuoteInput | undefined;
@@ -165,12 +187,15 @@ export async function acceptQuoteRevision(
       return { error: fresh.error };
     }
     if (!fresh.feasibility.feasible || fresh.freeSlots < 1) {
-      return { error: "Availability changed — quote no longer feasible" as const };
+      if (!input.allowPartial) {
+        return { error: "Availability changed — quote no longer feasible" as const };
+      }
+      continue;
     }
     recomputedTotal += toMinorUnits(fresh.price.total, fresh.price.currency || quote.currency);
   }
 
-  if (!totalsMatch(recomputedTotal, quote.totalMinor)) {
+  if (!input.allowPartial && !totalsMatch(recomputedTotal, quote.totalMinor)) {
     return {
       error: "Price changed since quote was issued — request a new quote",
       previousTotalMinor: quote.totalMinor,
@@ -181,6 +206,8 @@ export async function acceptQuoteRevision(
   }
 
   const mode = input.mode ?? "book";
+  const idempotencyKey = input.idempotencyKey ?? `quote-accept:${quote.id}`;
+
   const reserve = await holdInventoryForCampaign(
     prisma,
     quote.campaignId,
@@ -190,7 +217,7 @@ export async function acceptQuoteRevision(
       mediaPlanId: quote.mediaPlanId,
       actorUserId: input.actorUserId,
       tenantOrganizationId: input.tenantOrganizationId ?? quote.tenantOrganizationId,
-      idempotencyKey: input.idempotencyKey ?? `quote-accept:${quote.id}`,
+      idempotencyKey,
       requireVendorApproval: input.requireVendorApproval,
       syncBooking: true,
     }
@@ -200,28 +227,67 @@ export async function acceptQuoteRevision(
     return { error: "No inventory could be reserved — capacity unavailable" as const };
   }
 
-  const updated = await prisma.quoteRevision.update({
-    where: { id: quote.id },
-    data: {
-      status: "ACCEPTED",
-      acceptedBookingId: reserve.bookingId,
-      acceptedAt: new Date(),
-      updatedAt: new Date(),
-    },
-  });
+  if (!input.allowPartial && reserve.skipped.length > 0) {
+    // Do not leave a partial reservation when the quote required all sites
+    if (reserve.held.length > 0 && quote.campaignId) {
+      await releaseInventoryForCampaign(prisma, quote.campaignId, reserve.held, {
+        actorUserId: input.actorUserId,
+        reason: "accept_partial_unavailable",
+      });
+    }
+    return {
+      error: "Partial inventory unavailable — quote not accepted",
+      held: [] as string[],
+      skipped: [...reserve.skipped, ...reserve.held],
+    };
+  }
 
-  const booking = reserve.bookingId
-    ? await prisma.booking.findUnique({
-        where: { id: reserve.bookingId },
-        include: { items: true, transitions: { orderBy: { createdAt: "asc" }, take: 100 } },
-      })
-    : null;
+  if (!reserve.bookingId) {
+    return {
+      error: "Reservation succeeded without booking record — quote not marked accepted",
+      held: reserve.held,
+      skipped: reserve.skipped,
+    };
+  }
 
-  return {
-    quote: updated,
-    booking,
-    held: reserve.held,
-    skipped: reserve.skipped,
-    idempotent: false as const,
-  };
+  try {
+    const updated = await prisma.quoteRevision.update({
+      where: { id: quote.id },
+      data: {
+        status: "ACCEPTED",
+        acceptedBookingId: reserve.bookingId,
+        acceptedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    await prisma.booking.update({
+      where: { id: reserve.bookingId },
+      data: { acceptedQuoteRevisionId: quote.id, updatedAt: new Date() },
+    });
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: reserve.bookingId },
+      include: {
+        items: true,
+        transitions: { orderBy: { createdAt: "asc" }, take: 100 },
+      },
+    });
+
+    return {
+      quote: updated,
+      booking,
+      held: reserve.held,
+      skipped: reserve.skipped,
+      idempotent: false as const,
+    };
+  } catch (err) {
+    return {
+      error: "Reservation created but quote accept persistence failed — retry accept",
+      bookingId: reserve.bookingId,
+      held: reserve.held,
+      skipped: reserve.skipped,
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
 }

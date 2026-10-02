@@ -6,6 +6,7 @@ import {
   MapPin,
   Megaphone,
   Layers,
+  CalendarCheck,
   Send,
   Settings,
   Users,
@@ -28,6 +29,7 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
   if (isVendorRole(user.role)) {
     return [
       { href: "/locations", label: "My Inventory", icon: MapPin },
+      { href: "/bookings", label: "Bookings", icon: CalendarCheck },
       { href: "/requests", label: "Requests", icon: Send },
       { href: "/organization", label: "My Organization", icon: Building2 },
       { href: "/map", label: "Map", icon: Map },
@@ -44,6 +46,7 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
 
   if (canAccessCampaigns(authUser)) {
     links.push({ href: "/campaigns", label: "Campaigns", icon: Megaphone });
+    links.push({ href: "/bookings", label: "Bookings", icon: CalendarCheck });
     links.push({ href: "/requests", label: "Requests", icon: Send });
     links.push({ href: "/media-plans", label: "Media Plans", icon: Layers });
   }

@@ -49,6 +49,7 @@ import { createStorageProvider } from "../../lib/storage/index.js";
 import { prisma } from "../../lib/prisma.js";
 import { success, listMeta } from "../../lib/response.js";
 import { canReadLocations, canWriteCampaigns, canMutateCampaign, isInternalUser } from "../../lib/rbac.js";
+import { assertCanAccessCampaign } from "../../lib/campaign-access.js";
 import { forbidden, notFound, validationError, AppError } from "../../lib/errors.js";
 import {
   AIOperation,
@@ -602,6 +603,7 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
   fastify.get("/campaigns/:id", { preHandler: [fastify.authenticate] }, async (request) => {
     if (!canReadLocations(request.user)) throw forbidden();
     const id = uuidSchema.parse((request.params as { id: string }).id);
+    await assertCanAccessCampaign(request.user, id);
     const campaign = await prisma.campaign.findUnique({
       where: { id },
       include: {
@@ -613,24 +615,16 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
           },
           orderBy: { createdAt: "desc" },
         },
+        bookings: {
+          select: { id: true, status: true, startDate: true, endDate: true },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+        },
       },
     });
     if (!campaign) throw notFound("Campaign not found");
     const ownsCampaign = campaign.createdByUserId === request.user.id;
-    if (isClientUser(request.user) && !ownsCampaign) throw forbidden();
     const briefIsRequest = isSiteRequestBrief(campaign.brief?.structuredRequirementsJson);
-    if (isVendorUser(request.user) && !ownsCampaign) {
-      // Allow inbound site requests that include this vendor's inventory
-      const inbound = await prisma.mediaPlanItem.findFirst({
-        where: {
-          mediaPlan: { campaignId: id, status: "DRAFT" },
-          inventory: {
-            screen: { location: { organizationId: request.user.organizationId ?? "__none__" } },
-          },
-        },
-      });
-      if (!inbound) throw forbidden();
-    }
 
     const primaryPlan =
       campaign.mediaPlans.find((p) => p.status === "APPROVED") ??
@@ -1164,6 +1158,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
         },
       });
       if (!plan) throw notFound("Media plan not found");
+      await assertCanAccessCampaign(request.user, campaignId);
       const campaignMeta = plan.campaign as {
         createdByUserId?: string | null;
         brief?: { structuredRequirementsJson?: unknown };
@@ -1175,6 +1170,9 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
             (item) => item.inventory.screen.location.organizationId === orgId
           ).length
         : 0;
+      if (isClientUser(request.user) && !ownsCampaign) {
+        throw forbidden("Cross-tenant media plan access denied");
+      }
       if (isVendorUser(request.user) && !ownsCampaign && ownedItemCount === 0) {
         throw forbidden();
       }
@@ -1240,6 +1238,10 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
         },
       });
       if (!campaign) throw notFound("Campaign not found");
+      await assertCanAccessCampaign(request.user, campaignId);
+      if (isClientUser(request.user) && campaign.createdByUserId !== request.user.id) {
+        throw forbidden("Cross-tenant export denied");
+      }
       if (isVendorUser(request.user) && campaign.createdByUserId !== request.user.id) {
         throw forbidden();
       }

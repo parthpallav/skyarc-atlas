@@ -675,6 +675,24 @@ export const bookingVendorRespondBodySchema = z.object({
 
 export type BookingVendorRespondBody = z.infer<typeof bookingVendorRespondBodySchema>;
 
+export const bookingAmendBodySchema = z.object({
+  addInventoryIds: z.array(uuidSchema).max(100).optional(),
+  removeInventoryIds: z.array(uuidSchema).max(100).optional(),
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
+});
+
+export type BookingAmendBody = z.infer<typeof bookingAmendBodySchema>;
+
+export const inventoryAvailabilityBlockBodySchema = z.object({
+  startDate: z.string().datetime(),
+  endDate: z.string().datetime(),
+  notes: z.string().max(500).optional(),
+  slotsConsumed: z.number().int().min(1).max(32).optional(),
+});
+
+export type InventoryAvailabilityBlockBody = z.infer<typeof inventoryAvailabilityBlockBodySchema>;
+
 export const issueQuoteBodySchema = z.object({
   campaignId: uuidSchema,
   mediaPlanId: uuidSchema.optional(),
@@ -705,6 +723,8 @@ export const acceptQuoteBodySchema = z.object({
   mode: z.enum(["hold", "book"]).default("book"),
   requireVendorApproval: z.boolean().optional().default(false),
   idempotencyKey: z.string().min(8).max(128).optional(),
+  /** When true, accept with available subset; default requires all inventory */
+  allowPartial: z.boolean().optional().default(false),
 });
 
 export type AcceptQuoteBody = z.infer<typeof acceptQuoteBodySchema>;

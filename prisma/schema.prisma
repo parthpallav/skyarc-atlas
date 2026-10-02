@@ -146,6 +146,7 @@ enum BookingStatus {
   PENDING_VENDOR_APPROVAL
   PARTIALLY_APPROVED
   CONFIRMED
+  EXPIRED
   CANCELLED
 }
 
@@ -156,6 +157,7 @@ enum BookingItemStatus {
   APPROVED
   REJECTED
   CONFIRMED
+  EXPIRED
   CANCELLED
 }
 
@@ -579,6 +581,8 @@ model Inventory {
   /// Concurrent loop slots for digital faces (static stays 1). Digital defaults to 6 in app logic when 1.
   slotCapacity   Int             @default(1)
   staticSpecsJson Json?
+  /// Last time a planner/vendor confirmed commercial availability for this face.
+  availabilityConfirmedAt DateTime?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
@@ -588,6 +592,7 @@ model Inventory {
   recommendations     Recommendation[]
   availabilityWindows AvailabilityWindow[]
   bookingItems        BookingItem[]
+  changeLogs          InventoryChangeLog[]
 }
 
 model AvailabilityWindow {
@@ -674,6 +679,8 @@ model Booking {
   endDate              DateTime
   expiresAt            DateTime?
   idempotencyKey       String?                @unique
+  /// Set when a Phase 3 quote is accepted; optional for internal holds.
+  acceptedQuoteRevisionId String?             @db.Uuid
   createdByUserId      String?                @db.Uuid
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
@@ -681,14 +688,48 @@ model Booking {
   tenantOrganization Organization?       @relation("BookingTenantOrg", fields: [tenantOrganizationId], references: [id], onDelete: SetNull)
   campaign           Campaign            @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   mediaPlan          MediaPlan?          @relation(fields: [mediaPlanId], references: [id], onDelete: SetNull)
+  acceptedQuoteRevision QuoteRevision?   @relation(fields: [acceptedQuoteRevisionId], references: [id], onDelete: SetNull)
   items              BookingItem[]
   transitions        BookingTransition[]
+  changeEvents       BookingChangeOutbox[]
 
   @@index([campaignId, status])
   @@index([tenantOrganizationId, status])
   @@index([expiresAt])
   @@index([startDate, endDate])
   @@index([mediaPlanId])
+  @@index([acceptedQuoteRevisionId])
+}
+
+model InventoryChangeLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  inventoryId String   @db.Uuid
+  actorUserId String?  @db.Uuid
+  changeType  String
+  beforeJson  Json     @default("{}")
+  afterJson   Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryId, createdAt])
+}
+
+/// Durable booking change feed for Pulse / Bridge (not a second reservation ledger).
+model BookingChangeOutbox {
+  id               String    @id @default(uuid()) @db.Uuid
+  bookingId        String    @db.Uuid
+  eventType        String
+  payloadJson      Json      @default("{}")
+  createdAt        DateTime  @default(now())
+  deliveredAt      DateTime?
+  deliveryAttempts Int       @default(0)
+  lastError        String?
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, createdAt])
+  @@index([deliveredAt])
 }
 
 model BookingItem {
@@ -777,6 +818,7 @@ model QuoteRevision {
   updatedAt            DateTime            @updatedAt
 
   campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  acceptedBookings Booking[]
 
   @@index([campaignId, status])
   @@index([tenantOrganizationId, status])

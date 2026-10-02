@@ -26,6 +26,7 @@ import {
   flightCostFromStoredRate,
   ratePeriodForInventory,
 } from "./rates.js";
+import { withSerializableRetry } from "../booking/serializable-retry.js";
 import {
   cancelBookingItemsForInventories,
   syncBookingWithWindows,
@@ -632,125 +633,130 @@ export async function holdInventoryForCampaign(
       : null;
   const flightStart = campaign.startDate;
   const flightEnd = campaign.endDate;
-  const held: string[] = [];
-  const skipped: string[] = [];
-  let bookingId: string | null = null;
   const syncBooking = options.syncBooking !== false;
 
-  await prisma.$transaction(
-    async (tx) => {
-      await tx.availabilityWindow.deleteMany({
-        where: {
-          inventoryId: { in: uniqueIds },
-          status: { in: mode === "book" ? ["HELD", "BOOKED"] : ["HELD"] },
-          OR: [{ campaignId }, { notes: { contains: campaignId } }],
-        },
-      });
-      await tx.availabilityWindow.deleteMany({
-        where: {
-          inventoryId: { in: uniqueIds },
-          status: "HELD",
-          expiresAt: { lt: new Date() },
-        },
-      });
+  const result = await withSerializableRetry(async () => {
+    const held: string[] = [];
+    const skipped: string[] = [];
+    let bookingId: string | null = null;
 
-      // Lock inventory rows so concurrent holds cannot oversell capacity.
-      await tx.$queryRawUnsafe(
-        `SELECT id FROM "Inventory" WHERE id = ANY($1::uuid[]) FOR UPDATE`,
-        uniqueIds
-      );
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.availabilityWindow.deleteMany({
+          where: {
+            inventoryId: { in: uniqueIds },
+            status: { in: mode === "book" ? ["HELD", "BOOKED"] : ["HELD"] },
+            OR: [{ campaignId }, { notes: { contains: campaignId } }],
+          },
+        });
+        await tx.availabilityWindow.deleteMany({
+          where: {
+            inventoryId: { in: uniqueIds },
+            status: "HELD",
+            expiresAt: { lt: new Date() },
+          },
+        });
 
-      const inventories = await tx.inventory.findMany({
-        where: { id: { in: uniqueIds } },
-        select: {
-          id: true,
-          inventoryType: true,
-          slotCapacity: true,
-          availabilityWindows: {
-            select: {
-              startDate: true,
-              endDate: true,
-              status: true,
-              slotsConsumed: true,
-              expiresAt: true,
-              notes: true,
+        // Lock inventory rows so concurrent holds cannot oversell capacity.
+        await tx.$queryRawUnsafe(
+          `SELECT id FROM "Inventory" WHERE id = ANY($1::uuid[]) FOR UPDATE`,
+          uniqueIds
+        );
+
+        const inventories = await tx.inventory.findMany({
+          where: { id: { in: uniqueIds } },
+          select: {
+            id: true,
+            inventoryType: true,
+            slotCapacity: true,
+            availabilityWindows: {
+              select: {
+                startDate: true,
+                endDate: true,
+                status: true,
+                slotsConsumed: true,
+                expiresAt: true,
+                notes: true,
+              },
             },
           },
-        },
-      });
+        });
 
-      const windowIdsByInventory: Record<string, string> = {};
+        const windowIdsByInventory: Record<string, string> = {};
 
-      for (const inv of inventories) {
-        const free = isInventoryFreeForFlight(
-          {
-            status: "AVAILABLE",
+        for (const inv of inventories) {
+          const free = isInventoryFreeForFlight(
+            {
+              status: "AVAILABLE",
+              inventoryType: inv.inventoryType,
+              slotCapacity: inv.slotCapacity,
+              availabilityWindows: inv.availabilityWindows,
+            },
+            flightStart,
+            flightEnd,
+            { slotsNeeded: 1 }
+          );
+          const occ = slotOccupancy({
             inventoryType: inv.inventoryType,
             slotCapacity: inv.slotCapacity,
             availabilityWindows: inv.availabilityWindows,
-          },
-          flightStart,
-          flightEnd,
-          { slotsNeeded: 1 }
-        );
-        const occ = slotOccupancy({
-          inventoryType: inv.inventoryType,
-          slotCapacity: inv.slotCapacity,
-          availabilityWindows: inv.availabilityWindows,
-          startDate: flightStart,
-          endDate: flightEnd,
-        });
-        if (!free || occ.remaining < 1) {
-          skipped.push(inv.id);
-          continue;
-        }
-        held.push(inv.id);
-        const window = await tx.availabilityWindow.create({
-          data: {
-            inventoryId: inv.id,
-            campaignId,
             startDate: flightStart,
             endDate: flightEnd,
-            status: mode === "book" ? "BOOKED" : "HELD",
-            notes: campaignWindowNote(campaignId, mode),
-            slotsConsumed: 1,
+          });
+          if (!free || occ.remaining < 1) {
+            skipped.push(inv.id);
+            continue;
+          }
+          held.push(inv.id);
+          const window = await tx.availabilityWindow.create({
+            data: {
+              inventoryId: inv.id,
+              campaignId,
+              startDate: flightStart,
+              endDate: flightEnd,
+              status: mode === "book" ? "BOOKED" : "HELD",
+              notes: campaignWindowNote(campaignId, mode),
+              slotsConsumed: 1,
+              expiresAt,
+            },
+            select: { id: true },
+          });
+          windowIdsByInventory[inv.id] = window.id;
+        }
+
+        if (mode === "book" && skipped.length > 0) {
+          throw new Error(
+            `Cannot book: inventory at capacity for flight (${skipped.length} site(s))`
+          );
+        }
+
+        if (syncBooking && held.length > 0) {
+          const syncInput: SyncBookingInput = {
+            campaignId,
+            mediaPlanId: options.mediaPlanId ?? null,
+            inventoryIds: held,
+            windowIdsByInventory,
+            mode,
             expiresAt,
-          },
-          select: { id: true },
-        });
-        windowIdsByInventory[inv.id] = window.id;
-      }
+            startDate: flightStart,
+            endDate: flightEnd,
+            actorUserId: options.actorUserId ?? null,
+            tenantOrganizationId: options.tenantOrganizationId ?? null,
+            idempotencyKey: options.idempotencyKey ?? null,
+            requireVendorApproval: options.requireVendorApproval,
+          };
+          const booking = await syncBookingWithWindows(tx, syncInput);
+          bookingId = booking?.id ?? null;
+        }
+      },
+      { isolationLevel: "Serializable" }
+    );
 
-      if (mode === "book" && skipped.length > 0) {
-        throw new Error(
-          `Cannot book: inventory at capacity for flight (${skipped.length} site(s))`
-        );
-      }
-
-      if (syncBooking && held.length > 0) {
-        const syncInput: SyncBookingInput = {
-          campaignId,
-          mediaPlanId: options.mediaPlanId ?? null,
-          inventoryIds: held,
-          windowIdsByInventory,
-          mode,
-          expiresAt,
-          startDate: flightStart,
-          endDate: flightEnd,
-          actorUserId: options.actorUserId ?? null,
-          tenantOrganizationId: options.tenantOrganizationId ?? null,
-          idempotencyKey: options.idempotencyKey ?? null,
-          requireVendorApproval: options.requireVendorApproval,
-        };
-        const booking = await syncBookingWithWindows(tx, syncInput);
-        bookingId = booking?.id ?? null;
-      }
-    },
-    { isolationLevel: "Serializable" }
-  );
+    return { held, skipped, bookingId };
+  }, { label: "holdInventoryForCampaign" });
 
   invalidateLocationCaches();
-  return { held, skipped, bookingId };
+  return result;
 }
 
 /** Drop soft holds (HELD only) for inventory on hidden/archived locations. Keeps BOOKED flights. */
