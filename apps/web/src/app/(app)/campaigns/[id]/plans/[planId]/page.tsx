@@ -773,16 +773,19 @@ export default function MediaPlanDetailPage() {
       {(exportMutation.isError ||
         exportXlsxMutation.isError ||
         swapMutation.isError ||
-        addMutation.isError) && (
+        addMutation.isError ||
+        approveMutation.isError) && (
         <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           {(exportMutation.error ??
             exportXlsxMutation.error ??
             swapMutation.error ??
-            addMutation.error) instanceof Error
+            addMutation.error ??
+            approveMutation.error) instanceof Error
             ? ((exportMutation.error ??
                 exportXlsxMutation.error ??
                 swapMutation.error ??
-                addMutation.error) as Error).message
+                addMutation.error ??
+                approveMutation.error) as Error).message
             : "Something went wrong"}
         </p>
       )}

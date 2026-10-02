@@ -3,7 +3,9 @@ RUN apk add --no-cache openssl libc6-compat
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 FROM base AS builder
+ARG SOURCE_SHA=unknown
 WORKDIR /app
+RUN echo "Atlas API build ${SOURCE_SHA}"
 COPY . .
 RUN pnpm install --frozen-lockfile || pnpm install
 RUN pnpm db:generate && pnpm --filter @skyarc/api... build
