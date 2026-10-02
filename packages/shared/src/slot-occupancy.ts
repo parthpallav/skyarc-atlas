@@ -63,6 +63,10 @@ export function windowConsumesSlots(
   return false;
 }
 
+/**
+ * Peak concurrent slots consumed during [startDate, endDate].
+ * Non-overlapping bookings must not sum — only concurrent load counts.
+ */
 export function slotsConsumedForFlight(
   windows: SlotWindowLike[] | undefined,
   startDate: Date,
@@ -70,7 +74,13 @@ export function slotsConsumedForFlight(
   opts?: { now?: Date; ignoreNotesContaining?: string }
 ): number {
   const now = opts?.now ?? new Date();
-  let used = 0;
+  const flightStart = startDate.getTime();
+  const flightEnd = endDate.getTime();
+  if (!(flightStart < flightEnd)) return 0;
+
+  type SweepEvent = { at: number; delta: number };
+  const events: SweepEvent[] = [];
+
   for (const window of windows ?? []) {
     if (!windowConsumesSlots(window, now)) continue;
     if (
@@ -80,13 +90,28 @@ export function slotsConsumedForFlight(
     ) {
       continue;
     }
-    const wStart = asDate(window.startDate);
-    const wEnd = asDate(window.endDate);
-    if (startDate < wEnd && endDate > wStart) {
-      used += Math.max(1, window.slotsConsumed ?? 1);
-    }
+    const wStart = asDate(window.startDate).getTime();
+    const wEnd = asDate(window.endDate).getTime();
+    // Half-open overlap with the requested flight
+    const overlapStart = Math.max(wStart, flightStart);
+    const overlapEnd = Math.min(wEnd, flightEnd);
+    if (!(overlapStart < overlapEnd)) continue;
+
+    const slots = Math.max(1, window.slotsConsumed ?? 1);
+    events.push({ at: overlapStart, delta: slots });
+    events.push({ at: overlapEnd, delta: -slots });
   }
-  return used;
+
+  // At equal timestamps, release (-delta) before acquire (+delta) so abutting windows do not stack.
+  events.sort((a, b) => (a.at !== b.at ? a.at - b.at : a.delta - b.delta));
+
+  let current = 0;
+  let peak = 0;
+  for (const event of events) {
+    current += event.delta;
+    if (current > peak) peak = current;
+  }
+  return peak;
 }
 
 export function slotOccupancy(input: {

@@ -565,6 +565,21 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
     const body = createLocationBodySchema.parse(request.body);
     const id = body.id ?? randomUUID();
 
+    if (body.id) {
+      const existing = await prisma.location.findUnique({
+        where: { id: body.id },
+        select: {
+          id: true,
+          organizationId: true,
+          createdByUserId: true,
+          archivedAt: true,
+        },
+      });
+      if (existing && !canWriteLocation(request.user, existing)) {
+        throw forbidden("You do not have permission to update this location");
+      }
+    }
+
     const effectiveOrgId =
       request.user.role === "SUPERADMIN" || request.user.role === "ADMIN"
         ? body.organizationId || organizationIdForNewLocation(request.user)

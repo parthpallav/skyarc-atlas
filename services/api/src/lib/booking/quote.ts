@@ -151,6 +151,9 @@ export async function quotePlayBasedBooking(
     input.baseRateAmount ??
     commercial.clientRateAmount ??
     (rateCard ? Number(rateCard.amount) : 0);
+  if (!(baseRateAmount > 0)) {
+    return { error: "PRICING_UNAVAILABLE" };
+  }
   const ratePeriod =
     input.ratePeriod ?? commercial.ratePeriod ?? rateCard?.period ?? "monthly";
 

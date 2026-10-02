@@ -176,4 +176,36 @@ describe("matchesPlanningGeography", () => {
     ).toBe(true);
     expect(matchesPlanningGeography(s, { geographicFocus: ["Rajkot"] })).toBe(false);
   });
+
+  it("does not admit a city via broader state when cities are listed", () => {
+    const ahmedabad = site({
+      inventoryId: "a",
+      locationId: "l1",
+      city: "Ahmedabad",
+      state: "Gujarat",
+    });
+    expect(
+      matchesPlanningGeography(ahmedabad, {
+        cities: ["Rajkot"],
+        states: ["Gujarat"],
+      })
+    ).toBe(false);
+    expect(
+      matchesPlanningGeography(ahmedabad, {
+        geographicFocus: ["Rajkot"],
+        states: ["Gujarat"],
+      })
+    ).toBe(false);
+  });
+
+  it("matches state when brief is states-only", () => {
+    const s = site({
+      inventoryId: "a",
+      locationId: "l1",
+      city: "Ahmedabad",
+      state: "Gujarat",
+    });
+    expect(matchesPlanningGeography(s, { states: ["Gujarat"] })).toBe(true);
+    expect(matchesPlanningGeography(s, { states: ["Maharashtra"] })).toBe(false);
+  });
 });

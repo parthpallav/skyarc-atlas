@@ -78,13 +78,24 @@ export function hasGeoConstraints(goal: CampaignGoal): boolean {
   );
 }
 
-/** Hard gate for optimizer pool when brief defines geography (inclusive OR). */
+/** Hard gate for optimizer pool when brief defines geography. */
 export function matchesPlanningGeography(site: GoalFitSite, goal: CampaignGoal): boolean {
   if (!hasGeoConstraints(goal)) return true;
-  if (listHas(goal.cities, site.city)) return true;
+
+  const cityTokens = [...(goal.cities ?? []), ...(goal.geographicFocus ?? [])];
+  const hasCityOrFocus = cityTokens.length > 0;
+
+  // When cities / focus corridors are specified, do NOT admit via a broader state match
+  // (e.g. Gujarat must not pull in Ahmedabad when the brief lists only Rajkot).
+  if (hasCityOrFocus) {
+    if (listHas(goal.cities, site.city)) return true;
+    if (listHas(goal.geographicFocus, site.city)) return true;
+    if (corridorMatch(site, goal.geographicFocus ?? [])) return true;
+    return false;
+  }
+
+  // States-only brief
   if (listHas(goal.states, site.state)) return true;
-  if (listHas(goal.geographicFocus, site.city)) return true;
-  if (corridorMatch(site, goal.geographicFocus ?? [])) return true;
   return false;
 }
 

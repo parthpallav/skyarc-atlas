@@ -88,4 +88,52 @@ describe("availability windows", () => {
       isInventoryFreeForFlight(inventory, new Date("2026-09-10"), new Date("2026-09-20"))
     ).toBe(true);
   });
+
+  it("does not sum nonconcurrent bookings across a requested flight", () => {
+    const inventory = {
+      status: "AVAILABLE",
+      inventoryType: "DIGITAL_BILLBOARD",
+      slotCapacity: 2,
+      availabilityWindows: [
+        {
+          startDate: new Date("2026-09-01"),
+          endDate: new Date("2026-09-10"),
+          status: "BOOKED",
+          slotsConsumed: 1,
+        },
+        {
+          startDate: new Date("2026-09-20"),
+          endDate: new Date("2026-09-30"),
+          status: "BOOKED",
+          slotsConsumed: 1,
+        },
+      ],
+    };
+    // Peak concurrent is 1 — still room for another continuous brand across the flight
+    expect(
+      isInventoryFreeForFlight(inventory, new Date("2026-09-01"), new Date("2026-09-30"), {
+        slotsNeeded: 1,
+      })
+    ).toBe(true);
+    // Concurrent stack on the first window fills capacity
+    expect(
+      isInventoryFreeForFlight(
+        {
+          ...inventory,
+          availabilityWindows: [
+            ...inventory.availabilityWindows,
+            {
+              startDate: new Date("2026-09-01"),
+              endDate: new Date("2026-09-10"),
+              status: "BOOKED",
+              slotsConsumed: 1,
+            },
+          ],
+        },
+        new Date("2026-09-01"),
+        new Date("2026-09-10"),
+        { slotsNeeded: 1 }
+      )
+    ).toBe(false);
+  });
 });

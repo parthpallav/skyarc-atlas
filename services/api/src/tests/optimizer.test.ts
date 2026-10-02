@@ -4,7 +4,7 @@ import {
   optimizeMediaPlan,
 } from "../lib/media-planning/optimizer.js";
 import { budgetMixPercent } from "@skyarc/shared";
-import { customerRateForInventory } from "../lib/media-planning/run-optimization.js";
+import { customerRateForInventory } from "../lib/media-planning/rates.js";
 
 describe("optimizeMediaPlan", () => {
   it("packs real customer prices and can leave leftover budget", () => {

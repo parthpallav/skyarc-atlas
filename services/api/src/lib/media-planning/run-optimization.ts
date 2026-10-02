@@ -1,11 +1,11 @@
 import type { PrismaClient } from "@prisma/client";
 import {
   inventoryTypeBucket,
-  parseSkyarcLocationCommercial,
   INVENTORY_HOLD_TTL_MINUTES,
   isSkyarcCatalogSite,
   isPremiumPlanningSite,
   DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
+  slotOccupancy,
 } from "@skyarc/shared";
 import { optimizeMediaPlan } from "./optimizer.js";
 import { loadPlatformConfig } from "../commercial-config.js";
@@ -21,6 +21,13 @@ import {
 } from "./goal-fit.js";
 import { buildSiteInsights, resolveFactorScores } from "./insights.js";
 import { invalidateLocationCaches } from "../cache/location-cache.js";
+import {
+  customerRateForInventory,
+  flightCostFromStoredRate,
+  ratePeriodForInventory,
+} from "./rates.js";
+
+export { customerRateForInventory } from "./rates.js";
 
 export interface InventoryRow {
   id: string;
@@ -45,7 +52,7 @@ export interface InventoryRow {
       }>;
     };
   };
-  rateCards: Array<{ amount: unknown }>;
+  rateCards: Array<{ amount: unknown; period?: string | null }>;
 }
 
 export function parseInventorySpecs(raw: unknown): {
@@ -70,30 +77,37 @@ function lightingFromInventory(inv: InventoryRow): string | null {
   return typeof attr?.valueJson === "string" ? attr.valueJson : null;
 }
 
-export function customerRateForInventory(inv: InventoryRow): number {
-  const commercial = parseSkyarcLocationCommercial(inv.screen.location.skyarcCommercialJson);
-  if (commercial.clientRateAmount != null && commercial.clientRateAmount > 0) {
-    return commercial.clientRateAmount;
-  }
-  return Number(inv.rateCards[0]?.amount ?? 0);
-}
-
 export function buildOptimizerCandidates(
   inventories: InventoryRow[],
   goal?: ReturnType<typeof parseCampaignGoal>,
-  options?: { premiumFormats?: readonly string[] }
+  options?: {
+    premiumFormats?: readonly string[];
+    flight?: { startDate: Date | null; endDate: Date | null };
+  }
 ) {
   const premiumFormats = options?.premiumFormats ?? [];
+  const flightStart = options?.flight?.startDate ?? null;
+  const flightEnd = options?.flight?.endDate ?? null;
   return inventories
     .filter((inv) => inv.screen.location.scores[0])
     .map((inv) => {
       const site = inventoryToGoalFitSite(inv);
       const location = inv.screen.location;
+      const listRate = customerRateForInventory(inv);
+      const rateAmount =
+        flightStart && flightEnd
+          ? flightCostFromStoredRate({
+              rateAmount: listRate,
+              ratePeriod: ratePeriodForInventory(inv),
+              startDate: flightStart,
+              endDate: flightEnd,
+            })
+          : listRate;
       return {
         inventoryId: inv.id,
         locationId: inv.screen.locationId,
         score: location.scores[0]!.overallScore,
-        rateAmount: customerRateForInventory(inv),
+        rateAmount,
         road: location.road,
         inventoryType: inv.inventoryType ?? null,
         goalFit: site && goal ? scoreGoalFit(site, goal).score : undefined,
@@ -209,7 +223,10 @@ export async function getMediaPlanPlanningPreview(prisma: PrismaClient, campaign
 
   const brief = campaign.brief?.structuredRequirementsJson;
   const goal = parseCampaignGoal(brief);
-  const flight = { startDate: campaign.startDate, endDate: campaign.endDate };
+  const flight = {
+    startDate: campaign.startDate ?? null,
+    endDate: campaign.endDate ?? null,
+  };
   const inventories = await loadCatalogInventory(prisma);
   const { eligible, catalogInventory, skippedFlightWindow, skippedGeography } =
     partitionPlanningInventory(inventories, flight, goal);
@@ -217,6 +234,7 @@ export async function getMediaPlanPlanningPreview(prisma: PrismaClient, campaign
   const platform = await loadPlatformConfig();
   const candidates = buildOptimizerCandidates(eligible, goal, {
     premiumFormats: platform.premiumFormats,
+    flight,
   });
   const skippedNoScore = eligible.length - candidates.length;
 
@@ -382,6 +400,10 @@ export async function runMediaPlanOptimization(
   const platform = await loadPlatformConfig();
   const candidates = buildOptimizerCandidates(inventories, goal, {
     premiumFormats: platform.premiumFormats,
+    flight: {
+      startDate: campaign?.startDate ?? null,
+      endDate: campaign?.endDate ?? null,
+    },
   });
 
   const diagnostics: MediaPlanPlanningDiagnostics = {
@@ -556,13 +578,13 @@ export async function holdInventoryForCampaign(
   campaignId: string,
   inventoryIds: string[],
   mode: "hold" | "book" = "hold"
-) {
+): Promise<{ held: string[]; skipped: string[] }> {
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
     select: { startDate: true, endDate: true },
   });
   if (!campaign?.startDate || !campaign.endDate || inventoryIds.length === 0) {
-    return;
+    return { held: [], skipped: [] };
   }
 
   const uniqueIds = [...new Set(inventoryIds)];
@@ -570,35 +592,113 @@ export async function holdInventoryForCampaign(
     mode === "hold"
       ? new Date(Date.now() + INVENTORY_HOLD_TTL_MINUTES * 60_000)
       : null;
+  const flightStart = campaign.startDate;
+  const flightEnd = campaign.endDate;
+  const held: string[] = [];
+  const skipped: string[] = [];
 
-  await prisma.$transaction(async (tx) => {
-    await tx.availabilityWindow.deleteMany({
-      where: {
-        inventoryId: { in: uniqueIds },
-        status: { in: mode === "book" ? ["HELD", "BOOKED"] : ["HELD"] },
-        notes: { contains: campaignId },
-      },
-    });
-    await tx.availabilityWindow.deleteMany({
-      where: {
-        inventoryId: { in: uniqueIds },
-        status: "HELD",
-        expiresAt: { lt: new Date() },
-      },
-    });
-    await tx.availabilityWindow.createMany({
-      data: uniqueIds.map((inventoryId) => ({
-        inventoryId,
-        startDate: campaign.startDate!,
-        endDate: campaign.endDate!,
-        status: mode === "book" ? "BOOKED" : "HELD",
-        notes: campaignWindowNote(campaignId, mode),
-        slotsConsumed: 1,
-        expiresAt,
-      })),
-    });
-  });
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.availabilityWindow.deleteMany({
+        where: {
+          inventoryId: { in: uniqueIds },
+          status: { in: mode === "book" ? ["HELD", "BOOKED"] : ["HELD"] },
+          notes: { contains: campaignId },
+        },
+      });
+      await tx.availabilityWindow.deleteMany({
+        where: {
+          inventoryId: { in: uniqueIds },
+          status: "HELD",
+          expiresAt: { lt: new Date() },
+        },
+      });
+
+      // Lock inventory rows so concurrent holds cannot oversell capacity.
+      await tx.$queryRawUnsafe(
+        `SELECT id FROM "Inventory" WHERE id = ANY($1::uuid[]) FOR UPDATE`,
+        uniqueIds
+      );
+
+      const inventories = await tx.inventory.findMany({
+        where: { id: { in: uniqueIds } },
+        select: {
+          id: true,
+          inventoryType: true,
+          slotCapacity: true,
+          availabilityWindows: {
+            select: {
+              startDate: true,
+              endDate: true,
+              status: true,
+              slotsConsumed: true,
+              expiresAt: true,
+              notes: true,
+            },
+          },
+        },
+      });
+
+      const createRows: Array<{
+        inventoryId: string;
+        startDate: Date;
+        endDate: Date;
+        status: "HELD" | "BOOKED";
+        notes: string;
+        slotsConsumed: number;
+        expiresAt: Date | null;
+      }> = [];
+
+      for (const inv of inventories) {
+        const free = isInventoryFreeForFlight(
+          {
+            status: "AVAILABLE",
+            inventoryType: inv.inventoryType,
+            slotCapacity: inv.slotCapacity,
+            availabilityWindows: inv.availabilityWindows,
+          },
+          flightStart,
+          flightEnd,
+          { slotsNeeded: 1 }
+        );
+        const occ = slotOccupancy({
+          inventoryType: inv.inventoryType,
+          slotCapacity: inv.slotCapacity,
+          availabilityWindows: inv.availabilityWindows,
+          startDate: flightStart,
+          endDate: flightEnd,
+        });
+        if (!free || occ.remaining < 1) {
+          skipped.push(inv.id);
+          continue;
+        }
+        held.push(inv.id);
+        createRows.push({
+          inventoryId: inv.id,
+          startDate: flightStart,
+          endDate: flightEnd,
+          status: mode === "book" ? "BOOKED" : "HELD",
+          notes: campaignWindowNote(campaignId, mode),
+          slotsConsumed: 1,
+          expiresAt,
+        });
+      }
+
+      if (mode === "book" && skipped.length > 0) {
+        throw new Error(
+          `Cannot book: inventory at capacity for flight (${skipped.length} site(s))`
+        );
+      }
+
+      if (createRows.length > 0) {
+        await tx.availabilityWindow.createMany({ data: createRows });
+      }
+    },
+    { isolationLevel: "Serializable" }
+  );
+
   invalidateLocationCaches();
+  return { held, skipped };
 }
 
 /** Drop soft holds (HELD only) for inventory on hidden/archived locations. Keeps BOOKED flights. */
@@ -741,6 +841,7 @@ export async function buildMediaPlanFromSelection(
     const platform = await loadPlatformConfig();
     const candidates = buildOptimizerCandidates(selected, goal, {
       premiumFormats: platform.premiumFormats,
+      flight: { startDate: campaign?.startDate ?? null, endDate: campaign?.endDate ?? null },
     });
     const fitted = optimizeMediaPlan(candidates, {
       totalBudget: input.totalBudget,
