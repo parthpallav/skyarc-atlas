@@ -618,6 +618,108 @@ export class ApiClient {
     return this.request<unknown>(`/public/proposals/share/${encodeURIComponent(token)}`);
   }
 
+  seedBookingExecution(bookingId: string) {
+    return this.request<unknown>(`/bookings/${bookingId}/execution/seed`, { method: "POST", body: "{}" });
+  }
+
+  listBookingExecutionTasks(bookingId: string) {
+    return this.request<{ tasks: unknown[] }>(`/bookings/${bookingId}/execution/tasks`);
+  }
+
+  transitionExecutionTask(id: string, data: { status: string; note?: string; blockedReason?: string }) {
+    return this.request<unknown>(`/execution-tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  getCampaignProgress(campaignId: string) {
+    return this.request<unknown>(`/campaigns/${campaignId}/progress`);
+  }
+
+  getCampaignReadiness(campaignId: string) {
+    return this.request<unknown>(`/campaigns/${campaignId}/readiness`);
+  }
+
+  createCampaignCreative(
+    campaignId: string,
+    data: {
+      r2Key: string;
+      contentType: string;
+      byteSize?: number;
+      widthPx?: number;
+      heightPx?: number;
+      durationMs?: number;
+      digital?: boolean;
+      bookingItemIds?: string[];
+      label?: string;
+    }
+  ) {
+    return this.request<unknown>(`/campaigns/${campaignId}/creatives`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  listCampaignCreatives(campaignId: string) {
+    return this.request<{ creatives: unknown[] }>(`/campaigns/${campaignId}/creatives`);
+  }
+
+  submitCreative(id: string) {
+    return this.request<unknown>(`/creatives/${id}/submit`, { method: "POST", body: "{}" });
+  }
+
+  approveCreative(id: string) {
+    return this.request<unknown>(`/creatives/${id}/approve`, { method: "POST", body: "{}" });
+  }
+
+  createCampaignProof(campaignId: string, data: Record<string, unknown>) {
+    return this.request<unknown>(`/campaigns/${campaignId}/proofs`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  listCampaignProofs(campaignId: string) {
+    return this.request<{ proofs: unknown[] }>(`/campaigns/${campaignId}/proofs`);
+  }
+
+  reviewProof(id: string, data: { decision: "APPROVED" | "REJECTED"; rejectReason?: string }) {
+    return this.request<unknown>(`/proofs/${id}/review`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  createBookingInvoice(bookingId: string, data?: { paymentTerms?: string; dueInDays?: number }) {
+    return this.request<{ invoice: unknown }>(`/bookings/${bookingId}/invoices`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  listCampaignInvoices(campaignId: string) {
+    return this.request<{ invoices: unknown[] }>(`/campaigns/${campaignId}/invoices`);
+  }
+
+  issueInvoice(id: string) {
+    return this.request<{ invoice: unknown }>(`/invoices/${id}/issue`, { method: "POST", body: "{}" });
+  }
+
+  recordInvoicePayment(
+    id: string,
+    data: { amountMinor: number; reference: string; idempotencyKey?: string; note?: string }
+  ) {
+    return this.request<unknown>(`/invoices/${id}/payments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  getInvoice(id: string) {
+    return this.request<unknown>(`/invoices/${id}`);
+  }
+
   issueQuote(data: {
     campaignId: string;
     mediaPlanId?: string;

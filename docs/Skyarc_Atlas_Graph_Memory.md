@@ -7,6 +7,7 @@ Living ownership map. Update as capabilities ship.
 **Phase 2 booking ledger:** complete (`0010_phase2_inventory_booking`, `docs/contracts/BOOKING_API.md`)  
 **Phase 3 quotes (core):** Atlas `QuoteRevision` + accept→reserve; ADR-0003; `docs/contracts/QUOTE_API.md`
 **Phase 4 proposals:** Coverage/Concentration scenarios + immutable `ProposalRevision` + share tokens + PDF/XLSX/PPTX; `docs/contracts/PROPOSAL_API.md`
+**Phase 5 ops/billing:** ExecutionTask, CreativeVersion, ProofRecord, Invoice/Payment/CreditNote, vendor costs, Tally file export, ReminderJob; `docs/contracts/OPS_BILLING_API.md`
 
 ## Service ownership
 
@@ -18,6 +19,9 @@ Living ownership map. Update as capabilities ship.
 | RateCard / base rates | Atlas API | Single writable rate source |
 | QuoteRevision issue/accept | Atlas API | ADR-0003 — no second quote ledger |
 | ProposalRevision / share tokens / scenario packing | Atlas API | Pulse orchestrates; no second pricing/reserve ledger |
+| Execution tasks / creatives / proof | Atlas API | Confirm ≠ campaign LIVE |
+| Invoice / payment / credit / vendor cost | Atlas API | From QuoteRevision snapshot; staff-only costs |
+| Tally file export / reminders | Atlas API | Live sync & Bridge delivery config-gated |
 | Campaigns, media plans, optimizer | Atlas API | — |
 | Excel/WhatsApp orchestration | Pulse | Calls Atlas quotes + reserve (**pending**) |
 | WhatsApp provider + webhooks | Bridge | — |
@@ -63,12 +67,27 @@ Living ownership map. Update as capabilities ship.
 - UI: `/campaigns/[id]/scenarios`, `/proposals/[id]`, `/share/proposals/[token]`
 - Unit: `proposals-scenarios.test.ts` (PPTX slides, xlsx, score strip, token hash)
 
+## Phase 5 evidence (ops + billing)
+
+- Seed tasks on booking confirm (static.v1 / digital.v1); campaign lifecycle untouched
+- Creative versioning + manual CMS handoff statuses
+- Proof with capturedAt vs uploadedAt + review; customer sees approved only
+- Invoice draft/issue from accepted quote; manual partial payment + outstanding; credit notes
+- Vendor PO/expense attribution keys; GP null when costs missing
+- Tally FILE_EXPORT vs LIVE_SYNC UNAVAILABLE; reminders never false-delivered
+- Migration: `0012_phase5_ops_billing`
+- UI: `/campaigns/[id]/ops`, `/campaigns/[id]/billing`
+- Unit: `phase5-ops-billing.test.ts`
+- Security: proof `replacesProofId` scoped to campaign/tenant; invoice AR hidden from vendors; manual payments transactional; remaining medium gaps (creative r2Key binding, location asset write authz) tracked as release blockers
+
 ## Still open / blocked
 
 - Live paid checkout (credentials + adapter enablement) — **not production-ready**
-- Pulse Excel/WhatsApp quote packaging
+- Live Tally synchronization (file export only for now)
+- Pulse Excel/WhatsApp quote packaging + WhatsApp conversation workflows (Phase 6)
 - MQTT ingestion (Orbit workstream) — deferred; not treated as measured evidence
 - Campaign intelligence (blocked on Orbit + associations)
+- Security review gate before release
 
 ## Cognitive load rules
 

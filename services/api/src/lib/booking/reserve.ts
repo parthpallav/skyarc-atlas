@@ -291,7 +291,7 @@ export async function applyVendorItemDecisions(
     actorUserId?: string | null;
   }
 ) {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const booking = await tx.booking.findUnique({
       where: { id: input.bookingId },
       include: { items: true, campaign: { select: { id: true, startDate: true, endDate: true } } },
@@ -378,6 +378,14 @@ export async function applyVendorItemDecisions(
       },
     });
   });
+
+  if (result && (result.status === "CONFIRMED" || result.status === "PARTIALLY_APPROVED")) {
+    const { seedExecutionTasksForBooking } = await import("../ops/seed-tasks.js");
+    await seedExecutionTasksForBooking(prisma, result.id, {
+      actorUserId: input.actorUserId,
+    });
+  }
+  return result;
 }
 
 /** Expire soft holds past expiresAt and mark linked booking items CANCELLED. */

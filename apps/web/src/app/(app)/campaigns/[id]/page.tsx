@@ -360,6 +360,12 @@ export default function CampaignDetailPage() {
               >
                 Scenarios
               </Link>
+              <Link
+                href={`/campaigns/${campaign.id}/ops`}
+                className="btn-secondary text-xs px-3 py-1.5"
+              >
+                Ops
+              </Link>
               <button
                 type="button"
                 className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"

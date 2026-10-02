@@ -274,6 +274,14 @@ export async function acceptQuoteRevision(
       },
     });
 
+    // Seed ops tasks when booking is confirmed — does NOT mark campaign live
+    if (booking && (booking.status === "CONFIRMED" || booking.status === "PARTIALLY_APPROVED")) {
+      const { seedExecutionTasksForBooking } = await import("../ops/seed-tasks.js");
+      await seedExecutionTasksForBooking(prisma, booking.id, {
+        actorUserId: input.actorUserId,
+      });
+    }
+
     return {
       quote: updated,
       booking,

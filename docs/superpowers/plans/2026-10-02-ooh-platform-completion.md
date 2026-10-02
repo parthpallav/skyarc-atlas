@@ -67,6 +67,12 @@
 | Coverage vs concentration scenarios | `lib/proposals/scenarios.ts` + POST `/campaigns/:id/scenarios` | Two strategies via Atlas pricing; no dual reserve | Atlas        | optimizer    | **done**        | proposals-scenarios unit + UI compare                       |
 | Proposal revisions + share links    | `ProposalRevision` / `ProposalShareToken` (`0011`)  | Immutable snapshot + view-only share | Atlas        | quotes       | **done**        | issue/accept/share/revoke/expiry paths                      |
 | Customer proposal exports           | PDF/XLSX/PPTX from issued snapshot                  | Consistent prices; no internal commercial data | Atlas        | proposals    | **done**        | PPTX slide inspect + xlsx zip unit                          |
+| Execution tasks + readiness         | `ExecutionTask` + seed on confirm (`0012`)          | Static/digital ops; no auto LIVE   | Atlas        | bookings     | **done**        | phase5 unit + readiness API                                 |
+| Creative versions + CMS handoff     | `CreativeVersion`                                   | Validate + review; manual CMS only | Atlas        | ops          | **done**        | creative validation unit                                    |
+| Proof collection                    | `ProofRecord` + LocationAsset                       | Provenance; customer approved view | Atlas        | assets       | **done**        | proof review paths                                          |
+| Invoices + manual payments          | `Invoice` / `InvoicePayment` from QuoteRevision     | Snapshot issue; partial pay; AR    | Atlas        | quotes       | **done**        | invoice arithmetic unit                                     |
+| Vendor costs + GP report            | PO / bill / CampaignExpense                         | Staff-only; missing costs flagged  | Atlas        | billing      | **done**        | commercial performance basis                                |
+| Tally file export + reminders       | `AccountingExportBatch` / `ReminderJob`             | File ≠ live sync; no false sent    | Atlas        | Bridge opt.  | **done (file)** | tally mapping + reminder serialize unit                     |
 | Payment provider                   | `payment-adapter.ts` + `/payment-intent`            | Live capture when configured       | Atlas        | creds        | **pending**     | UNAVAILABLE without creds (by design)                       |
 | Live paid checkout                 | —                                                   | Hold/payment/refund policy live    | Atlas        | payment      | **pending**     | blocked on credentials                                      |
 | Pulse quote orchestration          | —                                                   | Excel/WhatsApp via Atlas APIs      | Pulse        | Atlas quotes | **pending**     | —                                                           |
@@ -102,7 +108,7 @@
 - **Phase 2:** ✅ Booking ledger, calendar, holds/expiry, vendor partial approval, outbox, bookings UI
 - **Phase 3:** ✅ Core quote→accept→reserve (Atlas); ⏳ live payments; ⏳ Pulse orchestration
 - **Phase 4:** ✅ Scenarios + proposal revisions + share links + PDF/XLSX/PPTX (`docs/contracts/PROPOSAL_API.md`)
-- **Phase 5:** Ops tasks, proof photos, invoices, Tally adapter
+- **Phase 5:** ✅ Ops tasks, creative, proof, invoices, vendor costs, Tally file export, reminders (`docs/contracts/OPS_BILLING_API.md`)
 - **Phase 6:** WhatsApp delivery jobs, inbound state, confirmation before reserve
 - **Phase 7:** Continuity / fill-rate / Orbit-aware risk (after evidence foundation)
 - **Orbit MQTT:** Separate workstream — ingestion contracts, retention, campaign association joins
