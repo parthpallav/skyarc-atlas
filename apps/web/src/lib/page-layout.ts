@@ -1,12 +1,21 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Workspace pages (campaign, plan, map): document scroll on mobile;
+ * Workspace pages (plan, map): document scroll on mobile;
  * fixed-height master–detail panes from md breakpoint up.
  */
 export const workspacePageRoot = cn(
   "-mx-3.5 -mt-3.5 flex flex-col sm:-mx-6 sm:-mt-6 lg:-mx-8 lg:-mt-8",
   "md:h-[calc(100dvh-2rem)] md:min-h-0 md:max-h-[calc(100dvh-2rem)]"
+);
+
+/**
+ * Campaign overview and similar pages: normal document flow (page scrolls).
+ * Do not use the fixed-height master–detail shell — it stretches empty panels.
+ */
+export const workspaceDocPageRoot = cn(
+  "-mx-3.5 -mt-3.5 sm:-mx-6 sm:-mt-6 lg:-mx-8 lg:-mt-8",
+  "pb-8"
 );
 
 export function workspaceBodyGrid(gridColsClass: string) {
@@ -31,7 +40,7 @@ export const workspaceAsidePanel = cn(
 
 /** Sticky title bar inside scrolling workspace pages (mobile). */
 export const workspaceStickyHeader = cn(
-  "shrink-0 border-b border-primary/15 bg-white/90 px-3 py-2 backdrop-blur-md sm:px-4",
+  "shrink-0 border-b border-primary/15 bg-white/95 px-3 py-3 backdrop-blur-md sm:px-4 sm:py-3.5",
   "max-md:sticky max-md:top-0 max-md:z-20"
 );
 

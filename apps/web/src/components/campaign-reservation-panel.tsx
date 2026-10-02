@@ -5,8 +5,6 @@ import { useState } from "react";
 import { createWebApiClient } from "@/lib/api";
 import { formatDateIn } from "@/lib/dates";
 import { formatInr } from "@/lib/format";
-import { cn } from "@/lib/utils";
-import { workspacePanel, workspacePanelScroll } from "@/lib/page-layout";
 
 type BookingRow = {
   id: string;
@@ -131,20 +129,20 @@ export function CampaignReservationPanel({
       : ("none" as const);
 
   return (
-    <section className={cn(workspacePanel, "md:col-span-2")}>
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-primary/10 px-3 py-2.5">
+    <section className="rounded-xl border border-primary/15 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-bold text-slate-900">Reservation</h2>
-          <p className="mt-0.5 text-[12px] text-slate-600">
+          <h2 className="text-base font-bold text-slate-900">Reservation</h2>
+          <p className="mt-0.5 text-sm text-slate-600">
             {bookingsQuery.isLoading ? "Checking…" : summary}
           </p>
-          {feedback ? <p className="mt-1 text-[11px] text-slate-500">{feedback}</p> : null}
+          {feedback ? <p className="mt-1 text-sm text-slate-500">{feedback}</p> : null}
         </div>
 
         {nextAction === "quote" ? (
           <button
             type="button"
-            className="btn-secondary shrink-0 px-3 py-1.5 text-xs"
+            className="btn-secondary shrink-0 px-3 py-2 text-sm"
             disabled={busy}
             onClick={() => {
               setFeedback("");
@@ -158,7 +156,7 @@ export function CampaignReservationPanel({
         {nextAction === "accept" && pendingQuoteId ? (
           <button
             type="button"
-            className="btn-primary shrink-0 px-3 py-1.5 text-xs"
+            className="btn-primary shrink-0 px-3 py-2 text-sm"
             disabled={busy}
             onClick={() => acceptMutation.mutate(pendingQuoteId)}
           >
@@ -168,9 +166,9 @@ export function CampaignReservationPanel({
       </div>
 
       {bookings.length > 0 ? (
-        <details className={workspacePanelScroll}>
-          <summary className="cursor-pointer px-3 py-2 text-[11px] font-semibold text-muted hover:text-slate-800">
-            Details
+        <details className="border-t border-primary/10">
+          <summary className="cursor-pointer px-4 py-2.5 text-sm font-semibold text-muted hover:text-slate-800">
+            Booking status
           </summary>
           <ul className="divide-y divide-violet-50 border-t border-violet-50">
             {bookings.map((booking) => (

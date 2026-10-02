@@ -12,8 +12,8 @@ const src = join(webRoot, "src");
 const checks = [
   {
     file: "app/(app)/campaigns/[id]/page.tsx",
-    mustInclude: ["workspacePageRoot"],
-    mustExclude: ["h-[calc(100dvh-3.5rem"],
+    mustInclude: ["workspaceDocPageRoot"],
+    mustExclude: ["workspacePageRoot", "h-[calc(100dvh-3.5rem"],
   },
   {
     file: "app/(app)/campaigns/[id]/plans/[planId]/page.tsx",
@@ -22,7 +22,7 @@ const checks = [
   },
   {
     file: "lib/page-layout.ts",
-    mustInclude: ["md:h-[calc(100dvh-2rem)]"],
+    mustInclude: ["md:h-[calc(100dvh-2rem)]", "workspaceDocPageRoot"],
     mustExclude: ["h-[calc(100dvh-3.5rem"],
   },
   {

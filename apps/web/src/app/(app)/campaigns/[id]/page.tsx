@@ -22,14 +22,7 @@ import { CampaignReservationPanel } from "@/components/campaign-reservation-pane
 import { PageHeaderSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
-import {
-  workspaceAsidePanel,
-  workspaceBodyGrid,
-  workspacePageRoot,
-  workspacePanel,
-  workspacePanelScroll,
-  workspaceStickyHeader,
-} from "@/lib/page-layout";
+import { workspaceDocPageRoot } from "@/lib/page-layout";
 import { ConfirmModal } from "@/components/confirm-modal";
 
 interface MediaPlanRow {
@@ -135,7 +128,6 @@ export default function CampaignDetailPage() {
   const queryClient = useQueryClient();
   const { canMutateCampaign, isClient, isInternal, isAdmin } = usePermissions();
   const [error, setError] = useState("");
-  const [briefOpen, setBriefOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const {
@@ -331,32 +323,55 @@ export default function CampaignDetailPage() {
   }
 
   return (
-    <div className={workspacePageRoot}>
-      <div className={workspaceStickyHeader}>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/campaigns"
-            className="inline-flex items-center gap-1 text-xs font-semibold text-muted hover:text-slate-900"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            {isSiteRequest ? "Requests" : "Campaigns"}
-          </Link>
-          <span className="text-muted">/</span>
-          <h1 className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900">
-            {campaign.name}
-          </h1>
+    <div className={workspaceDocPageRoot}>
+      <header className="border-b border-primary/15 bg-white px-4 py-4 sm:px-6">
+        <Link
+          href="/campaigns"
+          className="inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-slate-900"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          {isSiteRequest ? "Requests" : "Campaigns"}
+        </Link>
+
+        <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+              {campaign.name}
+            </h1>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-slate-600">
+              <span className="inline-flex items-center gap-1.5 font-medium text-slate-800">
+                <Building2 className="h-4 w-4 text-primary" />
+                {campaign.advertiser?.name ?? "—"}
+              </span>
+              <span className="inline-flex items-center gap-1.5 font-medium tabular-nums text-slate-800">
+                <IndianRupee className="h-4 w-4 text-emerald-600" />
+                {budget ? formatInr(budget) : "—"}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <CalendarDays className="h-4 w-4 text-primary" />
+                {campaign.startDate && campaign.endDate
+                  ? `${formatDateIn(campaign.startDate)} – ${formatDateIn(campaign.endDate)}`
+                  : "Dates not set"}
+                {days ? ` · ${days}d` : ""}
+              </span>
+              <span className="text-muted">
+                {plans.length} plan{plans.length === 1 ? "" : "s"}
+              </span>
+            </div>
+          </div>
+
           {canEdit && !isSiteRequest ? (
-            <div className="flex items-center gap-1.5">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               <Link
                 href={`/campaigns/${campaign.id}/edit`}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-violet-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-violet-50"
               >
                 <Pencil className="h-3.5 w-3.5" />
                 Edit
               </Link>
               <button
                 type="button"
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                 disabled={deleteMutation.isPending}
                 onClick={() => setDeleteOpen(true)}
                 title="Delete campaign"
@@ -366,42 +381,27 @@ export default function CampaignDetailPage() {
             </div>
           ) : null}
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600">
-          <span className="inline-flex items-center gap-1 font-semibold text-slate-900">
-            <Building2 className="h-3 w-3 text-primary" />
-            {campaign.advertiser?.name ?? "—"}
-          </span>
-          <span className="inline-flex items-center gap-1 font-semibold tabular-nums text-slate-900">
-            <IndianRupee className="h-3 w-3 text-emerald-600" />
-            {budget ? formatInr(budget) : "—"}
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <CalendarDays className="h-3 w-3 text-primary" />
-            {campaign.startDate && campaign.endDate
-              ? `${formatDateIn(campaign.startDate)} – ${formatDateIn(campaign.endDate)}`
-              : "Dates not set"}
-            {days ? ` · ${days}d` : ""}
-          </span>
-          <span className="text-muted">{plans.length} plan{plans.length === 1 ? "" : "s"}</span>
-        </div>
+
         {error ? (
-          <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </p>
         ) : null}
         {!isSiteRequest ? (
-          <div className="mt-2">
+          <div className="mt-3">
             {campaign.readyForSiteRequests ? (
-              <p className="text-[11px] text-emerald-800">
+              <p className="text-sm text-emerald-800">
                 <span className="font-semibold">Ready for site requests.</span> Brands can send
                 sites to media owners.
               </p>
             ) : campaign.canMarkReady ? (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1.5">
-                <p className="text-[11px] text-slate-700">Unlock site requests for brands</p>
+              <div className="flex max-w-xl flex-wrap items-center gap-3 rounded-lg border border-primary/15 bg-primary/[0.04] px-3 py-2.5">
+                <p className="min-w-0 flex-1 text-sm text-slate-700">
+                  Unlock site requests for brands
+                </p>
                 <button
                   type="button"
-                  className="btn-primary px-2.5 py-1 text-[11px]"
+                  className="btn-primary shrink-0 px-3 py-1.5 text-xs"
                   disabled={readyMutation.isPending}
                   onClick={() => readyMutation.mutate()}
                 >
@@ -409,23 +409,23 @@ export default function CampaignDetailPage() {
                 </button>
               </div>
             ) : (
-              <p className="text-[11px] text-muted">Waiting for Skyarc to mark ready.</p>
+              <p className="text-sm text-muted">Waiting for Skyarc to mark ready.</p>
             )}
           </div>
         ) : null}
-      </div>
+      </header>
 
-      <div className={workspaceBodyGrid("md:grid-cols-[1fr_270px]")}>
+      <div className="space-y-4 px-4 py-4 sm:px-6">
         {canEdit && !isSiteRequest && !isClient ? (
-          <section className="rounded-xl border border-primary/20 bg-violet-50/50 px-3 py-2.5 md:col-span-2">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <section className="rounded-xl border border-primary/15 bg-violet-50/40 p-4">
+            <div className="flex flex-wrap items-start gap-4">
               <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-bold text-slate-900">Generate plan pack</h2>
-                <p className="mt-0.5 text-[10px] text-muted">
-                  Flight-aware sites, {planningPreview?.minSkyarcBudgetMixPercent ?? 60}%+ Skyarc mix,
-                  then export PDF or Excel.
+                <h2 className="text-base font-bold text-slate-900">Generate plan pack</h2>
+                <p className="mt-1 text-sm text-muted">
+                  Flight-aware sites, {planningPreview?.minSkyarcBudgetMixPercent ?? 60}%+ Skyarc
+                  mix, then export PDF or Excel from the plan.
                 </p>
-                <ul className="mt-2 space-y-0.5 text-[11px] text-slate-700">
+                <ul className="mt-3 space-y-1 text-sm text-slate-700">
                   <li>
                     {budget > 0 ? "✓" : "○"} Budget {budget > 0 ? formatInr(budget) : "not set"}
                   </li>
@@ -445,7 +445,7 @@ export default function CampaignDetailPage() {
                   </li>
                 </ul>
                 {planningPreview?.cityBookableCounts?.length ? (
-                  <p className="mt-1.5 text-[10px] text-slate-600">
+                  <p className="mt-2 text-sm text-amber-800">
                     {planningPreview.cityBookableCounts
                       .map((row) => `${row.city}: ${row.bookable} bookable`)
                       .join(" · ")}
@@ -457,7 +457,7 @@ export default function CampaignDetailPage() {
               </div>
               <button
                 type="button"
-                className="btn-primary shrink-0 gap-1.5 px-3 py-1.5 text-xs"
+                className="btn-primary shrink-0 gap-1.5 px-4 py-2.5 text-sm"
                 disabled={
                   optimizeMutation.isPending ||
                   budget <= 0 ||
@@ -467,68 +467,77 @@ export default function CampaignDetailPage() {
                 }
                 onClick={() => optimizeMutation.mutate()}
               >
-                <Layers className="h-3.5 w-3.5" />
+                <Layers className="h-4 w-4" />
                 {optimizeMutation.isPending ? "Generating…" : "Generate plan"}
               </button>
             </div>
           </section>
         ) : null}
 
-        <section className={workspacePanel}>
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-primary/10 px-3 py-2.5">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <section className="rounded-xl border border-primary/15 bg-white">
+            <div className="border-b border-primary/10 px-4 py-3">
+              <h2 className="text-base font-bold text-slate-900">
                 {isSiteRequest ? "Request plans" : "Media plans"}
               </h2>
-              <p className="text-[10px] text-muted">Open a plan to score, swap, and export.</p>
+              <p className="mt-0.5 text-sm text-muted">Open a plan to score, swap, and export.</p>
             </div>
-          </div>
-          <div className={workspacePanelScroll}>
-            {plans.length === 0 ? (
-              <p className="px-4 py-10 text-center text-sm text-muted">
-                No plan yet. Use Generate plan pack above to build against this budget.
-              </p>
-            ) : showPlanHierarchy && otherPlans.length > 0 ? (
-              <div className="divide-y divide-violet-50">
-                <div>
-                  <p className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
-                    Active plan
-                  </p>
-                  <ul>
-                    {activePlans.map((plan) => renderPlanRow(plan, true, campaign.id))}
-                  </ul>
-                </div>
-                <details
-                  className="group"
-                  open={otherPlansDisclosureOpen || undefined}
-                >
-                  <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-semibold text-slate-700 hover:bg-violet-50/60 [&::-webkit-details-marker]:hidden">
-                    <span className="inline-flex items-center gap-1.5">
-                      <ChevronRight
-                        className="h-4 w-4 text-primary transition-transform group-open:rotate-90"
-                      />
-                      Other proposed plans ({otherPlans.length})
-                    </span>
-                    {isClient ? (
-                      <span className="mt-0.5 block text-[10px] font-normal text-muted">
-                        Expand to compare alternatives
+            <div>
+              {plans.length === 0 ? (
+                <p className="px-4 py-10 text-center text-sm text-muted">
+                  No plan yet. Use Generate plan pack above to build against this budget.
+                </p>
+              ) : showPlanHierarchy && otherPlans.length > 0 ? (
+                <div className="divide-y divide-violet-50">
+                  <div>
+                    <p className="px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wide text-emerald-800">
+                      Active plan
+                    </p>
+                    <ul>
+                      {activePlans.map((plan) => renderPlanRow(plan, true, campaign.id))}
+                    </ul>
+                  </div>
+                  <details
+                    className="group"
+                    open={otherPlansDisclosureOpen || undefined}
+                  >
+                    <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-violet-50/60 [&::-webkit-details-marker]:hidden">
+                      <span className="inline-flex items-center gap-1.5">
+                        <ChevronRight className="h-4 w-4 text-primary transition-transform group-open:rotate-90" />
+                        Other proposed plans ({otherPlans.length})
                       </span>
-                    ) : null}
-                  </summary>
-                  <ul className="border-t border-violet-50/80">
-                    {otherPlans.map((plan) => renderPlanRow(plan, false, campaign.id))}
-                  </ul>
-                </details>
-              </div>
-            ) : (
-              <ul className="divide-y divide-violet-50">
-                {plans.map((plan) =>
-                  renderPlanRow(plan, isActiveMediaPlan(plan), campaign.id)
-                )}
-              </ul>
-            )}
-          </div>
-        </section>
+                      {isClient ? (
+                        <span className="mt-0.5 block text-xs font-normal text-muted">
+                          Expand to compare alternatives
+                        </span>
+                      ) : null}
+                    </summary>
+                    <ul className="border-t border-violet-50/80">
+                      {otherPlans.map((plan) => renderPlanRow(plan, false, campaign.id))}
+                    </ul>
+                  </details>
+                </div>
+              ) : (
+                <ul className="divide-y divide-violet-50">
+                  {plans.map((plan) =>
+                    renderPlanRow(plan, isActiveMediaPlan(plan), campaign.id)
+                  )}
+                </ul>
+              )}
+            </div>
+          </section>
+
+          <aside className="rounded-xl border border-primary/15 bg-primary/[0.03]">
+            <div className="border-b border-primary/10 px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                Campaign brief
+              </p>
+            </div>
+            <div className="p-4">
+              <CampaignSummary brief={brief} variant="embedded" />
+            </div>
+          </aside>
+        </div>
 
         <CampaignReservationPanel
           campaignId={campaign.id}
@@ -536,36 +545,12 @@ export default function CampaignDetailPage() {
           startDate={campaign.startDate}
           endDate={campaign.endDate}
           mediaPlanId={
-            activePlans[0]?.id ?? plans.find((p) => p.status === "APPROVED")?.id ?? plans[0]?.id ?? null
+            activePlans[0]?.id ??
+            plans.find((p) => p.status === "APPROVED")?.id ??
+            plans[0]?.id ??
+            null
           }
         />
-
-        <aside className={workspaceAsidePanel}>
-          <div className="shrink-0 border-b border-primary/10 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">
-              Campaign brief
-            </p>
-          </div>
-          <div className={cn(workspacePanelScroll, "p-3")}>
-            <CampaignSummary brief={brief} variant="embedded" />
-          </div>
-        </aside>
-
-        {/* Mobile brief toggle */}
-        <div className="md:hidden">
-          <button
-            type="button"
-            className="mb-2 w-full rounded-lg border border-primary/20 bg-white px-3 py-2 text-left text-xs font-semibold text-primary"
-            onClick={() => setBriefOpen((v) => !v)}
-          >
-            {briefOpen ? "Hide brief" : "Show brief"}
-          </button>
-          {briefOpen ? (
-            <div className="rounded-xl border border-primary/15 bg-white p-3">
-              <CampaignSummary brief={brief} variant="embedded" />
-            </div>
-          ) : null}
-        </div>
       </div>
 
       <ConfirmModal

@@ -1083,78 +1083,85 @@ export default function MediaPlanDetailPage() {
   return (
     <div className={workspacePageRoot}>
       <div className={workspaceStickyHeader}>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href={isDraftRequest || isVendor ? "/campaigns" : `/campaigns/${campaignId}`}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-muted hover:text-slate-900"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            {isVendor || isDraftRequest ? "Requests" : "Campaign"}
-          </Link>
-          <span className="text-muted">/</span>
-          <h1 className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900">
-            {displayName}
-          </h1>
-          <span
-            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${statusBadge.className}`}
-          >
-            {statusBadge.label}
-          </span>
-          <button
-            type="button"
-            onClick={handleCopyShareLink}
-            className="inline-flex items-center gap-1 rounded-lg border border-primary/20 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700"
-          >
-            {copiedLink ? (
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-            ) : (
-              <Share2 className="h-3.5 w-3.5 text-primary" />
-            )}
-            {copiedLink ? "Copied" : "Share"}
-          </button>
-          {canExportPdf && (!isVendor || pricingReady) ? (
-            <div className="inline-flex flex-col items-end gap-0.5">
-              <span className="text-[9px] font-semibold uppercase tracking-wide text-muted">
-                Export pitch pack
+        <Link
+          href={isDraftRequest || isVendor ? "/campaigns" : `/campaigns/${campaignId}`}
+          className="inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-slate-900"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          {isVendor || isDraftRequest ? "Requests" : "Campaign"}
+        </Link>
+
+        <div className="mt-1.5 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="truncate text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
+                {displayName}
+              </h1>
+              <span
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${statusBadge.className}`}
+              >
+                {statusBadge.label}
               </span>
-              <div className="inline-flex flex-wrap items-center gap-1">
+            </div>
+            {goalLabel ? <p className="mt-1 text-xs text-muted">{goalLabel}</p> : null}
+          </div>
+
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCopyShareLink}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary/20 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-violet-50"
+            >
+              {copiedLink ? (
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+              ) : (
+                <Share2 className="h-3.5 w-3.5 text-primary" />
+              )}
+              {copiedLink ? "Copied" : "Share"}
+            </button>
+            {canExportPdf && (!isVendor || pricingReady) ? (
+              <div
+                className="inline-flex h-9 items-stretch overflow-hidden rounded-lg border border-primary/25 bg-white shadow-sm"
+                role="group"
+                aria-label="Export pitch pack"
+              >
                 <button
                   type="button"
-                  className="btn-primary gap-1 px-2.5 py-1.5 text-xs"
+                  className="inline-flex items-center gap-1.5 bg-primary px-3 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-60"
                   disabled={exportMutation.isPending}
                   onClick={() => exportMutation.mutate()}
                 >
                   <Download className="h-3.5 w-3.5" />
-                  PDF
+                  {exportMutation.isPending ? "…" : "PDF"}
                 </button>
                 <button
                   type="button"
-                  className="btn-secondary gap-1 px-2.5 py-1.5 text-xs"
+                  className="inline-flex items-center gap-1.5 border-l border-primary/20 px-3 text-xs font-semibold text-primary hover:bg-violet-50 disabled:opacity-60"
                   disabled={exportXlsxMutation.isPending}
                   onClick={() => exportXlsxMutation.mutate()}
                 >
                   <Download className="h-3.5 w-3.5" />
-                  Excel
+                  {exportXlsxMutation.isPending ? "…" : "Excel"}
                 </button>
               </div>
-            </div>
-          ) : null}
-          {isAdmin ? (
-            <button
-              type="button"
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-              disabled={deleteMutation.isPending}
-              onClick={() => setDeleteOpen(true)}
-              title="Delete plan"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          ) : null}
+            ) : null}
+            {isAdmin ? (
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"
+                disabled={deleteMutation.isPending}
+                onClick={() => setDeleteOpen(true)}
+                title="Delete plan"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
         </div>
-        {goalLabel ? <p className="mt-0.5 text-[10px] text-muted">{goalLabel}</p> : null}
+
         {packReady ? (
-          <p className="mt-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-            Plan pack ready — download PDF for the pitch or Excel for agency rework.
+          <p className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+            Plan pack ready — use PDF for the pitch or Excel for agency rework.
             {skippedSites
               ? ` ${skippedSites} site(s) were skipped (held, full, or outside brief geography).`
               : ""}

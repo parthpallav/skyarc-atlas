@@ -12,13 +12,15 @@ describe("workspace page layout (mobile scroll)", () => {
   it("shared layout module avoids mobile viewport lock", () => {
     const layout = readSrc("lib/page-layout.ts");
     expect(layout).toContain("md:h-[calc(100dvh-2rem)]");
+    expect(layout).toContain("workspaceDocPageRoot");
     expect(layout).not.toMatch(/h-\[calc\(100dvh-3\.5rem/);
   });
 
-  it("campaign and plan pages use workspacePageRoot not legacy mobile calc", () => {
+  it("campaign overview uses document flow; plan keeps master–detail shell", () => {
     const campaign = readSrc("app/(app)/campaigns/[id]/page.tsx");
     const plan = readSrc("app/(app)/campaigns/[id]/plans/[planId]/page.tsx");
-    expect(campaign).toContain("workspacePageRoot");
+    expect(campaign).toContain("workspaceDocPageRoot");
+    expect(campaign).not.toContain("workspacePageRoot");
     expect(plan).toContain("workspacePageRoot");
     expect(campaign).not.toMatch(/h-\[calc\(100dvh-3\.5rem/);
     expect(plan).not.toMatch(/h-\[calc\(100dvh-3\.5rem/);
