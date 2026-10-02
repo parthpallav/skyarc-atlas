@@ -52,10 +52,15 @@ export function canAccessRoute(user: StoredUser | null, pathname: string): boole
   if (
     pathname.startsWith("/campaigns") ||
     pathname.startsWith("/bookings") ||
+    pathname.startsWith("/proposals") ||
     pathname.startsWith("/media-plans") ||
     pathname.startsWith("/requests")
   ) {
     return canAccessCampaigns(authUser);
+  }
+
+  if (pathname.startsWith("/share/")) {
+    return true;
   }
 
   if (pathname === "/dashboard") {

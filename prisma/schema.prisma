@@ -189,6 +189,20 @@ enum QuoteRevisionStatus {
   CANCELLED
 }
 
+enum ProposalStatus {
+  DRAFT
+  ISSUED
+  ACCEPTED
+  SUPERSEDED
+  EXPIRED
+  CANCELLED
+}
+
+enum ScenarioKind {
+  COVERAGE
+  CONCENTRATION
+}
+
 
 model User {
   id             String    @id @default(uuid()) @db.Uuid
@@ -550,6 +564,7 @@ model Campaign {
   mediaPlans      MediaPlan[]
   bookings        Booking[]
   quotes          QuoteRevision[]
+  proposals       ProposalRevision[]
   analyses        AIAnalysis[]
   recommendations Recommendation[]
   liveProofAssets LocationAsset[]
@@ -819,6 +834,7 @@ model QuoteRevision {
 
   campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   acceptedBookings Booking[]
+  proposals ProposalRevision[]
 
   @@index([campaignId, status])
   @@index([tenantOrganizationId, status])
@@ -839,6 +855,49 @@ model LocationAvailabilityRelease {
 
   @@index([actorUserId])
   @@index([createdAt])
+}
+
+
+model ProposalRevision {
+  id                   String         @id @default(uuid()) @db.Uuid
+  tenantOrganizationId String?        @db.Uuid
+  campaignId           String         @db.Uuid
+  revisionNumber       Int            @default(1)
+  status               ProposalStatus @default(ISSUED)
+  scenarioKind         ScenarioKind
+  quoteRevisionId      String?        @db.Uuid
+  currency             String         @default("INR")
+  totalMinor           Int
+  snapshotJson         Json           @default("{}")
+  assumptionsJson      Json           @default("{}")
+  expiresAt            DateTime
+  acceptedBookingId    String?        @db.Uuid
+  acceptedAt           DateTime?
+  createdByUserId      String?        @db.Uuid
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  campaign Campaign             @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  quote    QuoteRevision?       @relation(fields: [quoteRevisionId], references: [id], onDelete: SetNull)
+  shares   ProposalShareToken[]
+
+  @@index([campaignId, status])
+  @@index([tenantOrganizationId, status])
+  @@index([quoteRevisionId])
+}
+
+model ProposalShareToken {
+  id                  String    @id @default(uuid()) @db.Uuid
+  proposalRevisionId  String    @db.Uuid
+  tokenHash           String    @unique
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  createdByUserId     String?   @db.Uuid
+  createdAt           DateTime  @default(now())
+
+  proposal ProposalRevision @relation(fields: [proposalRevisionId], references: [id], onDelete: Cascade)
+
+  @@index([proposalRevisionId])
 }
 
 /// Ledger for prisma/migrations/*.sql — maintained by apply-sql-migrations.sh (not Prisma Migrate).

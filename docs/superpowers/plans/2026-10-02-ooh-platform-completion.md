@@ -56,7 +56,7 @@
 | Geography gate                     | City/focus before state                             | No unintended city via state       | Atlas        | goal-fit     | **done**        | goal-fit tests                                              |
 | Optimizer duration pricing         | `flightCostFromStoredRate`                          | Pro-rate monthly by days           | Atlas        | rates        | **done**        | rates + optimizer tests                                     |
 | CI unit suite                      | `vitest.config.ts` excludes `*.integration.test.ts` | Unit suite without DATABASE_URL    | Atlas        | —            | **done**        | `pnpm test:unit` (120 tests)                                |
-| Tenant isolation                   | `assertSameTenant` on quotes/bookings               | Deny cross-tenant                  | Atlas        | auth         | **partial**     | unit + integration assert; campaign surface still expanding |
+| Tenant isolation                   | campaign-access + assertSameTenant on plans/quotes/proposals/bookings | Deny cross-tenant                  | Atlas        | auth         | **done (core)** | unit campaign-access + PG cross-tenant assert |
 | Booking records                    | Booking + items + outbox + UI                       | List/detail/amend/events           | Atlas        | Phase 2      | **done**        | transitions unit + PG partial/expiry                        |
 | Inventory calendar                 | availability-calendar API + UI                      | Freshness + day buckets            | Atlas        | Phase 2      | **done**        | API + location panel                                        |
 | Concurrent reservation             | `reservation.integration.test.ts`                   | One winner for last slot           | Atlas        | PG           | **done**        | INTEGRATION_DATABASE_URL                                    |
@@ -64,6 +64,9 @@
 | QuoteRevision + accept→reserve     | quote-revision + quote-http                         | Immutable issue/accept             | Atlas        | rates        | **done (core)** | money unit + accept path + UI                               |
 | Effective-dated / segmented rates  | `rate-segments.ts` + quote.ts                       | Mid-flight rate changes            | Atlas        | RateCard     | **done (core)** | rate-segments unit                                          |
 | Customer-safe breakdowns           | `customer-safe-price.ts`                            | No margin/cost leakage             | Atlas        | —            | **done**        | unit                                                        |
+| Coverage vs concentration scenarios | `lib/proposals/scenarios.ts` + POST `/campaigns/:id/scenarios` | Two strategies via Atlas pricing; no dual reserve | Atlas        | optimizer    | **done**        | proposals-scenarios unit + UI compare                       |
+| Proposal revisions + share links    | `ProposalRevision` / `ProposalShareToken` (`0011`)  | Immutable snapshot + view-only share | Atlas        | quotes       | **done**        | issue/accept/share/revoke/expiry paths                      |
+| Customer proposal exports           | PDF/XLSX/PPTX from issued snapshot                  | Consistent prices; no internal commercial data | Atlas        | proposals    | **done**        | PPTX slide inspect + xlsx zip unit                          |
 | Payment provider                   | `payment-adapter.ts` + `/payment-intent`            | Live capture when configured       | Atlas        | creds        | **pending**     | UNAVAILABLE without creds (by design)                       |
 | Live paid checkout                 | —                                                   | Hold/payment/refund policy live    | Atlas        | payment      | **pending**     | blocked on credentials                                      |
 | Pulse quote orchestration          | —                                                   | Excel/WhatsApp via Atlas APIs      | Pulse        | Atlas quotes | **pending**     | —                                                           |
@@ -88,7 +91,7 @@
 
 - [x] `resolveTenantContext` / `assertSameTenant` / `requireTenantUnlessInternal`
 - [x] Applied on quote get/accept/issue and booking payment-intent
-- [ ] Expand to every campaign mutating route (remaining — mark pending)
+- [x] Campaign access on media-plans, quotes, proposals, exports, booking associations
 
 ---
 
@@ -98,7 +101,7 @@
 
 - **Phase 2:** ✅ Booking ledger, calendar, holds/expiry, vendor partial approval, outbox, bookings UI
 - **Phase 3:** ✅ Core quote→accept→reserve (Atlas); ⏳ live payments; ⏳ Pulse orchestration
-- **Phase 4:** Scenario planning, customer-safe proposals, PPT after booking works
+- **Phase 4:** ✅ Scenarios + proposal revisions + share links + PDF/XLSX/PPTX (`docs/contracts/PROPOSAL_API.md`)
 - **Phase 5:** Ops tasks, proof photos, invoices, Tally adapter
 - **Phase 6:** WhatsApp delivery jobs, inbound state, confirmation before reserve
 - **Phase 7:** Continuity / fill-rate / Orbit-aware risk (after evidence foundation)

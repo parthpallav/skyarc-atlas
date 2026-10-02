@@ -21,6 +21,7 @@ import { platformRoutes } from "./modules/platform/routes.js";
 import { inventoryRoutes } from "./modules/inventory/routes.js";
 import { campaignRoutes, mediaPlanRoutes } from "./modules/media-plans/routes.js";
 import { bookingRoutes } from "./modules/booking/routes.js";
+import { proposalRoutes } from "./modules/proposals/routes.js";
 import { deviceRoutes } from "./modules/devices/routes.js";
 import { orbitEventRoutes } from "./modules/orbit-events/routes.js";
 import { startAnalysisRunner } from "./workers/analysis-runner.js";
@@ -61,6 +62,7 @@ export async function buildApp() {
       await campaignRoutes(api, ai);
       await mediaPlanRoutes(api, env);
       await bookingRoutes(api);
+      await proposalRoutes(api);
       await deviceRoutes(api, env);
     },
     { prefix: API_PREFIX }

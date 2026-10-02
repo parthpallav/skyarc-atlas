@@ -577,6 +577,47 @@ export class ApiClient {
     });
   }
 
+
+  generateScenarios(campaignId: string, data?: { totalBudget?: number }) {
+    return this.request<unknown>(`/campaigns/${campaignId}/scenarios`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  issueProposal(campaignId: string, data: { scenarioKind: "COVERAGE" | "CONCENTRATION"; totalBudget?: number }) {
+    return this.request<{ proposal: unknown; quoteId: string }>(`/campaigns/${campaignId}/proposals`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  listProposals(campaignId: string) {
+    return this.request<{ proposals: unknown[] }>(`/campaigns/${campaignId}/proposals`);
+  }
+
+  getProposal(id: string) {
+    return this.request<unknown>(`/proposals/${id}`);
+  }
+
+  acceptProposal(id: string, data?: { idempotencyKey?: string }) {
+    return this.request<unknown>(`/proposals/${id}/accept`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  createProposalShare(id: string, data?: { ttlHours?: number }) {
+    return this.request<{ token: string; shareId: string; expiresAt: string; note: string }>(
+      `/proposals/${id}/share`,
+      { method: "POST", body: JSON.stringify(data ?? {}) }
+    );
+  }
+
+  getPublicProposalShare(token: string) {
+    return this.request<unknown>(`/public/proposals/share/${encodeURIComponent(token)}`);
+  }
+
   issueQuote(data: {
     campaignId: string;
     mediaPlanId?: string;

@@ -6,6 +6,7 @@ Living ownership map. Update as capabilities ship.
 **Phase 1 correction:** `e88cb7b` / follow-up `51a683e`  
 **Phase 2 booking ledger:** complete (`0010_phase2_inventory_booking`, `docs/contracts/BOOKING_API.md`)  
 **Phase 3 quotes (core):** Atlas `QuoteRevision` + accept→reserve; ADR-0003; `docs/contracts/QUOTE_API.md`
+**Phase 4 proposals:** Coverage/Concentration scenarios + immutable `ProposalRevision` + share tokens + PDF/XLSX/PPTX; `docs/contracts/PROPOSAL_API.md`
 
 ## Service ownership
 
@@ -16,6 +17,7 @@ Living ownership map. Update as capabilities ship.
 | Booking / BookingItem / transitions / outbox | Atlas API | Payment & execution enums separate |
 | RateCard / base rates | Atlas API | Single writable rate source |
 | QuoteRevision issue/accept | Atlas API | ADR-0003 — no second quote ledger |
+| ProposalRevision / share tokens / scenario packing | Atlas API | Pulse orchestrates; no second pricing/reserve ledger |
 | Campaigns, media plans, optimizer | Atlas API | — |
 | Excel/WhatsApp orchestration | Pulse | Calls Atlas quotes + reserve (**pending**) |
 | WhatsApp provider + webhooks | Bridge | — |
@@ -47,15 +49,26 @@ Living ownership map. Update as capabilities ship.
 - Effective-dated segments: `rate-segments.ts`; customer-safe strip: `customer-safe-price.ts`
 - Payment adapter: `payment-adapter.ts` → `UNAVAILABLE` without live provider enablement
 - Campaign UI: prepare quote → inspect revision → accept & reserve → open booking
-- **Pending:** live Razorpay/Stripe intent+webhook verification; Pulse orchestration; full campaign tenant sweep
+- **Pending:** live Razorpay/Stripe intent+webhook verification; Pulse orchestration
+- Tenant sweep: campaign-access on media-plans, quotes, proposals, exports (**done core**)
+
+## Phase 4 evidence (scenarios + customer proposals)
+
+- Scenarios: `POST /campaigns/:id/scenarios` — Coverage vs Concentration; no reservation
+- Issue: `POST /campaigns/:id/proposals` → linked immutable QuoteRevision + frozen snapshot
+- Accept: revalidates via quote accept → single booking
+- Share: hashed tokens; view-only public GET; revoke/expiry; never authorizes book/pay
+- Exports: PDF / XLSX / PPTX from same snapshot; customer-safe filtering
+- Migration: `0011_phase4_proposals`
+- UI: `/campaigns/[id]/scenarios`, `/proposals/[id]`, `/share/proposals/[token]`
+- Unit: `proposals-scenarios.test.ts` (PPTX slides, xlsx, score strip, token hash)
 
 ## Still open / blocked
 
-- Live paid checkout (credentials + adapter enablement)
+- Live paid checkout (credentials + adapter enablement) — **not production-ready**
 - Pulse Excel/WhatsApp quote packaging
-- MQTT ingestion (Orbit workstream)
+- MQTT ingestion (Orbit workstream) — deferred; not treated as measured evidence
 - Campaign intelligence (blocked on Orbit + associations)
-- Remaining campaign-route tenant enforcement
 
 ## Cognitive load rules
 
