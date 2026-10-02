@@ -24,6 +24,8 @@ describe("atlas-client", () => {
     };
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ data: plan }),
       json: async () => ({ data: plan }),
     });
     vi.stubGlobal("fetch", fetchMock);

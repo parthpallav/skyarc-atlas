@@ -9,13 +9,13 @@ import { fetchMediaPlan, fetchMediaPlanPdf } from "./lib/atlas-client.js";
 import { buildMediaPlanWorkbook, buildShareSummaryText } from "./lib/excel-export.js";
 import { sendWhatsAppViaBridge } from "./lib/bridge-client.js";
 import {
+  advanceConversation,
   customerSafeStatusReply,
-  extractBriefHints,
   explainServiceLimitation,
   newConversationState,
-  nextPhaseAfterBrief,
   type ConversationState,
 } from "./lib/conversation.js";
+import { defaultAtlasClient, type AtlasOrchestrationClient } from "./lib/atlas-client.js";
 
 type PulseUser = {
   id: string;
@@ -62,7 +62,11 @@ function bearerToken(request: FastifyRequest): string {
   return header.slice(7);
 }
 
-export async function buildPulseApp(env: PulseEnv) {
+export async function buildPulseApp(
+  env: PulseEnv,
+  opts?: { atlasClient?: AtlasOrchestrationClient }
+) {
+  const atlasClient = opts?.atlasClient ?? defaultAtlasClient;
   const app = Fastify({ logger: true });
   await app.register(helmet);
   await app.register(rateLimit, { max: 200, timeWindow: "1 minute" });
@@ -81,7 +85,11 @@ export async function buildPulseApp(env: PulseEnv) {
     reply.status(status).send({ error: { message: err.message } });
   });
 
-  app.get("/health", async () => ({ status: "ok", service: "pulse" }));
+  app.get("/health", async () => ({
+    status: "ok",
+    service: "pulse",
+    quoteOrchestration: "atlas_authoritative",
+  }));
 
   app.post(
     "/v1/media-plans/:planId/export/xlsx",
@@ -199,7 +207,11 @@ export async function buildPulseApp(env: PulseEnv) {
     }
   );
 
-  /** Inbound WhatsApp turn — requires prior Atlas link; never trusts phone alone. */
+  /**
+   * Inbound WhatsApp turn — requires prior Atlas link + campaign binding.
+   * Executes real Atlas scenario → proposal/quote → confirmation → accept/reserve.
+   * Meta transport may be mocked; Atlas pricing/reservation must not be mocked in integration.
+   */
   app.post("/v1/whatsapp/inbound", { preHandler: [app.authenticate] }, async (request) => {
     const body = z
       .object({
@@ -207,6 +219,8 @@ export async function buildPulseApp(env: PulseEnv) {
         text: z.string().max(4000),
         atlasUserId: z.string().uuid().optional(),
         tenantOrganizationId: z.string().uuid().optional(),
+        /** Required for quote orchestration — Atlas campaign with flight dates */
+        campaignId: z.string().uuid().optional(),
       })
       .parse(request.body);
 
@@ -215,55 +229,106 @@ export async function buildPulseApp(env: PulseEnv) {
         reply: customerSafeStatusReply(newConversationState()),
         phase: "AWAIT_LINK",
         note: "Phone alone does not grant Atlas access — complete linking first",
+        orchestration: "blocked_unlinked",
       };
     }
 
+    const token = bearerToken(request);
+
     let session = await prisma.conversationSession.findFirst({
-      where: { phoneE164: body.phoneE164, expiresAt: { gt: new Date() } },
+      where: {
+        phoneE164: body.phoneE164,
+        atlasUserId: body.atlasUserId,
+        expiresAt: { gt: new Date() },
+      },
       orderBy: { createdAt: "desc" },
     });
 
     let state: ConversationState = session
       ? (session.stateJson as ConversationState)
-      : newConversationState();
+      : { ...newConversationState(), phase: "COLLECT_BRIEF" };
+
+    const campaignId = body.campaignId ?? session?.campaignId ?? state.campaignId;
+    if (!campaignId) {
+      return {
+        reply:
+          "Link an Atlas campaignId to this session before planning (Pulse does not create a second quote ledger). Include campaignId on the next message.",
+        phase: state.phase,
+        orchestration: "blocked_missing_campaign",
+      };
+    }
 
     if (!session) {
-      state = { ...newConversationState(), phase: "COLLECT_BRIEF", atlasUserId: body.atlasUserId } as ConversationState & {
-        atlasUserId?: string;
-      };
       session = await prisma.conversationSession.create({
         data: {
           phoneE164: body.phoneE164,
           atlasUserId: body.atlasUserId,
           tenantOrganizationId: body.tenantOrganizationId,
+          campaignId,
           phase: state.phase,
           stateJson: state as object,
           expiresAt: new Date(state.expiresAt),
         },
       });
+    } else if (!session.campaignId && campaignId) {
+      await prisma.conversationSession.update({
+        where: { id: session.id },
+        data: { campaignId },
+      });
     }
 
-    const upper = body.text.trim().toUpperCase();
-    let reply: string;
-    if (upper === "STATUS") {
-      reply = customerSafeStatusReply(state);
-    } else if (upper === "HELP" || upper === "ESCALATE") {
-      state = { ...state, phase: "ESCALATED" };
-      reply = customerSafeStatusReply(state);
-    } else if (upper.startsWith("CONFIRM ")) {
-      state = { ...state, phase: "AWAIT_CONFIRM", confirmationToken: body.text.trim().slice(8) };
-      reply =
-        "Confirmation received for processing via Atlas execute API. Availability and quote expiry will be revalidated. Duplicate CONFIRM will not reserve twice.";
-    } else if (state.phase === "COLLECT_BRIEF" || state.phase === "CLARIFY") {
-      const hints = extractBriefHints(body.text);
-      state = nextPhaseAfterBrief(state, hints);
-      reply =
-        state.phase === "CLARIFY"
-          ? customerSafeStatusReply(state)
-          : "Thanks — I'll compare Coverage vs Concentration using Atlas planning APIs (not a second quote ledger). " +
-            explainServiceLimitation("cms");
+    const priorActions = (session.actionResultsJson ?? {}) as Record<string, unknown>;
+
+    const result = await advanceConversation({
+      env,
+      accessToken: token,
+      state,
+      text: body.text,
+      campaignId,
+      atlasUserId: body.atlasUserId,
+      tenantOrganizationId: body.tenantOrganizationId,
+      priorActions,
+      client: atlasClient,
+    });
+
+    if (result.actionKey && result.actionResult !== undefined) {
+      const nextResults = { ...priorActions, [result.actionKey]: result.actionResult };
+      await prisma.conversationAction.upsert({
+        where: {
+          sessionId_actionKey: { sessionId: session.id, actionKey: result.actionKey },
+        },
+        create: {
+          sessionId: session.id,
+          actionKey: result.actionKey,
+          status: "succeeded",
+          responseJson: result.actionResult as object,
+        },
+        update: {
+          status: "succeeded",
+          responseJson: result.actionResult as object,
+          updatedAt: new Date(),
+        },
+      });
+      await prisma.conversationSession.update({
+        where: { id: session.id },
+        data: {
+          phase: result.state.phase,
+          stateJson: result.state as object,
+          actionResultsJson: nextResults as object,
+          campaignId,
+          updatedAt: new Date(),
+        },
+      });
     } else {
-      reply = customerSafeStatusReply(state) + " " + explainServiceLimitation("orbit");
+      await prisma.conversationSession.update({
+        where: { id: session.id },
+        data: {
+          phase: result.state.phase,
+          stateJson: result.state as object,
+          campaignId,
+          updatedAt: new Date(),
+        },
+      });
     }
 
     await prisma.conversationTurn.create({
@@ -274,20 +339,32 @@ export async function buildPulseApp(env: PulseEnv) {
         actionJson: {},
       },
     });
-    await prisma.conversationSession.update({
-      where: { id: session.id },
-      data: { phase: state.phase, stateJson: state as object, updatedAt: new Date() },
-    });
     await prisma.conversationTurn.create({
       data: {
         sessionId: session.id,
         role: "assistant",
-        text: reply,
-        actionJson: { phase: state.phase },
+        text: result.reply,
+        actionJson: {
+          phase: result.state.phase,
+          atlasRefs: (result.atlasRefs ?? {}) as object,
+          actionKey: result.actionKey ?? null,
+        },
       },
     });
 
-    return { sessionId: session.id, phase: state.phase, reply };
+    return {
+      sessionId: session.id,
+      phase: result.state.phase,
+      reply: result.reply,
+      atlasRefs: result.atlasRefs ?? {
+        campaignId,
+        quoteId: result.state.quoteId ?? null,
+        bookingId: result.state.bookingId ?? null,
+        proposalId: result.state.proposalId ?? null,
+      },
+      orchestration: "atlas_authoritative",
+      note: explainServiceLimitation("unconfigured"),
+    };
   });
 
   /** Operational reminder fan-out — scoped text only; Bridge tracks receipts. */

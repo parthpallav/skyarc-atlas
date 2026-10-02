@@ -46,15 +46,20 @@ model ConversationSession {
   phoneE164            String
   atlasUserId          String?  @db.Uuid
   tenantOrganizationId String?  @db.Uuid
+  campaignId           String?  @db.Uuid
   phase                String   @default("AWAIT_LINK")
   stateJson            Json     @default("{}")
+  /// Successful Atlas action results keyed by actionKey — recovery if Pulse loses HTTP response
+  actionResultsJson    Json     @default("{}")
   expiresAt            DateTime
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  turns ConversationTurn[]
+  turns   ConversationTurn[]
+  actions ConversationAction[]
 
   @@index([phoneE164, expiresAt])
+  @@index([campaignId])
   @@schema("pulse")
 }
 
@@ -69,6 +74,25 @@ model ConversationTurn {
   session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, createdAt])
+  @@schema("pulse")
+}
+
+/// Durable record of Atlas calls so retries do not double-reserve.
+model ConversationAction {
+  id           String   @id @default(uuid()) @db.Uuid
+  sessionId    String   @db.Uuid
+  actionKey    String
+  status       String   @default("pending") // pending | succeeded | failed
+  requestJson  Json     @default("{}")
+  responseJson Json     @default("{}")
+  error        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, actionKey])
+  @@index([sessionId, status])
   @@schema("pulse")
 }
 

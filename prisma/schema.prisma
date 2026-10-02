@@ -207,7 +207,8 @@ enum ScenarioKind {
 model User {
   id             String    @id @default(uuid()) @db.Uuid
   email          String    @unique
-  passwordHash   String
+  /// Nullable for Google-only accounts (password login requires a hash).
+  passwordHash   String?
   name           String
   role           UserRole
   organizationId String?   @db.Uuid
@@ -215,10 +216,55 @@ model User {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  organization  Organization? @relation(fields: [organizationId], references: [id])
-  refreshTokens RefreshToken[]
-  locations     Location[]
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  refreshTokens  RefreshToken[]
+  locations      Location[]
+  identities     ExternalIdentity[]
+  invitationsSent OrganizationInvitation[] @relation("InvitationInviter")
 
+  @@index([organizationId])
+}
+
+model ExternalIdentity {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  provider       String   // google
+  /// Stable OpenID subject — never email alone
+  subject        String
+  email          String?
+  emailVerified  Boolean  @default(false)
+  rawClaimsJson  Json     @default("{}")
+  linkedAt       DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, subject])
+  @@index([userId])
+  @@index([email])
+}
+
+/// Tenant invitations — join existing org or staff-created CLIENT org. Not auto SaaS per advertiser.
+model OrganizationInvitation {
+  id                   String    @id @default(uuid()) @db.Uuid
+  email                String
+  role                 UserRole  @default(CLIENT_VIEWER)
+  organizationId       String?   @db.Uuid
+  /// When true and organizationId null, accepting creates a CLIENT org named newOrganizationName
+  createOrganization   Boolean   @default(false)
+  newOrganizationName  String?
+  tokenHash            String    @unique
+  invitedByUserId      String    @db.Uuid
+  expiresAt            DateTime
+  acceptedAt           DateTime?
+  revokedAt            DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  invitedBy User @relation("InvitationInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([email, expiresAt])
   @@index([organizationId])
 }
 

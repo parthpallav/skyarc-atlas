@@ -67,6 +67,9 @@ export async function userRoutes(fastify: FastifyInstance, env: Env) {
     }
 
     if (body.newPassword) {
+      if (!user.passwordHash) {
+        throw validationError("This account uses Google sign-in — set a password via reset after linking, or continue with Google");
+      }
       const valid = await argon2.verify(user.passwordHash, body.currentPassword!);
       if (!valid) {
         throw validationError("Current password is incorrect");

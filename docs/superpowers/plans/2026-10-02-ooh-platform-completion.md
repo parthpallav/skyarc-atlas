@@ -34,7 +34,7 @@
 | Campaigns / media plans / optimizer        | Atlas       | Planning + proposal records                        |
 | Rate cards / base commercial rates         | Atlas       | Effective-dated; foundation for quotes             |
 | QuoteRevision persistence + accept→reserve | Atlas       | ADR-0003 — retain; no Pulse duplicate              |
-| Excel / WhatsApp quote orchestration       | Pulse       | Calls Atlas quote + reserve APIs (**pending**)     |
+| Excel / WhatsApp quote orchestration       | Pulse       | Calls Atlas quote + reserve APIs (**done orchestration**; PG e2e + Meta pending) |
 | Provider WhatsApp / webhooks               | Bridge      | Signature verify in prod                           |
 | Device telemetry / MQTT                    | Orbit Cloud | Evidence only — separate workstream                |
 | Campaign intelligence snapshots            | Pulse       | **Blocked** until Orbit telemetry + campaign joins |
@@ -76,17 +76,17 @@
 | Creative/proof upload authorization | `authorized-assets.ts` — no client r2Key trust | Server-owned UPLOADED assets only  | Atlas        | assets       | **done**        | authorized-assets unit                                      |
 | WhatsApp Bridge delivery            | durable jobs, receipts, signature, dry-run       | Accept ≠ delivered; retries        | Bridge       | Meta         | **done (adapters)** | whatsapp-policy unit; live pending                          |
 | WhatsApp account linking            | Atlas WhatsAppAccountLink + challenges          | Phone alone ≠ access               | Atlas        | Pulse        | **done**        | whatsapp-link unit                                          |
-| WhatsApp conversation + confirm     | Pulse conversation + Atlas confirmations        | Confirm before mutate              | Pulse+Atlas  | Bridge       | **done (slice)** | conversation unit; live Meta pending                        |
+| WhatsApp conversation + confirm     | Pulse→Atlas scenarios/proposal/quote/confirm/accept | Confirm before mutate + reserve | Pulse+Atlas  | Bridge       | **done (Atlas-backed orchestration)** | Pulse conversation unit (mocked Atlas); live Meta pending; PG e2e pending |
 | Continuity + fill-rate recommendations | `CommercialRecommendation` + scan/approve/apply (`0014`) | Disruptions→replacements; vacancy packages; no reserve | Atlas+Pulse | bookings/rates | **done (7A)** | phase7a-recommendations unit; staff `/recommendations` |
-| Google sign-up / onboarding        | Email+password auth only (`/auth/login`); no Google OAuth client/routes | Google identity onboarding         | Atlas        | OAuth creds  | **deferred**   | No `GOOGLE_CLIENT_*` / `/auth/google` in repo             |
+| Google sign-up / onboarding        | OIDC routes + `ExternalIdentity` + invitations (`0016`) | Google identity onboarding         | Atlas        | OAuth creds  | **done (config-gated)** | google-oidc unit; **live Google verification pending** |
 | Pulse media-plan XLSX export       | `POST /v1/media-plans/:id/export/xlsx`              | Workbook from Atlas plan           | Pulse        | Atlas plan   | **done (slice)** | excel-export unit                                         |
 | Pulse WhatsApp share / ops notify  | share job + Bridge dry-run; ops-notification kinds  | Orchestrate delivery receipts      | Pulse+Bridge | Meta         | **done (slice)** | conversation + bridge policy; live Meta pending           |
-| Pulse quote→reserve orchestration  | Conversation stubs; no Atlas quote/accept loop yet  | Excel/WhatsApp via Atlas quote APIs | Pulse       | Atlas quotes | **pending**     | Does not issue QuoteRevision or reserve from Pulse yet    |
+| Pulse quote→reserve orchestration  | `advanceConversation` → Atlas scenarios/proposal/confirm/accept | Excel/WhatsApp via Atlas quote APIs | Pulse       | Atlas quotes | **done (orchestration)** | conversation unit; **Atlas/PG integration pending**; Meta pending |
 | Payment provider                   | `payment-adapter.ts` + `/payment-intent`            | Live capture when configured       | Atlas        | creds        | **pending**     | UNAVAILABLE without creds (by design)                       |
 | Live paid checkout                 | —                                                   | Hold/payment/refund policy live    | Atlas        | payment      | **pending**     | blocked on credentials                                      |
 | WhatsApp production                | Bridge dry-run                                      | Signed webhooks + delivery jobs    | Bridge+Pulse | Meta creds   | **pending**     | live Meta + template catalog + signed webhooks              |
 | Live Tally synchronization         | File export only                                    | Live sync when contract verified   | Atlas        | Tally        | **pending**     | not complete from dry-run/file export                       |
-| MQTT telemetry (Phase 7B)          | Lunar Spec v1.0 topics/envelope + inbox + mappings (`0015`); see `ORBIT_MQTT_LUNAR_COMPATIBILITY.md` | Auth MQTT + validated telemetry + associations | Orbit+Atlas | Phase 7B | **done (simulator / Lunar-compatible)** | Orbit 22 unit; live broker/hardware + Lunar §10 decisions pending |
+| MQTT telemetry (Phase 7B)          | Lunar Spec v1.0 topics/envelope + inbox + mappings (`0015`); see `ORBIT_MQTT_LUNAR_COMPATIBILITY.md` | Auth MQTT + validated telemetry + associations | Orbit+Atlas | Phase 7B | **done (simulator / handler)** | Orbit unit (handler/envelope only — **not broker-verified**); live broker/hardware + Lunar §10 pending |
 | Campaign intelligence (forecasts)  | —                                                   | Audience/impressions/reach         | Pulse        | validated sensors + CMS | **blocked** | deferred until evidence sources validated |
 
 
@@ -115,14 +115,17 @@
 ## Later phases
 
 - **Phase 2:** ✅ Booking ledger, calendar, holds/expiry, vendor partial approval, outbox, bookings UI
-- **Phase 3:** ✅ Core quote→accept→reserve (Atlas); ⏳ live payments; ⏳ Pulse orchestration
+- **Phase 3:** ✅ Core quote→accept→reserve (Atlas); ✅ Pulse orchestration calling Atlas; ⏳ live payments; ⏳ PG e2e for Pulse path; ⏳ Meta
 - **Phase 4:** ✅ Scenarios + proposal revisions + share links + PDF/XLSX/PPTX (`docs/contracts/PROPOSAL_API.md`)
 - **Phase 5:** ✅ Ops tasks, creative, proof, invoices, vendor costs, Tally file export, reminders (`docs/contracts/OPS_BILLING_API.md`)
-- **Phase 6:** ✅ Adapters + linking + confirm + conversation slice (`docs/contracts/WHATSAPP_API.md`); ⏳ live Meta delivery
+- **Phase 6:** ✅ Adapters + linking + confirm + **Atlas-backed conversation orchestration** (`docs/contracts/WHATSAPP_API.md`); ⏳ live Meta delivery
 - **Phase 7A:** ✅ Continuity + fill-rate recommendations (`docs/contracts/RECOMMENDATIONS_API.md`); no Orbit inference
-- **Phase 7B:** ✅ Lunar Spec v1.0–compatible MQTT/HTTPS ingest + durable storage + mappings + campaign evidence (`docs/contracts/ORBIT_TELEMETRY_API.md`, `ORBIT_MQTT_LUNAR_COMPATIBILITY.md`); ⏳ live broker/hardware; ⏳ Lunar §10 open decisions
+- **Auth Google:** ✅ OIDC implementation config-gated (`docs/contracts/AUTH_GOOGLE_OIDC.md`); ⏳ live Google verification
+- **Product integration evidence:** `docs/contracts/PRODUCT_INTEGRATIONS_EVIDENCE.md`
+- **Phase 7B:** ✅ Lunar Spec v1.0–compatible MQTT/HTTPS ingest + durable storage + mappings + campaign evidence; Orbit unit tests are **handler/simulator only** (not broker-verified); ⏳ live broker/hardware; ⏳ Lunar §10
 - **Orbit live verification:** Blocked on broker credentials + physical devices — does not block simulator / contract work
 - **Do not** contact Lunar or change the partner-facing PDF automatically from this workstream
+- **Do not** merge/deploy/contact Google/Meta/payment providers automatically
 
 ---
 

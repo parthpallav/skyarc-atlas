@@ -33,9 +33,10 @@ import {
   flightCostFromStoredRate,
   ratePeriodForInventory,
 } from "../../lib/media-planning/rates.js";
+import type { AuthUser } from "../../lib/rbac.js";
 import { RULE_VERSION } from "../../lib/recommendations/continuity-detect.js";
 
-function requireStaff(user: { role: string }) {
+function requireStaff(user: AuthUser) {
   if (!isInternalUser(user) || isVendorUser(user)) throw forbidden();
 }
 
@@ -300,7 +301,7 @@ export async function recommendationRoutes(fastify: FastifyInstance) {
     if (!row) throw notFound("Recommendation not found");
     assertSameTenant(request.user, row.tenantOrganizationId);
     const result = await approveRecommendation(prisma, id, request.user.id);
-    if ("error" in result) throw validationError(result.error);
+    if ("error" in result) throw validationError(result.error ?? "Approve failed");
     return success({
       recommendation: serializeRecommendationStaff(result.recommendation),
       note: "Approved — apply still requires explicit action and revalidation",
@@ -316,7 +317,7 @@ export async function recommendationRoutes(fastify: FastifyInstance) {
     if (!row) throw notFound("Recommendation not found");
     assertSameTenant(request.user, row.tenantOrganizationId);
     const result = await dismissRecommendation(prisma, id, request.user.id, body.reason);
-    if ("error" in result) throw validationError(result.error);
+    if ("error" in result) throw validationError(result.error ?? "Dismiss failed");
     return success({ recommendation: serializeRecommendationStaff(result.recommendation) });
   });
 

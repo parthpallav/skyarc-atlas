@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import { success } from "../../lib/response.js";
 import { forbidden, validationError } from "../../lib/errors.js";
-import { requireTenantUnlessInternal } from "../../lib/tenant-context.js";
+import { assertSameTenant, requireTenantUnlessInternal } from "../../lib/tenant-context.js";
 import {
   completeWhatsAppLink,
   createWhatsAppLinkChallenge,
@@ -133,10 +133,22 @@ export async function whatsappRoutes(fastify: FastifyInstance) {
       throw validationError(consumed.error ?? "Confirmation failed");
     }
 
+    if (consumed.confirmation.userId !== request.user.id) {
+      throw forbidden("Confirmation belongs to a different user");
+    }
+    const confirmTenant = consumed.confirmation.tenantOrganizationId;
+    if (confirmTenant) {
+      assertSameTenant(request.user, confirmTenant);
+    }
+
     const payload = consumed.payload;
     if (body.action === "ACCEPT_QUOTE" || body.action === "RESERVE_INVENTORY") {
       const quoteId = String(payload.quoteId ?? "");
       if (!quoteId) throw validationError("Confirmation payload missing quoteId");
+      // Bind to exact quote revision from confirmation payload — not client-supplied
+      if (payload.atlasUserId && String(payload.atlasUserId) !== request.user.id) {
+        throw forbidden("Confirmation user mismatch");
+      }
       const tenantOrgId = requireTenantUnlessInternal(request.user);
       const accept = await acceptQuoteRevision(prisma, {
         quoteId,
@@ -149,7 +161,9 @@ export async function whatsappRoutes(fastify: FastifyInstance) {
       return success({
         executed: body.action,
         bookingId: "booking" in accept ? accept.booking?.id : null,
+        quoteId,
         revalidated: true,
+        idempotent: "idempotent" in accept ? Boolean(accept.idempotent) : false,
       });
     }
 

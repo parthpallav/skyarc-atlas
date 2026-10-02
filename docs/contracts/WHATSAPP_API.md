@@ -5,9 +5,9 @@
 | Concern | Owner |
 |---------|--------|
 | Campaigns, bookings, quotes, proposals, ops, billing, account links, confirmations | **Atlas** |
-| Conversation state, brief orchestration, ops notification fan-out | **Pulse** |
+| Conversation state, brief orchestration, quote→reserve **orchestration calling Atlas** | **Pulse** |
 | Provider transport, webhooks, delivery receipts, retries | **Bridge** |
-| Telemetry | **Orbit** (deferred) |
+| Telemetry | **Orbit** |
 
 No second quote or reservation ledger in Pulse/Bridge.
 
@@ -20,25 +20,35 @@ No second quote or reservation ledger in Pulse/Bridge.
 
 ## Confirmation before mutation
 
-- `POST /v1/whatsapp/confirmations` — expiring token tied to action + payload fingerprint
-- `POST /v1/whatsapp/confirmations/execute` — revalidates via Atlas accept/reserve; duplicates do not re-run
+- `POST /v1/whatsapp/confirmations` — expiring token tied to user + tenant + action + payload fingerprint (exact `quoteId`)
+- `POST /v1/whatsapp/confirmations/execute` — revalidates via Atlas accept/reserve; duplicates do not re-run; confirmation user/tenant must match caller
+
+## Pulse quote→reserve orchestration (authoritative)
+
+**Status: Implemented (Atlas-backed). Integration vs live Postgres: pending. Meta live: pending.**
+
+Flow: Linked authorized user → structured brief → `POST /campaigns/:id/scenarios` → `PROPOSAL COVERAGE|CONCENTRATION` → Atlas proposal + `QuoteRevision` → WhatsApp confirmation → `CONFIRM <token>` → Atlas accept/reserve → booking refs persisted on Pulse session.
+
+Requirements covered:
+- Authenticated Atlas client (Bearer forwarded)
+- Conversation state + `ConversationAction` recovery keys
+- Confirmation bound to user, tenant, action, quote revision
+- Revalidate expiry/availability on Atlas accept
+- Idempotent duplicates / lost-response recovery via stored action results + Atlas idempotency
+- Customer-safe totals only; no AI-invented API parameters
+
+Inbound: `POST /v1/whatsapp/inbound` requires `atlasUserId`, `tenantOrganizationId`, and `campaignId` (Atlas campaign with flight).
+
+Earlier “conversation slice complete” did **not** mean quote/accept/reserve worked — that label is corrected.
 
 ## Bridge delivery
 
 - Durable `OutboundMessage` with `queued|submitted|delivered|read|failed|dry_run|partial`
 - Idempotency keys; webhook `providerEventId` dedup
 - Production **requires** signature verification (`WHATSAPP_APP_SECRET`)
-- Provider accept ≠ delivered; partial text/document tracked separately
-- Dry-run when Meta credentials missing
-- 24h customer-care window + template/consent rules (`whatsapp-policy.ts`)
-
-## Pulse conversation slice
-
-Linked user → brief → clarify → scenario/proposal pointers → CONFIRM → Atlas execute → STATUS.
-
-Ops notifications: vendor/hold/proof/invoice reminders via Bridge with receipt tracking; scoped links; no internal costs in message text.
+- Provider accept ≠ delivered; dry-run when Meta credentials missing
 
 ## Pending without Meta credentials
 
-- Live delivery and live webhook verification (adapters + mocked tests complete)
+- Live delivery and live webhook verification
 - Full template catalog registration with Meta

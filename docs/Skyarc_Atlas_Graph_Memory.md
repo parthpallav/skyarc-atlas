@@ -8,9 +8,11 @@ Living ownership map. Update as capabilities ship.
 **Phase 3 quotes (core):** Atlas `QuoteRevision` + accept→reserve; ADR-0003; `docs/contracts/QUOTE_API.md`
 **Phase 4 proposals:** Coverage/Concentration scenarios + immutable `ProposalRevision` + share tokens + PDF/XLSX/PPTX; `docs/contracts/PROPOSAL_API.md`
 **Phase 5 ops/billing:** ExecutionTask, CreativeVersion, ProofRecord, Invoice/Payment/CreditNote, vendor costs, Tally file export, ReminderJob; `docs/contracts/OPS_BILLING_API.md`
-**Phase 6 WhatsApp:** Atlas link+confirm; Pulse conversation; Bridge durable delivery/receipts; `docs/contracts/WHATSAPP_API.md`
+**Phase 6 WhatsApp:** Atlas link+confirm; Pulse **Atlas-backed** quote→reserve orchestration; Bridge durable delivery; `docs/contracts/WHATSAPP_API.md`
+**Google OIDC:** config-gated start/callback/link + invitations (`0016`); `docs/contracts/AUTH_GOOGLE_OIDC.md`; live Google pending
 **Phase 7A recommendations:** Continuity + fill-rate via `CommercialRecommendation`; `docs/contracts/RECOMMENDATIONS_API.md`; Orbit intelligence deferred to 7B
-**Phase 7B telemetry:** Lunar MQTT Spec v1.0 wire compatibility + durable inbox; Atlas `DeviceScreenMapping` + campaign evidence; `docs/contracts/ORBIT_TELEMETRY_API.md` + `ORBIT_MQTT_LUNAR_COMPATIBILITY.md` (simulator-verified; physical/live pending; §10 decisions open)
+**Phase 7B telemetry:** Lunar MQTT Spec v1.0 wire compatibility + durable inbox; Atlas mappings + evidence; Orbit unit = **handler/simulator only (not broker-verified)**; `ORBIT_TELEMETRY_API.md` + `ORBIT_MQTT_LUNAR_COMPATIBILITY.md`
+**Product integrations evidence:** `docs/contracts/PRODUCT_INTEGRATIONS_EVIDENCE.md`
 
 ## Service ownership
 
@@ -33,8 +35,8 @@ Living ownership map. Update as capabilities ship.
 | Device credentials, MQTT/HTTPS ingest, measurements, aggregates, incidents | Orbit Cloud | No booking/quote ledger |
 | Operational-risk snapshots from Orbit evidence | Atlas/Pulse | Not audience forecasts |
 | Campaigns, media plans, optimizer | Atlas API | — |
-| Excel/WhatsApp quote→reserve orchestration | Pulse | **pending** full Atlas quote loop |
-| Device telemetry / MQTT live hardware | Orbit Cloud | Simulator done; live pending credentials |
+| Excel/WhatsApp quote→reserve orchestration | Pulse | **Atlas-backed orchestration implemented**; PG e2e + Meta pending |
+| Device telemetry / MQTT live hardware | Orbit Cloud | Handler/simulator verified; **not broker-verified**; live pending |
 
 ## Phase 1 evidence
 
