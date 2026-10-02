@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Building2,
+  CalendarCheck2,
   LayoutDashboard,
   Map,
   MapPin,
@@ -29,6 +30,7 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
     return [
       { href: "/locations", label: "My Inventory", icon: MapPin },
       { href: "/requests", label: "Requests", icon: Send },
+      { href: "/bookings", label: "Bookings", icon: CalendarCheck2 },
       { href: "/organization", label: "My Organization", icon: Building2 },
       { href: "/map", label: "Map", icon: Map },
     ];
@@ -46,6 +48,7 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
     links.push({ href: "/campaigns", label: "Campaigns", icon: Megaphone });
     links.push({ href: "/requests", label: "Requests", icon: Send });
     links.push({ href: "/media-plans", label: "Media Plans", icon: Layers });
+    links.push({ href: "/bookings", label: "Bookings", icon: CalendarCheck2 });
   }
 
   links.push({ href: "/map", label: "Map", icon: Map });

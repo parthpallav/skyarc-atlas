@@ -560,6 +560,7 @@ export default function MediaPlanDetailPage() {
     onSuccess: (result) => {
       queryClient.setQueryData(["media-plan", campaignId, planId], result.data as MediaPlanDetail);
       void queryClient.invalidateQueries({ queryKey: ["media-plans"] });
+      void queryClient.invalidateQueries({ queryKey: ["campaign", campaignId] });
       void queryClient.invalidateQueries({ queryKey: ["locations"] });
     },
   });
@@ -653,7 +654,7 @@ export default function MediaPlanDetailPage() {
   const pricingReady = plan.pricingVisible !== false && plan.status === "APPROVED";
   const showPendingVendor = isVendor && isDraftRequest && !plan.canRespond;
   const showClientPricing = Boolean(plan.pricingVisible) || isClient || isInternal;
-  const canApprove = Boolean(plan.canApprove) || (isInternal && plan.status === "DRAFT");
+  const canApprove = Boolean(plan.canApprove) || (isInternal && (plan.status === "DRAFT" || plan.status === "PROPOSED"));
   const canRespond = Boolean(plan.canRespond);
   const statusBadge = planLifecycleBadge(plan.status, plan.isSiteRequest);
   const displayName =
@@ -735,7 +736,11 @@ export default function MediaPlanDetailPage() {
       ) : null}
       {canApprove ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
-          <p className="text-xs font-semibold text-slate-900">Site request — approve to book</p>
+          <p className="text-xs font-semibold text-slate-900">
+            {plan.status === "PROPOSED"
+              ? "Set this pack as the active plan for the campaign"
+              : "Site request — approve to book"}
+          </p>
           <div className="flex gap-1.5">
             <button
               type="button"
@@ -751,7 +756,11 @@ export default function MediaPlanDetailPage() {
               disabled={approveMutation.isPending}
               onClick={() => approveMutation.mutate("APPROVED")}
             >
-              {approveMutation.isPending ? "…" : "Approve"}
+              {approveMutation.isPending
+                ? "…"
+                : plan.status === "PROPOSED"
+                  ? "Set as active"
+                  : "Approve"}
             </button>
           </div>
         </div>

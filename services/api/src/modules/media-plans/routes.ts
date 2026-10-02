@@ -607,10 +607,8 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
       if (!inbound) throw forbidden();
     }
 
-    const primaryPlan =
-      campaign.mediaPlans.find((p) => p.status === "APPROVED") ??
-      campaign.mediaPlans.find((p) => p.status === "PROPOSED") ??
-      null;
+    // Active plan = explicitly APPROVED only (user chooses via Set as active).
+    const primaryPlan = campaign.mediaPlans.find((p) => p.status === "APPROVED") ?? null;
 
     const serialized = {
       ...campaign,
@@ -1163,7 +1161,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
         isSiteRequest,
         lifecycleStatus: (serialized as { campaign?: { lifecycleStatus?: string } }).campaign
           ?.lifecycleStatus,
-        canApprove: canApproveMediaPlan(request.user) && plan.status === "DRAFT",
+        canApprove: canApproveMediaPlan(request.user) && (plan.status === "DRAFT" || plan.status === "PROPOSED"),
         canRespond:
           canRespondToSiteRequest(request.user) &&
           plan.status === "DRAFT" &&
@@ -1415,7 +1413,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
                 ? Number(plan.totalBudget)
                 : null,
           isSiteRequest,
-          canApprove: canApproveMediaPlan(request.user) && plan.status === "DRAFT",
+          canApprove: canApproveMediaPlan(request.user) && (plan.status === "DRAFT" || plan.status === "PROPOSED"),
         };
       }),
       listMeta(query.page, query.limit, total)
@@ -1486,9 +1484,12 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       });
       if (!plan) throw notFound("Media plan not found");
 
-      // Network / site requests: only DRAFT → APPROVED | REJECTED
-      if (plan.status !== "DRAFT" || (body.status !== "APPROVED" && body.status !== "REJECTED")) {
-        throw validationError("Only draft requests can be approved or rejected");
+      // DRAFT site requests or PROPOSED planner packs → APPROVED | REJECTED
+      const canTransition =
+        (plan.status === "DRAFT" || plan.status === "PROPOSED") &&
+        (body.status === "APPROVED" || body.status === "REJECTED");
+      if (!canTransition) {
+        throw validationError("Only draft requests or proposed plans can be approved or rejected");
       }
 
       if (body.status === "APPROVED") {
@@ -1524,24 +1525,31 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
         include: mediaPlanInclude,
       });
 
-      if (body.status === "APPROVED" && plan.items.length > 0) {
-        await prisma.mediaPlanItem.updateMany({
-          where: { mediaPlanId: planId },
-          data: { approvalStatus: "APPROVED" },
+      if (body.status === "APPROVED") {
+        // One active plan per campaign: other approved packs go back to proposed
+        await prisma.mediaPlan.updateMany({
+          where: { campaignId, id: { not: planId }, status: "APPROVED" },
+          data: { status: "PROPOSED" },
         });
-        // Convert soft hold → booked for the campaign flight
-        await holdInventoryForCampaign(
-          prisma,
-          campaignId,
-          plan.items.map((item) => item.inventoryId),
-          "book",
-          {
-            mediaPlanId: planId,
-            actorUserId: request.user.id,
-            tenantOrganizationId: request.user.organizationId ?? null,
-            requireVendorApproval: false,
-          }
-        );
+        if (plan.items.length > 0) {
+          await prisma.mediaPlanItem.updateMany({
+            where: { mediaPlanId: planId },
+            data: { approvalStatus: "APPROVED" },
+          });
+          // Convert soft hold → booked for the campaign flight
+          await holdInventoryForCampaign(
+            prisma,
+            campaignId,
+            plan.items.map((item) => item.inventoryId),
+            "book",
+            {
+              mediaPlanId: planId,
+              actorUserId: request.user.id,
+              tenantOrganizationId: request.user.organizationId ?? null,
+              requireVendorApproval: false,
+            }
+          );
+        }
       }
 
       const lifecycleStatus = await syncCampaignLifecycle(prisma, campaignId);

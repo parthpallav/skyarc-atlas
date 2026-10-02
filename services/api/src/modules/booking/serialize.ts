@@ -1,11 +1,10 @@
 import { isInternalUser, isVendorUser } from "@skyarc/shared";
 
-/** Feature gate — set ADTECH_BOOKING=true to expose booking APIs in prod. */
+/** Feature gate — booking/quote APIs on unless ADTECH_BOOKING=false. */
 export function isAdtechBookingEnabled(): boolean {
   const flag = process.env.ADTECH_BOOKING;
-  if (flag === "true") return true;
   if (flag === "false") return false;
-  return process.env.NODE_ENV !== "production";
+  return true;
 }
 
 export type BookingSerializeInput = {

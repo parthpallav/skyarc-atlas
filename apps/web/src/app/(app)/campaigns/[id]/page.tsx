@@ -37,7 +37,7 @@ interface MediaPlanRow {
 }
 
 function isActiveMediaPlan(plan: MediaPlanRow): boolean {
-  return Boolean(plan.isPrimary) || plan.status === "APPROVED";
+  return plan.status === "APPROVED" || Boolean(plan.isPrimary);
 }
 
 interface PlanningPreview {
@@ -474,7 +474,10 @@ export default function CampaignDetailPage() {
               <h2 className="text-base font-bold text-slate-900">
                 {isSiteRequest ? "Request plans" : "Media plans"}
               </h2>
-              <p className="mt-0.5 text-sm text-muted">Open a plan to review sites and export.</p>
+              <p className="mt-0.5 text-sm text-muted">
+                Open a plan to review sites. Use Set as active to lock the pack for quote &
+                reservation.
+              </p>
             </div>
             <div>
               {plans.length === 0 ? (
@@ -538,10 +541,10 @@ export default function CampaignDetailPage() {
           canEdit={canEdit}
           startDate={campaign.startDate}
           endDate={campaign.endDate}
+          hasActivePlan={activePlans.some((p) => p.status === "APPROVED" || Boolean(p.isPrimary))}
           mediaPlanId={
+            activePlans.find((p) => p.status === "APPROVED" || p.isPrimary)?.id ??
             activePlans[0]?.id ??
-            plans.find((p) => p.status === "APPROVED")?.id ??
-            plans[0]?.id ??
             null
           }
         />
