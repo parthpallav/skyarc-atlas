@@ -4,8 +4,9 @@
 
 | Field | Value |
 |-------|--------|
-| Deployed commit SHA | *(pending deploy)* |
+| Deployed commit SHA | *(pending deploy — staging config at `6c9892a`)* |
 | RC hardening baseline | `4677c2628ea224a516ce4bccedfb7bb149067f8e` |
+| Branch | `feat/phase2-4-booking-scenarios` |
 | Vercel deployment URL | |
 | VPS API URL (HTTPS) | |
 | Postgres database | `skyarc_atlas_staging` |
