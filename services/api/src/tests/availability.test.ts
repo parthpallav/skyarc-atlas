@@ -89,6 +89,33 @@ describe("availability windows", () => {
     ).toBe(true);
   });
 
+  it("treats this campaign's own soft hold as free for re-plan", () => {
+    const campaignId = "camp-1";
+    const inventory = {
+      status: "AVAILABLE",
+      inventoryType: "STATIC_BILLBOARD",
+      slotCapacity: 1,
+      availabilityWindows: [
+        {
+          startDate: new Date("2026-09-01"),
+          endDate: new Date("2026-09-30"),
+          status: "HELD",
+          slotsConsumed: 1,
+          notes: `Held for campaign ${campaignId}`,
+          expiresAt: new Date("2099-01-01"),
+        },
+      ],
+    };
+    expect(
+      isInventoryFreeForFlight(inventory, new Date("2026-09-10"), new Date("2026-09-20"), {
+        allowHeldForCampaignId: campaignId,
+      })
+    ).toBe(true);
+    expect(
+      isInventoryFreeForFlight(inventory, new Date("2026-09-10"), new Date("2026-09-20"))
+    ).toBe(false);
+  });
+
   it("does not sum nonconcurrent bookings across a requested flight", () => {
     const inventory = {
       status: "AVAILABLE",

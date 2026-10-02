@@ -162,7 +162,8 @@ async function loadCatalogInventory(prisma: PrismaClient) {
 
 function isFreeForCampaignFlight(
   inv: Awaited<ReturnType<typeof loadCatalogInventory>>[number],
-  flight?: { startDate?: Date | null; endDate?: Date | null }
+  flight?: { startDate?: Date | null; endDate?: Date | null },
+  campaignId?: string
 ) {
   return isInventoryFreeForFlight(
     {
@@ -173,17 +174,21 @@ function isFreeForCampaignFlight(
       availabilityWindows: inv.availabilityWindows,
     },
     flight?.startDate,
-    flight?.endDate
+    flight?.endDate,
+    campaignId ? { allowHeldForCampaignId: campaignId } : undefined
   );
 }
 
 export function partitionPlanningInventory(
   inventories: Awaited<ReturnType<typeof loadCatalogInventory>>,
   flight?: { startDate?: Date | null; endDate?: Date | null },
-  goal?: ReturnType<typeof parseCampaignGoal>
+  goal?: ReturnType<typeof parseCampaignGoal>,
+  campaignId?: string
 ) {
   const catalogInventory = inventories.length;
-  const flightEligible = inventories.filter((inv) => isFreeForCampaignFlight(inv, flight));
+  const flightEligible = inventories.filter((inv) =>
+    isFreeForCampaignFlight(inv, flight, campaignId)
+  );
   const skippedFlightWindow = catalogInventory - flightEligible.length;
 
   const geoEligible = flightEligible.filter((inv) => {
@@ -204,10 +209,11 @@ export function partitionPlanningInventory(
 export async function loadEligibleInventory(
   prisma: PrismaClient,
   flight?: { startDate?: Date | null; endDate?: Date | null },
-  goal?: ReturnType<typeof parseCampaignGoal>
+  goal?: ReturnType<typeof parseCampaignGoal>,
+  campaignId?: string
 ) {
   const inventories = await loadCatalogInventory(prisma);
-  return partitionPlanningInventory(inventories, flight, goal).eligible;
+  return partitionPlanningInventory(inventories, flight, goal, campaignId).eligible;
 }
 
 export async function getMediaPlanPlanningPreview(prisma: PrismaClient, campaignId: string) {
@@ -229,7 +235,7 @@ export async function getMediaPlanPlanningPreview(prisma: PrismaClient, campaign
   };
   const inventories = await loadCatalogInventory(prisma);
   const { eligible, catalogInventory, skippedFlightWindow, skippedGeography } =
-    partitionPlanningInventory(inventories, flight, goal);
+    partitionPlanningInventory(inventories, flight, goal, campaignId);
 
   const platform = await loadPlatformConfig();
   const candidates = buildOptimizerCandidates(eligible, goal, {
@@ -252,6 +258,21 @@ export async function getMediaPlanPlanningPreview(prisma: PrismaClient, campaign
     return { city, bookable };
   });
 
+  const stateTokens = [...(goal.states ?? [])].filter(
+    (v, i, arr) => arr.indexOf(v) === i
+  );
+  const stateBookableCounts =
+    geoTokens.length === 0
+      ? stateTokens.map((state) => {
+          const token = state.trim().toLowerCase();
+          const bookable = eligible.filter((inv) => {
+            const s = (inv.screen.location.state ?? "").trim().toLowerCase();
+            return s === token;
+          }).length;
+          return { state, bookable };
+        })
+      : [];
+
   return {
     catalogInventory,
     skippedFlightWindow,
@@ -263,6 +284,7 @@ export async function getMediaPlanPlanningPreview(prisma: PrismaClient, campaign
     flightSet: Boolean(campaign.startDate && campaign.endDate),
     geographicFocus: goal.geographicFocus ?? goal.cities ?? [],
     cityBookableCounts,
+    stateBookableCounts,
     hasGeoConstraints: hasGeoConstraints(goal),
   };
 }
@@ -394,7 +416,7 @@ export async function runMediaPlanOptimization(
   );
   const flight = { startDate: campaign?.startDate, endDate: campaign?.endDate };
   const catalog = await loadCatalogInventory(prisma);
-  const partitioned = partitionPlanningInventory(catalog, flight, goal);
+  const partitioned = partitionPlanningInventory(catalog, flight, goal, campaignId);
   const inventories = partitioned.eligible;
   const maxLocations = constraints.maxLocations ?? goal.maxLocations ?? 8;
   const platform = await loadPlatformConfig();
@@ -793,7 +815,8 @@ export async function buildMediaPlanFromSelection(
       startDate: campaign?.startDate,
       endDate: campaign?.endDate,
     },
-    goal
+    goal,
+    campaignId
   );
 
   let selectedIds = input.inventoryIds ?? [];
