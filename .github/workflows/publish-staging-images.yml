@@ -154,3 +154,18 @@ jobs:
         with:
           name: staging-image-digests
           path: staging-image-digests.txt
+
+      - name: Make staging packages public for Hostinger pull
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Nested image names under ghcr.io/<owner>/skyarc-atlas/<svc>
+          for name in api pulse orbit-cloud bridge mosquitto-staging postgres-staging; do
+            enc=$(python3 -c "import urllib.parse; print(urllib.parse.quote('skyarc-atlas/${name}', safe=''))")
+            code=$(curl -sS -o /tmp/vis.json -w "%{http_code}" -X PUT \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/user/packages/container/${enc}/visibility" \
+              -d '{"visibility":"public"}')
+            echo "visibility $name -> HTTP $code $(head -c 200 /tmp/vis.json)"
+          done
