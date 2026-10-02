@@ -130,10 +130,6 @@ interface MediaPlanDetail {
     kiosks: number;
     other: number;
     allocated: number;
-    skyarcBudgetPercent?: number;
-    premiumBudgetPercent?: number;
-    minSkyarcBudgetMixPercent?: number;
-    meetsSkyarcMixTarget?: boolean;
   };
   remainingBudget?: number;
   overBudget?: number;
@@ -813,26 +809,6 @@ export default function MediaPlanDetailPage() {
           <p className="mt-1 text-[10px] text-muted">
             {planMix.hoardings} static · {planMix.digital} digital · {planMix.kiosks} kiosk
             {planMix.other ? ` · ${planMix.other} other` : ""}
-            {typeof planMix.skyarcBudgetPercent === "number" ? (
-              <>
-                {" · "}
-                <span
-                  className={
-                    planMix.meetsSkyarcMixTarget === false
-                      ? "font-semibold text-amber-800"
-                      : "font-semibold text-emerald-800"
-                  }
-                >
-                  Skyarc mix {planMix.skyarcBudgetPercent}%
-                </span>
-                {typeof planMix.minSkyarcBudgetMixPercent === "number"
-                  ? ` (target ≥${planMix.minSkyarcBudgetMixPercent}%)`
-                  : null}
-                {typeof planMix.premiumBudgetPercent === "number"
-                  ? ` · Premium ${planMix.premiumBudgetPercent}%`
-                  : null}
-              </>
-            ) : null}
           </p>
         ) : null}
       </div>
@@ -1161,9 +1137,9 @@ export default function MediaPlanDetailPage() {
 
         {packReady ? (
           <p className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-            Plan pack ready — use PDF for the pitch or Excel for agency rework.
+            Plan ready — use PDF for the pitch or Excel for agency rework.
             {skippedSites
-              ? ` ${skippedSites} site(s) were skipped (held, full, or outside brief geography).`
+              ? ` ${skippedSites} site(s) were unavailable for this flight.`
               : ""}
           </p>
         ) : null}

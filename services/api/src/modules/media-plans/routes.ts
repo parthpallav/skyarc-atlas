@@ -68,11 +68,7 @@ import {
   siteNameForAudience,
   buildSiteCreativeSpec,
   stripVendorTokensFromText,
-  skyarcRevenueFromRates,
-  budgetMixPercent,
-  DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
-  isSkyarcCatalogSite,
-  isPremiumPlanningSite,
+  skyarcRevenueFromRates
 } from "@skyarc/shared";
 import { loadPlatformConfig } from "../../lib/commercial-config.js";
 
@@ -297,25 +293,8 @@ function serializeMediaPlan(
     };
   });
 
-  const premiumFormats = commercial?.premiumFormats ?? [];
   const allocated = enrichedItems.reduce((sum, item) => sum + item.budgetAllocated, 0);
-  const skyarcBudgetPercent = budgetMixPercent(
-    plan.items.map((item) => ({
-      budgetAllocated: Number(item.budgetAllocated),
-      included: isSkyarcCatalogSite(item.inventory.screen.location.skyarcSiteCode),
-    }))
-  );
-  const premiumBudgetPercent = budgetMixPercent(
-    enrichedItems.map((item) => ({
-      budgetAllocated: item.budgetAllocated,
-      included:
-        item.isPremium ||
-        isPremiumPlanningSite({
-          inventoryType: item.inventoryType,
-          premiumFormats,
-        }),
-    }))
-  );
+  // Format counts only — ownership/premium mix targets stay server-side.
   const mix = {
     sites: enrichedItems.length,
     hoardings: enrichedItems.filter((item) => item.inventoryBucket === "hoarding").length,
@@ -323,10 +302,6 @@ function serializeMediaPlan(
     kiosks: enrichedItems.filter((item) => item.inventoryBucket === "kiosk").length,
     other: enrichedItems.filter((item) => item.inventoryBucket === "other").length,
     allocated,
-    skyarcBudgetPercent,
-    premiumBudgetPercent,
-    minSkyarcBudgetMixPercent: DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
-    meetsSkyarcMixTarget: skyarcBudgetPercent >= DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
   };
 
   const siteInsights = enrichedItems.map((i) => i.insights);

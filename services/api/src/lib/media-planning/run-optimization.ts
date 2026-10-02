@@ -159,7 +159,6 @@ export type MediaPlanPlanningDiagnostics = {
   availableInventory: number;
   scoredInventory: number;
   maxLocations: number;
-  minSkyarcBudgetMixPercent: number;
   flightSet: boolean;
   geographicFocus?: string[];
   cityBookableCounts?: Array<{ city: string; bookable: number }>;
@@ -295,7 +294,6 @@ export async function getMediaPlanPlanningPreview(prisma: PrismaClient, campaign
     skippedNoScore,
     availableInventory: eligible.length,
     scoredInventory: candidates.length,
-    minSkyarcBudgetMixPercent: DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
     flightSet: Boolean(campaign.startDate && campaign.endDate),
     geographicFocus: goal.geographicFocus ?? goal.cities ?? [],
     cityBookableCounts,
@@ -451,7 +449,6 @@ export async function runMediaPlanOptimization(
     availableInventory: inventories.length,
     scoredInventory: candidates.length,
     maxLocations,
-    minSkyarcBudgetMixPercent: DEFAULT_MIN_SKYARC_BUDGET_MIX_PERCENT,
     flightSet: Boolean(campaign?.startDate && campaign?.endDate),
     geographicFocus: goal.geographicFocus ?? goal.cities,
   };

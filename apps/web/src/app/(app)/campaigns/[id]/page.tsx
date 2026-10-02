@@ -47,7 +47,6 @@ interface PlanningPreview {
   skippedFlightWindow: number;
   skippedGeography: number;
   flightSet: boolean;
-  minSkyarcBudgetMixPercent: number;
   geographicFocus?: string[];
   cityBookableCounts?: Array<{ city: string; bookable: number }>;
   hasGeoConstraints?: boolean;
@@ -420,10 +419,10 @@ export default function CampaignDetailPage() {
           <section className="rounded-xl border border-primary/15 bg-violet-50/40 p-4">
             <div className="flex flex-wrap items-start gap-4">
               <div className="min-w-0 flex-1">
-                <h2 className="text-base font-bold text-slate-900">Generate plan pack</h2>
+                <h2 className="text-base font-bold text-slate-900">Generate plan</h2>
                 <p className="mt-1 text-sm text-muted">
-                  Flight-aware sites, {planningPreview?.minSkyarcBudgetMixPercent ?? 60}%+ Skyarc
-                  mix, then export PDF or Excel from the plan.
+                  Build a media plan from available inventory for this budget and flight, then
+                  export PDF or Excel.
                 </p>
                 <ul className="mt-3 space-y-1 text-sm text-slate-700">
                   <li>
@@ -437,21 +436,16 @@ export default function CampaignDetailPage() {
                     {planningPreviewQuery.isLoading
                       ? "…"
                       : planningPreview
-                        ? `✓ ${planningPreview.scoredInventory} scored sites for this flight`
-                        : "○ Inventory preview"}
-                    {planningPreview && planningPreview.skippedFlightWindow > 0
-                      ? ` (${planningPreview.skippedFlightWindow} skipped — held/full)`
-                      : ""}
+                        ? `✓ ${planningPreview.scoredInventory} sites available for these dates`
+                        : "○ Checking inventory"}
                   </li>
                 </ul>
                 {planningPreview?.cityBookableCounts?.length ? (
-                  <p className="mt-2 text-sm text-amber-800">
+                  <p className="mt-2 text-sm text-slate-600">
+                    Availability by area:{" "}
                     {planningPreview.cityBookableCounts
-                      .map((row) => `${row.city}: ${row.bookable} bookable`)
+                      .map((row) => `${row.city} (${row.bookable})`)
                       .join(" · ")}
-                    {planningPreview.cityBookableCounts.some((row) => row.bookable === 0)
-                      ? " — widen dates or geography where a city shows 0."
-                      : ""}
                   </p>
                 ) : null}
               </div>
@@ -480,12 +474,12 @@ export default function CampaignDetailPage() {
               <h2 className="text-base font-bold text-slate-900">
                 {isSiteRequest ? "Request plans" : "Media plans"}
               </h2>
-              <p className="mt-0.5 text-sm text-muted">Open a plan to score, swap, and export.</p>
+              <p className="mt-0.5 text-sm text-muted">Open a plan to review sites and export.</p>
             </div>
             <div>
               {plans.length === 0 ? (
                 <p className="px-4 py-10 text-center text-sm text-muted">
-                  No plan yet. Use Generate plan pack above to build against this budget.
+                  No plan yet. Use Generate plan above to build against this budget.
                 </p>
               ) : showPlanHierarchy && otherPlans.length > 0 ? (
                 <div className="divide-y divide-violet-50">
