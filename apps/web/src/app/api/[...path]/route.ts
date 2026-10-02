@@ -2,6 +2,8 @@ import { resolveApiProxyTarget } from "@/lib/api-proxy-target";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/** Large Excel/import proxied to Atlas (50MB API limit). Requires adequate Vercel plan max duration. */
+export const maxDuration = 300;
 
 const HOP_BY_HOP = new Set([
   "connection",

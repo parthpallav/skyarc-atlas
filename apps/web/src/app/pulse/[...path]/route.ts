@@ -2,6 +2,7 @@ import { resolvePulseProxyTarget } from "@/lib/pulse-proxy-target";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 const HOP_BY_HOP = new Set([
   "connection",

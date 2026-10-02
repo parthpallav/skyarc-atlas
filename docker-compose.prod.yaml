@@ -56,6 +56,7 @@ services:
       ORBIT_CLOUD_URL: ${ORBIT_CLOUD_URL:-http://orbit-cloud:3002}
       ORBIT_SERVICE_TOKEN: ${ORBIT_SERVICE_TOKEN:-}
       ORBIT_WEBHOOK_SECRET: ${ORBIT_WEBHOOK_SECRET:-}
+      PULSE_SERVICE_TOKEN: ${PULSE_SERVICE_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -110,6 +111,7 @@ services:
     environment:
       PULSE_DATABASE_URL: ${PULSE_DATABASE_URL:?Set PULSE_DATABASE_URL in .env}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      ATLAS_SERVICE_TOKEN: ${PULSE_SERVICE_TOKEN:-}
       BRIDGE_SERVICE_TOKEN: ${BRIDGE_SERVICE_TOKEN}
       BRIDGE_INTERNAL_URL: ${BRIDGE_INTERNAL_URL:-http://bridge:3004}
       ATLAS_INTERNAL_URL: ${ATLAS_INTERNAL_URL:-http://api:3001}
