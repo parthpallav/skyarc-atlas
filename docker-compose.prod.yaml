@@ -27,6 +27,7 @@ services:
     restart: unless-stopped
 
   api:
+    image: skyarc-atlas-api:${SOURCE_SHA:-unknown}
     build:
       context: .
       dockerfile: Dockerfile
@@ -64,6 +65,7 @@ services:
     restart: unless-stopped
 
   orbit-cloud:
+    image: skyarc-atlas-orbit-cloud:${SOURCE_SHA:-unknown}
     build:
       context: .
       dockerfile: services/orbit-cloud/Dockerfile
@@ -84,6 +86,7 @@ services:
     restart: unless-stopped
 
   bridge:
+    image: skyarc-atlas-bridge:${SOURCE_SHA:-unknown}
     build:
       context: .
       dockerfile: services/bridge/Dockerfile
@@ -104,6 +107,7 @@ services:
     restart: unless-stopped
 
   pulse:
+    image: skyarc-atlas-pulse:${SOURCE_SHA:-unknown}
     build:
       context: .
       dockerfile: services/pulse/Dockerfile
