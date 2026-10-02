@@ -211,6 +211,62 @@ export default function CampaignDetailPage() {
     enabled: Boolean(campaign && !isSiteRequestCampaign(campaign)),
   });
 
+  const [quoteMessage, setQuoteMessage] = useState("");
+  const [lastQuoteId, setLastQuoteId] = useState<string | null>(null);
+
+  const issueQuoteMutation = useMutation({
+    mutationFn: async () => {
+      if (!campaign?.startDate || !campaign?.endDate) {
+        throw new Error("Set campaign flight dates before issuing a quote");
+      }
+      const plan = campaign.mediaPlans?.find((p) => p.status === "APPROVED") ?? campaign.mediaPlans?.[0];
+      if (!plan) throw new Error("Generate a media plan first");
+      const client = createWebApiClient();
+      const planDetail = await client.getMediaPlan(id, plan.id);
+      const items = ((planDetail.data as { items?: Array<{ inventoryId: string }> }).items ?? []);
+      if (items.length === 0) throw new Error("Plan has no inventory lines");
+      return client.issueQuote({
+        campaignId: id,
+        mediaPlanId: plan.id,
+        lines: items.slice(0, 50).map((item) => ({
+          inventoryId: item.inventoryId,
+          startDate: new Date(campaign.startDate!).toISOString(),
+          endDate: new Date(campaign.endDate!).toISOString(),
+          playsPerDay: 60,
+          creativeDurationSec: 10,
+          distributionMode: "ALL_DAY",
+        })),
+      });
+    },
+    onSuccess: async (result) => {
+      const data = result.data as { id?: string; total?: number; currency?: string; revisionNumber?: number };
+      if (data.id) setLastQuoteId(data.id);
+      setQuoteMessage(
+        data.id
+          ? `Quote r${data.revisionNumber ?? 1} issued (${data.currency ?? "INR"} ${data.total ?? "—"})`
+          : "Quote issued"
+      );
+      await queryClient.invalidateQueries({ queryKey: ["campaign-bookings", id] });
+    },
+    onError: (err) => {
+      setQuoteMessage(err instanceof Error ? err.message : "Quote failed");
+    },
+  });
+
+  const acceptLatestQuoteMutation = useMutation({
+    mutationFn: async (quoteId: string) => {
+      const client = createWebApiClient();
+      return client.acceptQuote(quoteId, { mode: "book", idempotencyKey: `ui-accept-${quoteId}` });
+    },
+    onSuccess: async () => {
+      setQuoteMessage("Quote accepted — inventory reserved");
+      await queryClient.invalidateQueries({ queryKey: ["campaign-bookings", id] });
+    },
+    onError: (err) => {
+      setQuoteMessage(err instanceof Error ? err.message : "Accept failed");
+    },
+  });
+
   const optimizeMutation = useMutation({
     mutationFn: async () => {
       const client = createWebApiClient();
@@ -562,11 +618,37 @@ export default function CampaignDetailPage() {
         <section className={cn(workspacePanel, "md:col-span-2")}>
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-primary/10 px-3 py-2.5">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Bookings</h2>
+              <h2 className="text-sm font-bold text-slate-900">Bookings & quotes</h2>
               <p className="text-[10px] text-muted">
-                Holds, vendor approvals, and confirmed capacity for this campaign.
+                Holds, vendor approvals, confirmed capacity, and commercial quote accept.
               </p>
+              {quoteMessage ? <p className="mt-1 text-[11px] text-slate-700">{quoteMessage}</p> : null}
             </div>
+            {canEdit && !isSiteRequest ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  className="btn-secondary px-2.5 py-1 text-[11px]"
+                  disabled={issueQuoteMutation.isPending || !campaign.startDate || !campaign.endDate}
+                  onClick={() => {
+                    setQuoteMessage("");
+                    issueQuoteMutation.mutate();
+                  }}
+                >
+                  {issueQuoteMutation.isPending ? "Issuing…" : "Issue quote from plan"}
+                </button>
+                {lastQuoteId ? (
+                  <button
+                    type="button"
+                    className="btn-primary px-2.5 py-1 text-[11px]"
+                    disabled={acceptLatestQuoteMutation.isPending}
+                    onClick={() => acceptLatestQuoteMutation.mutate(lastQuoteId)}
+                  >
+                    {acceptLatestQuoteMutation.isPending ? "Accepting…" : "Accept quote → reserve"}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             {bookingsQuery.data?.summary ? (
               <p className="text-[10px] text-slate-600">
                 {bookingsQuery.data.summary.total} total · {bookingsQuery.data.summary.pendingApprovals} pending
