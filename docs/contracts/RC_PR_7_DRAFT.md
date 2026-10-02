@@ -4,7 +4,7 @@
 > Paste into draft PR #7 when repository access is available. Do **not** merge or deploy automatically.
 
 **Branch:** `feat/phase2-4-booking-scenarios`  
-**Hardened RC SHA:** `4677c26` (tip with evidence stamp: `72d4386`)  
+**Hardened RC SHA:** `4677c26` (tip with evidence stamp: `3efc66a`)  
 **Prior baseline:** `52a817d`  
 **Title:**
 
@@ -28,7 +28,7 @@ RC: Harden OIDC/MQTT/Pulse authz; local browser + MQTT 3.1.1/5 matrix; migration
 
 ## Validation summary
 
-Recorded on tip `72d4386` (hardening `4677c26`), local:
+Recorded on tip `3efc66a` (hardening `4677c26`), local:
 
 ```text
 @skyarc/api build: PASS

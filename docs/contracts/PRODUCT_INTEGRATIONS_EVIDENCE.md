@@ -2,7 +2,7 @@
  * Integration evidence — product integrations (Pulse quote loop + Google OIDC + Orbit MQTT).
  * Do not treat unit-test counts as release proof.
  *
- * Hardened RC commit: `4677c2628ea224a516ce4bccedfb7bb149067f8e` (evidence tip `72d4386d82f4f54cdf417ce9071a87da4b47b74b`) on `feat/phase2-4-booking-scenarios`.
+ * Hardened RC commit: `4677c2628ea224a516ce4bccedfb7bb149067f8e` (evidence tip `3efc66a82edb76c5fb1991036228d01500f27efa`) on `feat/phase2-4-booking-scenarios`.
  * Prior baseline: `52a817d`.
  *
  * Status legend:

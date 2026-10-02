@@ -5,7 +5,7 @@
 | Field | Value |
 |-------|--------|
 | Environment | Local macOS; Atlas API `:3001` + Next.js web `:3000`; seed demo tenants |
-| Commit under test | `4677c26` |
+| Commit under test | hardening `4677c26` / tip `3efc66a` |
 | Date | 2026-10-02 |
 | Roles exercised | Media Planner (`planner@skyarcads.com`); admin used for partial payment API; public share (unauthenticated) |
 | Viewports | Mobile ~390×844; Desktop ~1280×800 |
