@@ -82,8 +82,14 @@ export default function CampaignBuilderPage() {
           inventoryIds: [inventoryId],
           holdInventory: true,
           status: "PROPOSED",
+          totalBudget: 1,
+          name: `Self-serve · ${locationName}`,
         });
-        planId = (built.data as { id: string }).id;
+        const body = built.data as { plan?: { id?: string }; message?: string };
+        if (!body.plan?.id) {
+          throw new Error(body.message || "Could not create plan from this site");
+        }
+        planId = body.plan.id;
         setMediaPlanId(planId);
       }
       const issued = await client.issueQuote({
