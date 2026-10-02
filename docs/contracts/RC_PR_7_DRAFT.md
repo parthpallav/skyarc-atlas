@@ -4,7 +4,7 @@
 > Paste into draft PR #7 when repository access is available. Do **not** merge or deploy automatically.
 
 **Branch:** `feat/phase2-4-booking-scenarios`  
-**Hardened RC SHA:** *(fill after commit)*  
+**Hardened RC SHA:** `4677c26`  
 **Prior baseline:** `52a817d`  
 **Title:**
 
