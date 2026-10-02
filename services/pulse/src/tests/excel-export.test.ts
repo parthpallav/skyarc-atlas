@@ -39,10 +39,34 @@ describe("excel-export", () => {
     expect(buffer.byteLength).toBeGreaterThan(1000);
   });
 
-  it("builds share summary with plan link", () => {
+  it("keeps summary client-facing without internal mix or IDs", async () => {
+    const ExcelJS = (await import("exceljs")).default;
+    const buffer = await buildMediaPlanWorkbook(samplePlan);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const summary = workbook.getWorksheet("Summary");
+    expect(summary).toBeTruthy();
+    const fields = (summary?.getColumn(1).values ?? [])
+      .filter((v): v is string => typeof v === "string" && v !== "Field");
+    expect(fields).toEqual([
+      "Plan name",
+      "Total budget (INR)",
+      "Allocated (INR)",
+      "Sites",
+    ]);
+    expect(fields.join(" ")).not.toMatch(/mix|Plan ID|Campaign ID|target/i);
+
+    const sites = workbook.getWorksheet("Sites");
+    const headers = (sites?.getRow(1).values ?? [])
+      .filter((v): v is string => typeof v === "string");
+    expect(headers).not.toContain("Premium");
+    expect(headers.join(" ")).not.toMatch(/Skyarc mix|Client rate/i);
+  });
+
+  it("builds share summary without internal mix targets", () => {
     const text = buildShareSummaryText(samplePlan, "https://atlas.skyarcads.com");
     expect(text).toContain("Demo Plan");
-    expect(text).toContain("Skyarc mix: 75%");
     expect(text).toContain("/campaigns/");
+    expect(text).not.toMatch(/Skyarc mix|target ≥/i);
   });
 });
