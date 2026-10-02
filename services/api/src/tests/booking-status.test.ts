@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  bookingStatusForItems,
-  defaultHoldExpiry,
-} from "../lib/booking/reserve.js";
+import { bookingStatusForItems } from "../lib/booking/status.js";
+import { defaultHoldExpiry } from "../lib/booking/reserve.js";
 import { INVENTORY_HOLD_TTL_MINUTES } from "@skyarc/shared";
 
 describe("bookingStatusForItems", () => {

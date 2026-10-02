@@ -47,3 +47,9 @@ Living ownership map. Update as capabilities ship.
 ## Still open
 
 Full versioned rate rules engine, MQTT ingestion, WhatsApp production delivery, ops/billing parity, deep tenant isolation, customer booking UI polish — see plan doc.
+
+## Cognitive load rules (product + code)
+
+- Prefer modules under ~250 LOC with one job each; thin registrars only.
+- Campaign surfaces: one status sentence + one next action; details behind disclosure.
+- Never dump payment/execution/internal IDs into default daily views.

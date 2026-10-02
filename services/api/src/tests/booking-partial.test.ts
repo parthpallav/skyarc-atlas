@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bookingStatusForItems } from "../lib/booking/reserve.js";
+import { bookingStatusForItems } from "../lib/booking/status.js";
 
 /**
  * Behavioural contracts for partial vendor approval and cancellation
