@@ -3,7 +3,7 @@ import { z } from "zod";
 import { uuidSchema } from "@skyarc/validation";
 import { prisma } from "../../lib/prisma.js";
 import { success } from "../../lib/response.js";
-import { forbidden, notFound, validationError } from "../../lib/errors.js";
+import { forbidden, notFound } from "../../lib/errors.js";
 import { canReadLocations } from "../../lib/rbac.js";
 import { bookingTenantWhere } from "./serialize.js";
 

@@ -34,6 +34,7 @@ import {
   sanitizeLocationCommercialViewForUser,
   sanitizeOrganizationCommercialForUser,
   summarizeLocationLiveInventory,
+  type SlotWindowLike,
   buildSkyarcSiteCode,
   normalizeCityName,
   getMarketCity,
@@ -92,7 +93,7 @@ type ScreenWithInventories = {
     inventoryType: string;
     slotCapacity: number;
     status: string;
-    availabilityWindows?: unknown[];
+    availabilityWindows?: SlotWindowLike[];
   }>;
 };
 
@@ -102,7 +103,7 @@ function inventoriesForLiveSummary(screens: ScreenWithInventories[]) {
       inventoryType: inv.inventoryType,
       slotCapacity: inv.slotCapacity,
       status: inv.status,
-      availabilityWindows: inv.availabilityWindows,
+      availabilityWindows: inv.availabilityWindows as SlotWindowLike[] | undefined,
       screen: {
         operatingHoursJson: screen.operatingHoursJson,
         loopDurationSec: screen.loopDurationSec,

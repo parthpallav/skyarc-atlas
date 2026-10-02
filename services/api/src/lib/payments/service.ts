@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { validationError } from "../errors.js";
 import { getPaymentAdapter, resolvePaymentsProvider } from "./provider.js";
 import { signTestWebhook } from "./test-provider.js";
@@ -124,7 +124,7 @@ export async function reconcilePaymentWebhook(
         paymentIntentId: intent.id,
         eventType: input.eventType,
         providerEventId: input.providerEventId,
-        payloadJson: input.payload,
+        payloadJson: input.payload as Prisma.InputJsonValue,
         signatureValid: true,
         processedAt: new Date(),
       },
