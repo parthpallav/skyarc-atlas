@@ -9,44 +9,12 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
+import type { RecommendationStaffRow } from "@skyarc/api-client";
 import { createWebApiClient } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
 import { cn } from "@/lib/utils";
 
-type RecRow = {
-  id: string;
-  kind: string;
-  status: string;
-  method: string;
-  triggerType: string;
-  campaignId?: string | null;
-  bookingId?: string | null;
-  explanation?: string | null;
-  freshnessLabel: string;
-  pricingAvailable: boolean;
-  costDataComplete: boolean;
-  marginSuppressed: boolean;
-  stale?: boolean;
-  expiresAt: string;
-  suggestions: unknown;
-  observedAt: string;
-};
-
-type QueuePayload = {
-  recommendations: RecRow[];
-  queue: {
-    campaignDisruptions: RecRow[];
-    fillRatePackages: RecRow[];
-    missingDataWarnings: Array<{
-      id: string;
-      kind: string;
-      pricingAvailable: boolean;
-      marginSuppressed: boolean;
-      costDataComplete: boolean;
-    }>;
-  };
-  note?: string;
-};
+type RecRow = RecommendationStaffRow;
 
 function suggestionList(row: RecRow): Array<Record<string, unknown>> {
   const s = row.suggestions;
@@ -64,7 +32,7 @@ export default function RecommendationsPage() {
     queryFn: async () => {
       const client = createWebApiClient();
       const result = await client.listRecommendations();
-      return result.data as QueuePayload;
+      return result.data;
     },
     refetchInterval: 60_000,
   });
@@ -106,7 +74,7 @@ export default function RecommendationsPage() {
       <PageHeader
         title="Recommendations"
         description="Staff queue for campaign continuity replacements and fill-rate packages. Does not reserve capacity or publish offers."
-        actions={
+        action={
           <button
             type="button"
             className="btn-primary text-sm inline-flex items-center gap-2"

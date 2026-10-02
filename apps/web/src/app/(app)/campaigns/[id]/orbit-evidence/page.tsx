@@ -66,7 +66,7 @@ export default function CampaignOrbitEvidencePage() {
       <PageHeader
         title="Orbit campaign evidence"
         description="Staff view of device freshness, coverage, incidents and booking associations. Missing evidence is explicit."
-        actions={
+        action={
           <button
             type="button"
             className="btn-secondary text-sm"

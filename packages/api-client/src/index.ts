@@ -21,6 +21,56 @@ export interface ApiErrorBody {
   };
 }
 
+/** Staff commercial recommendation row from GET /recommendations. */
+export type RecommendationStaffRow = {
+  id: string;
+  tenantOrganizationId?: string | null;
+  kind: string;
+  status: string;
+  method: string;
+  triggerType: string;
+  campaignId?: string | null;
+  bookingId?: string | null;
+  bookingItemId?: string | null;
+  explanation?: string | null;
+  freshnessLabel: string;
+  pricingAvailable: boolean;
+  costDataComplete: boolean;
+  marginSuppressed: boolean;
+  stale?: boolean;
+  expiresAt: string;
+  observedAt: string;
+  suggestions: unknown;
+  inputSnapshot?: unknown;
+  appliedChange?: unknown;
+  actionHistory?: unknown;
+  reviewedAt?: string | null;
+  reviewedByUserId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  ruleVersion?: string;
+  triggerKey?: string;
+};
+
+export type RecommendationsQueue = {
+  campaignDisruptions: RecommendationStaffRow[];
+  fillRatePackages: RecommendationStaffRow[];
+  missingDataWarnings: Array<{
+    id: string;
+    kind: string;
+    pricingAvailable: boolean;
+    marginSuppressed: boolean;
+    costDataComplete: boolean;
+  }>;
+};
+
+export type RecommendationsListPayload = {
+  recommendations: RecommendationStaffRow[];
+  queue: RecommendationsQueue;
+  ruleVersion: string;
+  note?: string;
+};
+
 export class ApiClient {
   private refreshPromise: Promise<string | null> | null = null;
 
@@ -577,12 +627,9 @@ export class ApiClient {
     if (params?.status) q.set("status", params.status);
     if (params?.campaignId) q.set("campaignId", params.campaignId);
     const qs = q.toString();
-    return this.request<{
-      recommendations: unknown[];
-      queue: Record<string, unknown>;
-      ruleVersion: string;
-      note?: string;
-    }>(`/recommendations${qs ? `?${qs}` : ""}`);
+    return this.request<RecommendationsListPayload>(
+      `/recommendations${qs ? `?${qs}` : ""}`
+    );
   }
 
   scanRecommendations(data?: {
