@@ -1,0 +1,153 @@
+# Image-based isolated staging — no build context required on the VPS.
+# Images: ghcr.io/parthpallav/skyarc-atlas/* built from RC SHA via
+# .github/workflows/publish-staging-images.yml
+#
+# Replace sha-ba68fa9abafb3ea3688297eb77ea52e7938eed11 with sha-<fullgitsha> or a digest (@sha256:…).
+# Deploy via Hostinger vps_docker_create (project_name: skyarc-atlas-staging).
+#
+# Ports 3101/3103 published for Vercel preview proxies (same pattern as prod :3001/:3003).
+# Postgres, Mosquitto, Orbit, Bridge stay on the compose network (Orbit/Bridge loopback-only).
+
+name: skyarc-atlas-staging
+
+services:
+  postgres:
+    image: ghcr.io/parthpallav/skyarc-atlas/postgres-staging@sha256:0ae8a68a1bfb6dab0f61c47d5c89b11dd7f4c2c6600f34ea798c9e9a0fd2e8a3
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-skyarc_staging}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-skyarc_atlas_staging}
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-skyarc_staging} -d ${POSTGRES_DB:-skyarc_atlas_staging}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  mosquitto:
+    image: ghcr.io/parthpallav/skyarc-atlas/mosquitto-staging@sha256:15379c8cf87fb82566e91a67da8731d4e802bba845094818fa18ffef787d53c9
+    environment:
+      ORBIT_MQTT_USERNAME: ${ORBIT_MQTT_USERNAME:-orbit-staging-consumer}
+      ORBIT_MQTT_PASSWORD: ${ORBIT_MQTT_PASSWORD:?Set ORBIT_MQTT_PASSWORD}
+    volumes:
+      - mosquitto_staging_data:/mosquitto/data
+    restart: unless-stopped
+
+  api:
+    image: ghcr.io/parthpallav/skyarc-atlas/api@sha256:d4f3ba33050ed3e402dc8bce4ca36e71a5ce3c166f917fd6ad49b0d4b05f05ff
+    ports:
+      - "${API_HOST_PORT:-3101}:3001"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      DATABASE_BOOTSTRAP: ${DATABASE_BOOTSTRAP:-always}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-skyarc-atlas-staging}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
+      AI_PROVIDER: ${AI_PROVIDER:-stub}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      PORT: 3001
+      NODE_ENV: production
+      ADTECH_BOOKING: ${ADTECH_BOOKING:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS}
+      WEB_APP_URL: ${WEB_APP_URL:?Set WEB_APP_URL}
+      ORBIT_CLOUD_URL: ${ORBIT_CLOUD_URL:-http://orbit-cloud:3002}
+      ORBIT_SERVICE_TOKEN: ${ORBIT_SERVICE_TOKEN:?Set ORBIT_SERVICE_TOKEN}
+      ORBIT_WEBHOOK_SECRET: ${ORBIT_WEBHOOK_SECRET:?Set ORBIT_WEBHOOK_SECRET}
+      PULSE_SERVICE_TOKEN: ${PULSE_SERVICE_TOKEN:?Set PULSE_SERVICE_TOKEN}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      SKYARC_DEPLOY_SHA: sha-ba68fa9abafb3ea3688297eb77ea52e7938eed11
+      SKYARC_ENV: staging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  orbit-cloud:
+    image: ghcr.io/parthpallav/skyarc-atlas/orbit-cloud@sha256:ffda6719a1f15f031af01c022ac47e7800656f7b58cee191d871de12f2065144
+    ports:
+      - "127.0.0.1:${ORBIT_HOST_PORT:-3102}:3002"
+    environment:
+      ORBIT_DATABASE_URL: ${ORBIT_DATABASE_URL:?Set ORBIT_DATABASE_URL}
+      ORBIT_SERVICE_TOKEN: ${ORBIT_SERVICE_TOKEN:?Set ORBIT_SERVICE_TOKEN}
+      ORBIT_WEBHOOK_SECRET: ${ORBIT_WEBHOOK_SECRET:?Set ORBIT_WEBHOOK_SECRET}
+      ATLAS_INTERNAL_URL: ${ATLAS_INTERNAL_URL:-http://api:3001}
+      ORBIT_PORT: 3002
+      NODE_ENV: production
+      ORBIT_MQTT_URL: ${ORBIT_MQTT_URL:-mqtt://mosquitto:1883}
+      ORBIT_MQTT_USERNAME: ${ORBIT_MQTT_USERNAME:-orbit-staging-consumer}
+      ORBIT_MQTT_PASSWORD: ${ORBIT_MQTT_PASSWORD:?Set ORBIT_MQTT_PASSWORD}
+      SKYARC_DEPLOY_SHA: sha-ba68fa9abafb3ea3688297eb77ea52e7938eed11
+      SKYARC_ENV: staging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+    restart: unless-stopped
+
+  bridge:
+    image: ghcr.io/parthpallav/skyarc-atlas/bridge@sha256:d8c830cd223fed158cdef3676684a14cc5ed4a6d3f19cdbefdf6bc15f5b75b87
+    ports:
+      - "127.0.0.1:${BRIDGE_HOST_PORT:-3104}:3004"
+    environment:
+      BRIDGE_DATABASE_URL: ${BRIDGE_DATABASE_URL:?Set BRIDGE_DATABASE_URL}
+      BRIDGE_SERVICE_TOKEN: ${BRIDGE_SERVICE_TOKEN:?Set BRIDGE_SERVICE_TOKEN}
+      BRIDGE_PORT: 3004
+      NODE_ENV: production
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      SKYARC_DEPLOY_SHA: sha-ba68fa9abafb3ea3688297eb77ea52e7938eed11
+      SKYARC_ENV: staging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  pulse:
+    image: ghcr.io/parthpallav/skyarc-atlas/pulse@sha256:49dd9875ced83deb5886a461bf1f3098968e1e103398d2f1a77728d37aa043c8
+    ports:
+      - "${PULSE_HOST_PORT:-3103}:3003"
+    environment:
+      PULSE_DATABASE_URL: ${PULSE_DATABASE_URL:?Set PULSE_DATABASE_URL}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET}
+      BRIDGE_SERVICE_TOKEN: ${BRIDGE_SERVICE_TOKEN:?Set BRIDGE_SERVICE_TOKEN}
+      ATLAS_SERVICE_TOKEN: ${PULSE_SERVICE_TOKEN:?Set PULSE_SERVICE_TOKEN}
+      BRIDGE_INTERNAL_URL: ${BRIDGE_INTERNAL_URL:-http://bridge:3004}
+      ATLAS_INTERNAL_URL: ${ATLAS_INTERNAL_URL:-http://api:3001}
+      WEB_APP_URL: ${WEB_APP_URL:?Set WEB_APP_URL}
+      PULSE_PORT: 3003
+      NODE_ENV: production
+      SKYARC_DEPLOY_SHA: sha-ba68fa9abafb3ea3688297eb77ea52e7938eed11
+      SKYARC_ENV: staging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+      bridge:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres_staging_data:
+  mosquitto_staging_data:
