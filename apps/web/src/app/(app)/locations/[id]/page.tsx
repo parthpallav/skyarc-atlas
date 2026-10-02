@@ -5,7 +5,6 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
-  CalendarDays,
   MapPin,
   Gauge,
   Pencil,
@@ -24,7 +23,10 @@ import { formatInventoryType } from "@skyarc/shared";
 import { trackEntityView } from "@/lib/clarity-telemetry";
 import { useEffect, useMemo, useState } from "react";
 import { LocationDetailSkeleton } from "@/components/ui/skeleton";
-import { SlotIndicators, liveStatusBadge } from "@/components/slot-indicators";
+import { liveStatusBadge } from "@/components/slot-indicators";
+import { DigitalAvailabilityPanel } from "@/components/digital-availability-panel";
+import { FlightDateRangePicker } from "@/components/flight-date-range-picker";
+import { parseLiveInventory } from "@/lib/live-inventory";
 import { SiteDemandSignals } from "@/components/site-demand-signals";
 import { LocationScoreIntel } from "@/components/location-score-intel";
 import { LocationCampaignProof } from "@/components/location-campaign-proof";
@@ -330,17 +332,7 @@ export default function LocationDetailPage() {
         | undefined)
     : undefined;
 
-  const live = location.liveInventory as
-    | {
-        status?: string;
-        isDigital?: boolean;
-        capacity?: number;
-        used?: number;
-        remaining?: number;
-        indicators?: Array<"available" | "booked">;
-        earliestVacancyDate?: string | null;
-      }
-    | undefined;
+  const live = parseLiveInventory(location.liveInventory);
   const primaryFace = location.primaryFace as
     | {
         inventoryId?: string;
@@ -384,16 +376,18 @@ export default function LocationDetailPage() {
   const destinationMode = isClient ? ("plan" as const) : ("request" as const);
   const canOpenDestination = isClient || isNetworkSite || isInternal;
   const scoreNum = score?.overallScore != null ? Number(score.overallScore) : null;
+  const customerCommerce = isClient;
+
+  const configureHref = `/campaigns/builder?locationId=${encodeURIComponent(id)}&from=${encodeURIComponent(flight.from)}&to=${encodeURIComponent(flight.to)}`;
 
   // Single primary action — never duplicate Edit / Request beside itself
   const primaryCta = isClient ? (
-    <button
-      type="button"
+    <Link
+      href={configureHref}
       className="btn-primary w-full justify-center gap-2 py-3 text-sm sm:w-auto"
-      onClick={() => setDestinationOpen(true)}
     >
-      Add to campaign
-    </button>
+      Configure campaign
+    </Link>
   ) : isNetworkSite ? (
     <button
       type="button"
@@ -435,10 +429,7 @@ export default function LocationDetailPage() {
           <ArrowLeft className="h-4 w-4" />
           Locations
         </Link>
-        <p className="text-xs text-muted">
-          <CalendarDays className="mr-1 inline h-3.5 w-3.5" />
-          {formatFlightLabel(flight.from, flight.to)}
-        </p>
+        <FlightDateRangePicker from={flight.from} to={flight.to} compact />
       </div>
 
       {/* ── Composition: media + identity (not a long card stack) ── */}
@@ -516,18 +507,20 @@ export default function LocationDetailPage() {
                         : "1 exclusive face"
                   }
                 />
-                <FactCell
-                  label="Skyarc Index"
-                  value={
-                    scoreNum != null
-                      ? `${Math.round(scoreNum)}/100`
-                      : showInternalIntel
-                        ? "Not set — configure"
-                        : "—"
-                  }
-                  emphasize={scoreNum != null}
-                  muted={scoreNum == null && showInternalIntel}
-                />
+                {!customerCommerce ? (
+                  <FactCell
+                    label="Skyarc Index"
+                    value={
+                      scoreNum != null
+                        ? `${Math.round(scoreNum)}/100`
+                        : showInternalIntel
+                          ? "Not set — configure"
+                          : "—"
+                    }
+                    emphasize={scoreNum != null}
+                    muted={scoreNum == null && showInternalIntel}
+                  />
+                ) : null}
                 <FactCell
                   label="Rate"
                   value={
@@ -542,18 +535,25 @@ export default function LocationDetailPage() {
                 />
               </div>
 
-              {isDigital && slotCapacity != null ? (
-                <SlotIndicators
-                  indicators={live?.indicators ?? []}
-                  capacity={slotCapacity}
-                  used={slotUsed}
-                  label={
-                    liveStatus === "UNAVAILABLE"
-                      ? live?.earliestVacancyDate
-                        ? `Fully booked · next opening ${live.earliestVacancyDate}`
-                        : "Fully booked for these dates"
-                      : undefined
-                  }
+              {customerCommerce ? (
+                <DigitalAvailabilityPanel
+                  live={live}
+                  flightFrom={flight.from}
+                  flightTo={flight.to}
+                  isDigital={isDigital}
+                  liveStatus={liveStatus}
+                  locationId={id}
+                  configureHref={configureHref}
+                />
+              ) : isDigital && slotCapacity != null ? (
+                <DigitalAvailabilityPanel
+                  live={live}
+                  flightFrom={flight.from}
+                  flightTo={flight.to}
+                  isDigital={isDigital}
+                  liveStatus={liveStatus}
+                  locationId={id}
+                  showConfigureCta={isInternal}
                 />
               ) : null}
 
@@ -754,41 +754,18 @@ export default function LocationDetailPage() {
         {tab === "availability" ? (
           <section className="space-y-4">
             <div className="rounded-2xl border border-violet-100 bg-white p-5 shadow-card sm:p-6">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                Flight window
-              </p>
-              <h2 className="mt-1 text-sm font-semibold text-slate-900">
-                {formatFlightLabel(flight.from, flight.to)}
-              </h2>
-              <p className="mt-3 text-sm text-slate-700">
-                Status:{" "}
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}>
-                  {badge.label}
-                </span>
-              </p>
-              {isDigital && slotCapacity != null ? (
-                <div className="mt-4">
-                  <SlotIndicators
-                    indicators={live?.indicators ?? []}
-                    capacity={slotCapacity}
-                    used={slotUsed}
-                    label={
-                      liveStatus === "UNAVAILABLE"
-                        ? live?.earliestVacancyDate
-                          ? `Fully booked · next opening ${live.earliestVacancyDate}`
-                          : "Fully booked for these dates"
-                        : `${slotOpen} of ${slotCapacity} ad places open`
-                    }
-                  />
-                </div>
-              ) : (
-                <p className="mt-4 text-sm text-muted">
-                  {liveStatus === "UNAVAILABLE"
-                    ? "Exclusive face is booked for this window."
-                    : "Exclusive face available for this window."}
-                </p>
-              )}
+              <FlightDateRangePicker from={flight.from} to={flight.to} />
             </div>
+            <DigitalAvailabilityPanel
+              live={live}
+              flightFrom={flight.from}
+              flightTo={flight.to}
+              isDigital={isDigital}
+              liveStatus={liveStatus}
+              locationId={id}
+              configureHref={configureHref}
+              showConfigureCta={customerCommerce || isInternal}
+            />
           </section>
         ) : null}
 

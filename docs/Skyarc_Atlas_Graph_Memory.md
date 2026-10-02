@@ -4,7 +4,8 @@ Living ownership map. Update as capabilities ship.
 
 **Baseline audited:** `df5cd9c`  
 **Phase 1 correction:** `e88cb7b` / follow-up `51a683e`  
-**Phase 2 booking ledger:** in progress on tip after 2026-10-02
+**Phase 2 booking ledger:** in progress on tip after 2026-10-02  
+**Digital availability + self-serve builder:** `DigitalAvailabilityPanel`, `liveInventory.breakdown/dailySeries`, `/campaigns/builder`, sandbox `PaymentIntent`, `BookingCreative` (2026-10-02 branch)
 
 ## Service ownership
 

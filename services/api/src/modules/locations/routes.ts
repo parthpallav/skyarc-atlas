@@ -84,6 +84,34 @@ import {
   touchLocationPresence,
 } from "../../lib/cache/presence-cache.js";
 
+type ScreenWithInventories = {
+  operatingHoursJson?: unknown;
+  loopDurationSec?: number | null;
+  slotDurationSec?: number | null;
+  inventories?: Array<{
+    inventoryType: string;
+    slotCapacity: number;
+    status: string;
+    availabilityWindows?: unknown[];
+  }>;
+};
+
+function inventoriesForLiveSummary(screens: ScreenWithInventories[]) {
+  return screens.flatMap((screen) =>
+    (screen.inventories ?? []).map((inv) => ({
+      inventoryType: inv.inventoryType,
+      slotCapacity: inv.slotCapacity,
+      status: inv.status,
+      availabilityWindows: inv.availabilityWindows,
+      screen: {
+        operatingHoursJson: screen.operatingHoursJson,
+        loopDurationSec: screen.loopDurationSec,
+        slotDurationSec: screen.slotDurationSec,
+      },
+    }))
+  );
+}
+
 function serializeLocation(
   user: AuthUser,
   location: {
@@ -533,18 +561,12 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
           flightWindow
         );
 
-        const inventories = l.screens.flatMap((s) =>
-          (s.inventories ?? []).map((inv) => ({
-            inventoryType: inv.inventoryType,
-            slotCapacity: inv.slotCapacity,
-            status: inv.status,
-            availabilityWindows: inv.availabilityWindows,
-          }))
-        );
+        const inventories = inventoriesForLiveSummary(l.screens);
         const liveInventory = summarizeLocationLiveInventory({
           inventories,
           startDate: flightFrom,
           endDate: flightTo,
+          computedAt: new Date(),
         });
         return {
           ...base,
@@ -1059,18 +1081,12 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
     const covers = await coverUrlsForLocations(env, [id]);
     const commercialView = await commercialViewForLocation(location);
     const skyarcCommercialView = await skyarcCommercialViewForLocation(location);
-    const inventories = location.screens.flatMap((s) =>
-      (s.inventories ?? []).map((inv) => ({
-        inventoryType: inv.inventoryType,
-        slotCapacity: inv.slotCapacity,
-        status: inv.status,
-        availabilityWindows: inv.availabilityWindows,
-      }))
-    );
+    const inventories = inventoriesForLiveSummary(location.screens);
     const liveInventory = summarizeLocationLiveInventory({
       inventories,
       startDate: flightFrom,
       endDate: flightTo,
+      computedAt: new Date(),
     });
     const base = serializeLocation(
       request.user,

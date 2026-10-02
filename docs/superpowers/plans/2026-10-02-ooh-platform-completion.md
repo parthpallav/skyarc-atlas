@@ -50,6 +50,8 @@
 | Tenant isolation | `tenant-context.ts` foundation | Expand on mutating routes | Atlas | auth | **partial** | helper added |
 | Booking records | Booking + BookingItem + transitions linked to windows | Explicit Booking/BookingItem | Atlas | Phase 2 | **done (core)** | unit status + reserve API |
 | Versioned pricing/quotes | QuoteRevision + RateCard effective dates | Immutable quotes + accept→reserve | Atlas (+Pulse orch) | Phase 3 | **partial** | money unit + accept path |
+| Digital availability UX | `DigitalAvailabilityPanel` + `liveInventory.breakdown` | Flight-aware capacity, a11y legend, builder CTA | Web+shared | locations API | **done (branch)** | `slot-occupancy-breakdown.test.ts` |
+| Self-serve checkout | `PaymentIntent` + test capture + `BookingCreative` | Sandbox pay → booking/payment/creative tracking | Atlas+Web | migration 0011 | **partial** | `payments.test.ts`; live gateway blocked |
 | WhatsApp production | Bridge dry-run; UI hidden | Signed webhooks + delivery jobs | Bridge+Pulse | Meta creds | partial | — |
 | MQTT telemetry | OrbitTelemetry/DeviceState | Auth MQTT + contracts | Orbit | Phase Orbit | not started | — |
 

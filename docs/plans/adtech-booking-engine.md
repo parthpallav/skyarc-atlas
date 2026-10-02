@@ -75,11 +75,13 @@ New AdTech path (parallel):
 4. Fix hold path: advisory lock + honest `slotsConsumed` (behind feature flag for new path only first)
 5. Feature flag `ADTECH_BOOKING`
 
-### Phase 2 — Self-serve builder UI
-Campaign details → screens → dates → plays/day → timing (default Automatic) → creative upload stub → quote → review
+### Phase 2 — Self-serve builder UI (in progress on branch)
+- `/campaigns/builder` + `DigitalAvailabilityPanel` on location pages
+- Quote preview → issue → accept → sandbox `PaymentIntent` (`PAYMENTS_PROVIDER=test`)
+- `BookingCreative` + customer booking tracking page
 
 ### Phase 3 — Reservation + Order
-Temp hold → price lock → order states → payment adapter stub → confirm → allocate
+Temp hold → price lock → order states → **live** payment adapter (Razorpay) → confirm → allocate
 
 ### Phase 4 — Scheduling + distribution
 Daily play plan generation; publish via `PlaybackProvider` stub

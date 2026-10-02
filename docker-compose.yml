@@ -54,6 +54,7 @@ services:
       PORT: 3001
       NODE_ENV: production
       ADTECH_BOOKING: ${ADTECH_BOOKING:-true}
+      PAYMENTS_PROVIDER: ${PAYMENTS_PROVIDER:-test}
       CORS_ORIGINS: ${CORS_ORIGINS}
       WEB_APP_URL: ${WEB_APP_URL:-}
       ORBIT_CLOUD_URL: ${ORBIT_CLOUD_URL:-http://orbit-cloud:3002}

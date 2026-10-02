@@ -683,6 +683,8 @@ model Booking {
   mediaPlan          MediaPlan?          @relation(fields: [mediaPlanId], references: [id], onDelete: SetNull)
   items              BookingItem[]
   transitions        BookingTransition[]
+  paymentIntents     PaymentIntent[]
+  creatives          BookingCreative[]
 
   @@index([campaignId, status])
   @@index([tenantOrganizationId, status])
@@ -776,7 +778,8 @@ model QuoteRevision {
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
 
-  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaign       Campaign?       @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  paymentIntents PaymentIntent[]
 
   @@index([campaignId, status])
   @@index([tenantOrganizationId, status])
@@ -797,6 +800,78 @@ model LocationAvailabilityRelease {
 
   @@index([actorUserId])
   @@index([createdAt])
+}
+
+enum PaymentIntentStatus {
+  CREATED
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  CANCELLED
+}
+
+enum BookingCreativeStatus {
+  REQUIRED
+  SUBMITTED
+  IN_REVIEW
+  APPROVED
+  REJECTED
+}
+
+/// Server-owned checkout amount linked to a quote revision.
+model PaymentIntent {
+  id               String              @id @default(uuid()) @db.Uuid
+  quoteRevisionId  String              @db.Uuid
+  amountMinor      Int
+  currency         String              @default("INR")
+  idempotencyKey   String              @unique
+  provider         String
+  providerRef      String?
+  status           PaymentIntentStatus @default(CREATED)
+  bookingId        String?             @db.Uuid
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  quoteRevision QuoteRevision @relation(fields: [quoteRevisionId], references: [id], onDelete: Cascade)
+  booking       Booking?      @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  events        PaymentEvent[]
+
+  @@index([quoteRevisionId])
+  @@index([status])
+}
+
+model PaymentEvent {
+  id              String    @id @default(uuid()) @db.Uuid
+  paymentIntentId String    @db.Uuid
+  eventType       String
+  providerEventId String?
+  payloadJson     Json      @default("{}")
+  signatureValid  Boolean   @default(false)
+  processedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  paymentIntent PaymentIntent @relation(fields: [paymentIntentId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentIntentId, providerEventId])
+  @@index([paymentIntentId, createdAt])
+}
+
+model BookingCreative {
+  id          String              @id @default(uuid()) @db.Uuid
+  bookingId   String              @db.Uuid
+  status      BookingCreativeStatus @default(REQUIRED)
+  assetUrl    String?
+  fileName    String?
+  notes       String?
+  submittedAt DateTime?
+  reviewedAt  DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, status])
 }
 
 /// Ledger for prisma/migrations/*.sql — maintained by apply-sql-migrations.sh (not Prisma Migrate).

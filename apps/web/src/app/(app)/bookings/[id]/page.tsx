@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
 import { formatDateIn } from "@/lib/dates";
@@ -26,11 +27,27 @@ type BookingDetail = {
     reason?: string | null;
     createdAt: string;
   }>;
+  paymentIntents?: Array<{
+    id: string;
+    status: string;
+    amountMinor: number;
+    currency: string;
+    provider: string;
+    providerRef?: string | null;
+  }>;
+  creatives?: Array<{
+    id: string;
+    status: string;
+    assetUrl?: string | null;
+    fileName?: string | null;
+  }>;
 };
 
 export default function BookingDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
+  const queryClient = useQueryClient();
+  const [creativeUrl, setCreativeUrl] = useState("");
 
   const bookingQuery = useQuery({
     queryKey: ["booking", id],
@@ -38,6 +55,17 @@ export default function BookingDetailPage() {
       const client = createWebApiClient();
       const result = await client.getBooking(id);
       return result.data as BookingDetail;
+    },
+  });
+
+  const submitCreative = useMutation({
+    mutationFn: async () => {
+      const client = createWebApiClient();
+      return client.submitBookingCreative(id, { assetUrl: creativeUrl });
+    },
+    onSuccess: () => {
+      setCreativeUrl("");
+      void queryClient.invalidateQueries({ queryKey: ["booking", id] });
     },
   });
 
@@ -72,6 +100,12 @@ export default function BookingDetailPage() {
   const booking = bookingQuery.data;
   const items = booking.items ?? [];
   const transitions = booking.transitions ?? [];
+  const payments = booking.paymentIntents ?? [];
+  const creatives = booking.creatives ?? [];
+  const needsVendor = items.some((i) => i.status === "PENDING_VENDOR_APPROVAL");
+  const needsCreative = creatives.some((c) => c.status === "REQUIRED") || creatives.length === 0;
+  const liveOnAir =
+    booking.executionStatus === "IN_PROGRESS" || booking.executionStatus === "COMPLETED";
 
   return (
     <div className="space-y-4">
@@ -109,6 +143,80 @@ export default function BookingDetailPage() {
           ) : null}
         </div>
       </header>
+
+      <section className="grid gap-3 sm:grid-cols-2">
+        <StatusCard title="Booking" value={booking.status.replaceAll("_", " ")} />
+        <StatusCard title="Payment" value={booking.paymentStatus ?? "NOT_REQUIRED"} />
+        <StatusCard title="Execution" value={booking.executionStatus ?? "NOT_STARTED"} />
+        <StatusCard
+          title="Campaign readiness"
+          value={liveOnAir ? "On air" : needsVendor ? "Awaiting vendor approval" : needsCreative ? "Creative required" : "Preparing"}
+        />
+      </section>
+
+      {(needsVendor || needsCreative || booking.paymentStatus === "PENDING") && (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold">Needs your attention</p>
+          <ul className="mt-2 list-disc pl-5 space-y-1">
+            {booking.paymentStatus === "PENDING" ? <li>Complete payment to confirm your reservation.</li> : null}
+            {needsVendor ? (
+              <li>Some sites are pending vendor approval. Rejected items will be released automatically.</li>
+            ) : null}
+            {needsCreative ? <li>Upload creative assets before the campaign can go live.</li> : null}
+          </ul>
+        </section>
+      )}
+
+      {payments.length > 0 ? (
+        <section className="rounded-xl border border-primary/15 bg-white p-4">
+          <h2 className="text-base font-bold text-slate-900">Payments</h2>
+          <ul className="mt-2 space-y-2 text-sm">
+            {payments.map((p) => (
+              <li key={p.id} className="flex justify-between gap-2">
+                <span>{p.status} · {p.provider}</span>
+                <span className="font-mono text-xs text-muted">{p.providerRef ?? p.id.slice(0, 8)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section className="rounded-xl border border-primary/15 bg-white p-4">
+        <h2 className="text-base font-bold text-slate-900">Creative</h2>
+        {creatives.length === 0 ? (
+          <p className="mt-2 text-sm text-muted">Creative required before playback.</p>
+        ) : (
+          <ul className="mt-2 space-y-2 text-sm">
+            {creatives.map((c) => (
+              <li key={c.id}>
+                {c.status}
+                {c.assetUrl ? (
+                  <a href={c.assetUrl} className="ml-2 text-primary hover:underline" target="_blank" rel="noreferrer">
+                    View file
+                  </a>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <input
+            type="url"
+            placeholder="Creative file URL (from upload)"
+            className="flex-1 rounded-lg border px-3 py-2 text-sm"
+            value={creativeUrl}
+            onChange={(e) => setCreativeUrl(e.target.value)}
+          />
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={!creativeUrl || submitCreative.isPending}
+            onClick={() => submitCreative.mutate()}
+          >
+            Submit creative
+          </button>
+        </div>
+      </section>
 
       <section className="rounded-xl border border-primary/15 bg-white">
         <div className="border-b border-primary/10 px-4 py-3">
@@ -155,6 +263,15 @@ export default function BookingDetailPage() {
           </ul>
         </section>
       ) : null}
+    </div>
+  );
+}
+
+function StatusCard({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-violet-100 bg-white px-4 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">{title}</p>
+      <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
     </div>
   );
 }

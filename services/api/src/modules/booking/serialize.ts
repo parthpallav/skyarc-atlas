@@ -43,6 +43,22 @@ export type BookingSerializeInput = {
     createdAt: Date;
   }>;
   campaign?: { id: string; name: string; lifecycleStatus: string } | null;
+  paymentIntents?: Array<{
+    id: string;
+    status: string;
+    amountMinor: number;
+    currency: string;
+    provider: string;
+    providerRef: string | null;
+    createdAt: Date;
+  }>;
+  creatives?: Array<{
+    id: string;
+    status: string;
+    assetUrl: string | null;
+    fileName: string | null;
+    submittedAt: Date | null;
+  }>;
 };
 
 export function serializeBooking(booking: BookingSerializeInput) {
@@ -88,6 +104,22 @@ export function serializeBooking(booking: BookingSerializeInput) {
       reason: t.reason,
       createdAt: t.createdAt.toISOString(),
     })),
+    paymentIntents: (booking.paymentIntents ?? []).map((p) => ({
+      id: p.id,
+      status: p.status,
+      amountMinor: p.amountMinor,
+      currency: p.currency,
+      provider: p.provider,
+      providerRef: p.providerRef,
+      createdAt: p.createdAt.toISOString(),
+    })),
+    creatives: (booking.creatives ?? []).map((c) => ({
+      id: c.id,
+      status: c.status,
+      assetUrl: c.assetUrl,
+      fileName: c.fileName,
+      submittedAt: c.submittedAt?.toISOString() ?? null,
+    })),
   };
 }
 
@@ -111,4 +143,6 @@ export const bookingDetailInclude = {
   items: true,
   transitions: { orderBy: { createdAt: "asc" as const }, take: 200 },
   campaign: { select: { id: true, name: true, lifecycleStatus: true } },
+  paymentIntents: { orderBy: { createdAt: "desc" as const }, take: 20 },
+  creatives: { orderBy: { createdAt: "desc" as const }, take: 20 },
 };

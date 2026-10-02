@@ -527,6 +527,34 @@ export class ApiClient {
     });
   }
 
+  createPaymentIntent(data: { quoteRevisionId: string; idempotencyKey: string }) {
+    return this.request<unknown>("/payments/intents", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  captureTestPayment(paymentIntentId: string) {
+    return this.request<unknown>("/payments/test/capture", {
+      method: "POST",
+      body: JSON.stringify({ paymentIntentId }),
+    });
+  }
+
+  listBookingCreatives(bookingId: string) {
+    return this.request<{ creatives: unknown[] }>(`/bookings/${bookingId}/creatives`);
+  }
+
+  submitBookingCreative(
+    bookingId: string,
+    data: { assetUrl: string; fileName?: string; notes?: string }
+  ) {
+    return this.request<unknown>(`/bookings/${bookingId}/creatives`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   updateMediaPlanStatus(
     campaignId: string,
     planId: string,

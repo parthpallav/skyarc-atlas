@@ -554,9 +554,19 @@ export {
   slotsConsumedForFlight,
   slotOccupancy,
   earliestVacancyStart,
+  flightOccupancyBreakdown,
+  dailyOccupancySeries,
+  capacityUnitIndicators,
   summarizeLocationLiveInventory,
 } from "./slot-occupancy.js";
-export type { SlotWindowLike, LiveBookingStatus } from "./slot-occupancy.js";
+export type {
+  SlotWindowLike,
+  LiveBookingStatus,
+  FlightOccupancyBreakdown,
+  DailyOccupancyPoint,
+  CapacityUnitState,
+  LiveInventoryPlaybackSpec,
+} from "./slot-occupancy.js";
 export {
   DistributionMode,
   DeliveryMode,

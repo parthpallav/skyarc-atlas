@@ -217,6 +217,17 @@ export async function acceptQuoteRevision(
       })
     : null;
 
+  if (reserve.bookingId) {
+    const existingCreative = await prisma.bookingCreative.findFirst({
+      where: { bookingId: reserve.bookingId },
+    });
+    if (!existingCreative) {
+      await prisma.bookingCreative.create({
+        data: { bookingId: reserve.bookingId, status: "REQUIRED" },
+      });
+    }
+  }
+
   return {
     quote: updated,
     booking,
