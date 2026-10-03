@@ -61,7 +61,7 @@ import {
   requireOrganization,
 } from "../../lib/org-scope.js";
 import { loadPlatformConfig } from "../../lib/commercial-config.js";
-import { forbidden, notFound } from "../../lib/errors.js";
+import { forbidden, notFound, validationError } from "../../lib/errors.js";
 import { coverUrlsForLocations, previewMediaForLocations } from "../../lib/asset-url.js";
 import {
   buildAvailabilityReleasePreview,
