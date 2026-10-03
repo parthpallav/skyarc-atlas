@@ -73,7 +73,7 @@ New AdTech path (parallel):
 2. Nullable schema extensions: campaign delivery fields, `AvailabilityWindow.campaignId`, booking quote tables as needed
 3. `POST /booking/quote` — **read-only** feasibility + price breakdown (zero legacy risk)
 4. Fix hold path: advisory lock + honest `slotsConsumed` (behind feature flag for new path only first)
-5. Feature flag `ADTECH_BOOKING`
+5. Feature flag `ADTECH_BOOKING` / `NEXT_PUBLIC_ADTECH_BOOKING` (**opt-in**; default off keeps classic planning UX in production)
 
 ### Phase 2 — Self-serve builder UI (in progress on branch)
 - `/campaigns/builder` + `DigitalAvailabilityPanel` on location pages

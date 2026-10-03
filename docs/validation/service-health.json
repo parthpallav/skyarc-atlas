@@ -1,0 +1,49 @@
+{
+  "writtenAt": "2026-10-03T03:42:37.856315Z",
+  "note": "Isolated QA ports; main :3101 left untouched",
+  "services": {
+    "qa_api_3121": {
+      "url": "http://127.0.0.1:3121/health",
+      "httpStatus": 200,
+      "probedAt": "2026-10-03T03:42:37.856866Z",
+      "body": {
+        "data": {
+          "status": "ok",
+          "timestamp": "2026-10-03T03:42:38.046Z"
+        },
+        "meta": {}
+      }
+    },
+    "qa_pulse_3113": {
+      "url": "http://127.0.0.1:3113/health",
+      "httpStatus": 200,
+      "probedAt": "2026-10-03T03:42:38.049285Z",
+      "body": {
+        "status": "ok",
+        "service": "pulse",
+        "quoteOrchestration": "atlas_authoritative"
+      }
+    },
+    "qa_bridge_3114": {
+      "url": "http://127.0.0.1:3114/health",
+      "httpStatus": 200,
+      "probedAt": "2026-10-03T03:42:38.065862Z",
+      "body": {
+        "status": "ok",
+        "service": "bridge"
+      }
+    },
+    "main_api_3101": {
+      "url": "http://127.0.0.1:3101/health",
+      "httpStatus": 200,
+      "probedAt": "2026-10-03T03:42:38.078430Z",
+      "body": {
+        "data": {
+          "status": "ok",
+          "timestamp": "2026-10-03T03:42:38.088Z"
+        },
+        "meta": {}
+      }
+    }
+  }
+}

@@ -25,8 +25,15 @@ import {
   serializeBooking,
 } from "./serialize.js";
 
+function requireAdtechBooking() {
+  if (!isAdtechBookingEnabled()) {
+    throw validationError("AdTech booking engine is not enabled");
+  }
+}
+
 export async function registerBookingHttp(fastify: FastifyInstance) {
   fastify.get("/bookings", { preHandler: [fastify.authenticate] }, async (request) => {
+    requireAdtechBooking();
     if (!canReadLocations(request.user)) throw forbidden();
     await expireStaleHolds(prisma);
 
@@ -70,6 +77,7 @@ export async function registerBookingHttp(fastify: FastifyInstance) {
   });
 
   fastify.get("/bookings/:id", { preHandler: [fastify.authenticate] }, async (request) => {
+    requireAdtechBooking();
     if (!canReadLocations(request.user)) throw forbidden();
     await expireStaleHolds(prisma);
     const id = uuidSchema.parse((request.params as { id: string }).id);
@@ -83,7 +91,7 @@ export async function registerBookingHttp(fastify: FastifyInstance) {
   });
 
   fastify.post("/bookings/reserve", { preHandler: [fastify.authenticate] }, async (request) => {
-    if (!isAdtechBookingEnabled()) throw validationError("AdTech booking engine is not enabled");
+    requireAdtechBooking();
     if (!canWriteCampaigns(request.user)) throw forbidden();
     const tenant = resolveTenantContext(request.user);
     const body = bookingReserveBodySchema.parse(request.body);
@@ -162,6 +170,7 @@ export async function registerBookingHttp(fastify: FastifyInstance) {
   });
 
   fastify.post("/bookings/:id/cancel", { preHandler: [fastify.authenticate] }, async (request) => {
+    requireAdtechBooking();
     if (!canWriteCampaigns(request.user)) throw forbidden();
     const id = uuidSchema.parse((request.params as { id: string }).id);
     const body = (request.body ?? {}) as { reason?: string };
@@ -191,6 +200,7 @@ export async function registerBookingHttp(fastify: FastifyInstance) {
   });
 
   fastify.post("/bookings/:id/respond", { preHandler: [fastify.authenticate] }, async (request) => {
+    requireAdtechBooking();
     if (!isVendorUser(request.user) && !isInternalUser(request.user)) throw forbidden();
     const orgId = request.user.organizationId;
     if (!orgId && !isInternalUser(request.user)) throw forbidden("Vendor organization required");

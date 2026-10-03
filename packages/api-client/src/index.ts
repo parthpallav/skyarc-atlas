@@ -343,6 +343,21 @@ export class ApiClient {
     }>(`/campaigns/${id}/ready-for-site-requests`, { method: "POST" });
   }
 
+  getCampaignCommitment(id: string) {
+    return this.request<unknown>(`/campaigns/${id}/commitment`);
+  }
+
+  getCampaignActivationReadiness(id: string) {
+    return this.request<unknown>(`/campaigns/${id}/activation-readiness`);
+  }
+
+  markCampaignLive(id: string, reason?: string) {
+    return this.request<unknown>(`/campaigns/${id}/mark-live`, {
+      method: "POST",
+      body: JSON.stringify(reason ? { reason } : {}),
+    });
+  }
+
   createCampaign(data: Record<string, unknown>) {
     return this.request<unknown>("/campaigns", {
       method: "POST",

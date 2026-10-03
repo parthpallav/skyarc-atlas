@@ -576,7 +576,7 @@ model Inventory {
   productCode    String
   notes          String?
   status         InventoryStatus @default(UNKNOWN)
-  /// Concurrent loop slots for digital faces (static stays 1). Digital defaults to 6 in app logic when 1.
+  /// Concurrent commercial capacity (digital slots / kiosk faces). Must be configured explicitly — app logic does not invent a default of 6.
   slotCapacity   Int             @default(1)
   staticSpecsJson Json?
   createdAt      DateTime        @default(now())

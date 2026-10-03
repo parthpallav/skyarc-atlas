@@ -554,12 +554,17 @@ async function main() {
             productCode: row.iid,
             inventoryType: invType,
             status: "AVAILABLE",
+            // Explicit capacity — never rely on a silent digital default of 6 in app logic.
+            slotCapacity: isDigital ? 6 : invType === "KIOSK" ? 1 : 1,
             notes: `${row.widthFt}x${row.heightFt} ${LIGHT_LABELS[row.light]} on ${row.area}`,
             staticSpecsJson: {
               widthFt: row.widthFt,
               heightFt: row.heightFt,
               sqft: row.sqft,
               lighting: LIGHT_LABELS[row.light],
+              sides: invType === "KIOSK" && String(row.iid).endsWith("02") ? 2 : 1,
+              supportsDualSidedPackage: invType === "KIOSK" && String(row.iid).endsWith("02"),
+              pooling: "IDENTIFIED",
             },
           },
         });

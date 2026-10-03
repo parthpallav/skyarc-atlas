@@ -1,0 +1,19 @@
+{
+  "probedAt": "2026-10-03T03:35:56.931927Z",
+  "base": "http://127.0.0.1:3121",
+  "httpStatus": 400,
+  "inventoryId": "b9ff8c41-093e-4d5e-8b56-9d010f289ebc",
+  "locationId": "497cb7f3-26cc-4de1-bc70-b21c073f91a0",
+  "screenId": "7e1a6ebd-b1ba-4ffc-a81f-1b336df1b46f",
+  "campaignId": "1b872bf6-1b80-44f0-bec9-9c69f0c5beb8",
+  "rateCardCount": 0,
+  "skyarcCommercialJson": {},
+  "fixtureNote": "Inventory without RateCard on Location with empty skyarcCommercialJson (required to hit PRICING_UNAVAILABLE; location clientRateAmount otherwise prices the quote)",
+  "response": {
+    "error": {
+      "code": "VALIDATION_ERROR",
+      "message": "PRICING_UNAVAILABLE",
+      "details": []
+    }
+  }
+}

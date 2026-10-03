@@ -42,6 +42,8 @@ export type HoldInventoryOptions = {
   requireVendorApproval?: boolean;
   /** When false, only capacity windows are written (legacy callers). Default true. */
   syncBooking?: boolean;
+  /** Per-inventory slots/faces consumed (digital slots or dual-sided package = 2). Default 1. */
+  slotsByInventory?: Record<string, number>;
 };
 
 export interface InventoryRow {
@@ -679,6 +681,7 @@ export async function holdInventoryForCampaign(
       const windowIdsByInventory: Record<string, string> = {};
 
       for (const inv of inventories) {
+        const slotsNeeded = Math.max(1, Math.floor(options.slotsByInventory?.[inv.id] ?? 1));
         const free = isInventoryFreeForFlight(
           {
             status: "AVAILABLE",
@@ -688,7 +691,7 @@ export async function holdInventoryForCampaign(
           },
           flightStart,
           flightEnd,
-          { slotsNeeded: 1 }
+          { slotsNeeded }
         );
         const occ = slotOccupancy({
           inventoryType: inv.inventoryType,
@@ -697,7 +700,7 @@ export async function holdInventoryForCampaign(
           startDate: flightStart,
           endDate: flightEnd,
         });
-        if (!free || occ.remaining < 1) {
+        if (!free || occ.remaining < slotsNeeded) {
           skipped.push(inv.id);
           continue;
         }
@@ -710,7 +713,7 @@ export async function holdInventoryForCampaign(
             endDate: flightEnd,
             status: mode === "book" ? "BOOKED" : "HELD",
             notes: campaignWindowNote(campaignId, mode),
-            slotsConsumed: 1,
+            slotsConsumed: slotsNeeded,
             expiresAt,
           },
           select: { id: true },

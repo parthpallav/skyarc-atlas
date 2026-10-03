@@ -9,12 +9,14 @@ import { formatInr } from "@/lib/format";
 import { DigitalAvailabilityPanel } from "@/components/digital-availability-panel";
 import { FlightDateRangePicker, defaultFlightRange } from "@/components/flight-date-range-picker";
 import { parseLiveInventory } from "@/lib/live-inventory";
+import { showAdtechBooking } from "@/lib/feature-flags";
 
 type Step = "dates" | "package" | "quote" | "checkout";
 
 export default function CampaignBuilderPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const adtechBooking = showAdtechBooking();
   const locationId = searchParams.get("locationId") ?? "";
   const defaults = defaultFlightRange();
   const from = searchParams.get("from") ?? defaults.from;
@@ -31,7 +33,7 @@ export default function CampaignBuilderPage() {
 
   const { data: location } = useQuery({
     queryKey: ["builder-location", locationId, from, to],
-    enabled: Boolean(locationId),
+    enabled: adtechBooking && Boolean(locationId),
     queryFn: async () => {
       const client = createWebApiClient();
       const result = await client.getLocation(locationId, { from, to });
@@ -41,6 +43,7 @@ export default function CampaignBuilderPage() {
 
   const { data: campaigns } = useQuery({
     queryKey: ["builder-campaigns"],
+    enabled: adtechBooking,
     queryFn: async () => {
       const client = createWebApiClient();
       const result = await client.listCampaigns(1, 50);
@@ -160,6 +163,20 @@ export default function CampaignBuilderPage() {
   const stepIndex = steps.indexOf(step);
 
   const locationName = String(location?.name ?? "Selected site");
+
+  if (!adtechBooking) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4 py-16 text-center">
+        <h1 className="text-xl font-semibold text-slate-900">Self-serve booking is not enabled</h1>
+        <p className="text-sm text-muted">
+          Use Add to campaign on a location, or open Campaigns to plan media the usual way.
+        </p>
+        <Link href="/campaigns" className="btn-primary inline-flex">
+          Back to campaigns
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 pb-16">

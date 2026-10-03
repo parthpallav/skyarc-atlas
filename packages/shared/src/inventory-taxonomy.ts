@@ -121,6 +121,12 @@ export type InventorySpecsJson = {
   heightFt?: number | null;
   lighting?: string | null;
   sqft?: number | null;
+  /** Physical sides on this unit (1 = one-sided; 2 = dual-capable). Not assumed for every kiosk. */
+  sides?: 1 | 2 | null;
+  /** When true, a dual-sided package may consume both sides atomically. */
+  supportsDualSidedPackage?: boolean | null;
+  /** IDENTIFIED face/unit vs POOLED quantity on this inventory row. */
+  pooling?: "IDENTIFIED" | "POOLED" | null;
   production?: DigitalProductionSpecs | StaticProductionSpecs | ConceptualProductionSpecs | null;
 };
 
@@ -211,6 +217,10 @@ export function parseInventorySpecsJson(raw: unknown): InventorySpecsJson | null
     heightFt: typeof o.heightFt === "number" ? o.heightFt : null,
     lighting: typeof o.lighting === "string" ? o.lighting : null,
     sqft: typeof o.sqft === "number" ? o.sqft : null,
+    sides: o.sides === 1 || o.sides === 2 ? o.sides : null,
+    supportsDualSidedPackage:
+      typeof o.supportsDualSidedPackage === "boolean" ? o.supportsDualSidedPackage : null,
+    pooling: o.pooling === "IDENTIFIED" || o.pooling === "POOLED" ? o.pooling : null,
     production:
       o.production && typeof o.production === "object"
         ? (o.production as InventorySpecsJson["production"])

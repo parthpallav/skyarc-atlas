@@ -1,0 +1,247 @@
+{
+  "testedAt": "2026-10-03T04:19:20.835Z",
+  "startedAt": "2026-10-03T04:19:19.141Z",
+  "api": "http://127.0.0.1:3131",
+  "web": "http://127.0.0.1:3100",
+  "gitSha": "624c16a9b2077531121a2d39c97308728e4e33b4",
+  "results": [
+    {
+      "step": "0.health",
+      "expected": "API healthy",
+      "actual": "http=200",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "0.web",
+      "expected": "Web reachable",
+      "actual": "http=200",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "0.login_planner",
+      "expected": "MEDIA_PLANNER token (no SA)",
+      "actual": "role=MEDIA_PLANNER email=planner@skyarcads.com",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "0.login_vendors",
+      "expected": "Two vendor identities",
+      "actual": "a=200/VENDOR b=200/VENDOR",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "1.browse_inventory",
+      "expected": "Multi-city inventory list",
+      "actual": "http=200 n=50 cities=4",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "2.digital_capacity_configured",
+      "expected": "Digital capacity from inventory config",
+      "actual": "capacity=6 status=PARTIAL",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "3.create_campaign",
+      "expected": "Campaign with multi-city brief + budget + KPIs",
+      "actual": "http=200 id=0ad5eca6-4e27-4dc4-9ece-c628fdddc78a",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "4.generate_proposed_plan",
+      "expected": "Save initial proposed media plan",
+      "actual": "http=200 planId=c57e2fb0-49c1-42b2-9ff3-1becfded0adf",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "5.campaign_shows_plan",
+      "expected": "Plan visible on campaign details",
+      "actual": "plans=1 lifecycle=DRAFT",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "6.set_current_plan_hold",
+      "expected": "Set current plan creates hold + pending vendor; not LIVE",
+      "actual": "planHttp=200 lifecycle=PENDING_APPROVAL booking=PENDING_VENDOR_APPROVAL commitHttp=200",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "7.mark_live_blocked_pre_vendor",
+      "expected": "Mark live blocked until commitments confirmed",
+      "actual": "http=400 msg=Confirm inventory commitments (booked capacity) before marking live. 6 inventory item(s) still await vendor approval or confirmation.",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "8.vendor_partial_booking_respond",
+      "expected": "Vendor approve some / reject some via booking ledger",
+      "actual": "approve=200 reject=200",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "9.vendor_media_plan_respond",
+      "expected": "Vendor item decisions via media-plan respond",
+      "actual": "approve=200 reject=200 pendingWas=6",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "10.commitment_and_readiness",
+      "expected": "Commitment summary + activation readiness surfaces",
+      "actual": "commit=200 readyHttp=200 ready=false",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "11.mark_live",
+      "expected": "Authorized mark-live when ready; else blocked with reasons",
+      "actual": "http=400 lifecycle=PENDING_APPROVAL ready=false",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "11b.mark_live_success",
+      "expected": "Full vendor confirm then Mark live \u2192 ACTIVE/Scheduled",
+      "actual": "create=200 opt=200 plan=05069797-d294-4530-a80c-40d310304157 vendorApprove=200 ready=true mark=200 life=ACTIVE",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "12.export_revision",
+      "expected": "Export current plan revision",
+      "actual": "http=200 bytes=403123",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "13.cross_tenant_commitment",
+      "expected": "Vendor cannot read planner commitment summary",
+      "actual": "http=403",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "14.past_flight_availability",
+      "expected": "Past flight occupancy coherent",
+      "actual": "http=200 live=true",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    }
+  ],
+  "evidence": [
+    {
+      "kind": "baseline",
+      "api": "http://127.0.0.1:3131",
+      "web": "http://127.0.0.1:3100",
+      "gitSha": "624c16a9b2077531121a2d39c97308728e4e33b4",
+      "startedAt": "2026-10-03T04:19:19.141Z"
+    }
+  ],
+  "summary": {
+    "PASS": 19,
+    "PARTIAL": 0,
+    "FAIL": 0,
+    "BLOCKED": 0
+  },
+  "roleStateTransitions": [
+    {
+      "from": "PROPOSED plan",
+      "action": "Set as current plan (APPROVED)",
+      "to": "Current plan + HELD booking PENDING_VENDOR_APPROVAL; campaign PENDING_APPROVAL (not LIVE)"
+    },
+    {
+      "from": "PENDING_VENDOR_APPROVAL items",
+      "action": "Vendor APPROVE/REJECT",
+      "to": "CONFIRMED or REJECTED booking items; expired hold cannot be restored"
+    },
+    {
+      "from": "Confirmed commitments + readiness",
+      "action": "Mark live",
+      "to": "Campaign ACTIVE (Scheduled before flight start; Live after)"
+    },
+    {
+      "from": "Export / Orbit / plan approve",
+      "action": "automatic",
+      "to": "Must NOT set ACTIVE"
+    }
+  ],
+  "gaps": [
+    "Browser desktop/mobile evidence still required separately for keyboard/tap.",
+    "Customer electronic acceptance remains QuoteRevision-based when issued; commitment view documents absence.",
+    "Replacement suggestions after reject use existing swap/alternatives paths.",
+    "Phase2 proposal/ops/billing modules remain on feat/phase2 worktree when needed."
+  ],
+  "revisions": {
+    "workspaceGit": "624c16a9b2077531121a2d39c97308728e4e33b4",
+    "workspaceShort": "624c16a",
+    "qaApi": "http://127.0.0.1:3131",
+    "qaDb": "skyarc_atlas_qa",
+    "qaWeb": "http://127.0.0.1:3100",
+    "flags": {
+      "ADTECH_BOOKING": true,
+      "PAYMENTS_PROVIDER": "test",
+      "AI_PROVIDER": "stub"
+    },
+    "note": "API process ran workspace tree against isolated skyarc_atlas_qa. Not deployed to production."
+  },
+  "implementationMatrix": [
+    {
+      "area": "Campaign create + proposed plan",
+      "status": "Connected"
+    },
+    {
+      "area": "Current plan hold + vendor pending",
+      "status": "Connected"
+    },
+    {
+      "area": "Bookable units / slot capacity",
+      "status": "Connected (config-authoritative)"
+    },
+    {
+      "area": "Mark live readiness",
+      "status": "Connected"
+    },
+    {
+      "area": "Commitment summary",
+      "status": "Connected"
+    },
+    {
+      "area": "Customer e-sign acceptance",
+      "status": "Documented gap (QuoteRevision when issued)"
+    },
+    {
+      "area": "Phase2 proposals/ops/billing",
+      "status": "Separate worktree a7be266"
+    }
+  ]
+}

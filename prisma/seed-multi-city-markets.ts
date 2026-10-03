@@ -231,11 +231,15 @@ export async function seedMultiCityMarkets(deps: SeedDeps): Promise<number> {
             productCode: `MC-${city.siteCodePrefix}-${i + 1}`,
             inventoryType: row.invType,
             status: "AVAILABLE",
+            slotCapacity: row.invType.includes("DIGITAL") ? (i % 2 === 0 ? 8 : 4) : row.invType === "KIOSK" ? (i % 3 === 0 ? 2 : 1) : 1,
             staticSpecsJson: {
               widthFt: row.widthFt,
               heightFt: row.heightFt,
               sqft,
               lighting: "Front-lit",
+              sides: row.invType === "KIOSK" && i % 3 === 0 ? 2 : 1,
+              supportsDualSidedPackage: row.invType === "KIOSK" && i % 3 === 0,
+              pooling: row.invType === "KIOSK" && i % 5 === 0 ? "POOLED" : "IDENTIFIED",
             },
           },
         });

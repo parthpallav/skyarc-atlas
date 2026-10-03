@@ -3,9 +3,9 @@ import { z } from "zod";
 import { uuidSchema } from "@skyarc/validation";
 import { prisma } from "../../lib/prisma.js";
 import { success } from "../../lib/response.js";
-import { forbidden, notFound } from "../../lib/errors.js";
+import { forbidden, notFound, validationError } from "../../lib/errors.js";
 import { canReadLocations } from "../../lib/rbac.js";
-import { bookingTenantWhere } from "./serialize.js";
+import { bookingTenantWhere, isAdtechBookingEnabled } from "./serialize.js";
 
 const submitCreativeSchema = z.object({
   assetUrl: z.string().url(),
@@ -18,6 +18,7 @@ export async function registerCreativeHttp(fastify: FastifyInstance) {
     "/bookings/:id/creatives",
     { preHandler: [fastify.authenticate] },
     async (request) => {
+      if (!isAdtechBookingEnabled()) throw validationError("AdTech booking engine is not enabled");
       if (!canReadLocations(request.user)) throw forbidden();
       const bookingId = uuidSchema.parse((request.params as { id: string }).id);
       const body = submitCreativeSchema.parse(request.body);
@@ -44,6 +45,7 @@ export async function registerCreativeHttp(fastify: FastifyInstance) {
     "/bookings/:id/creatives",
     { preHandler: [fastify.authenticate] },
     async (request) => {
+      if (!isAdtechBookingEnabled()) throw validationError("AdTech booking engine is not enabled");
       if (!canReadLocations(request.user)) throw forbidden();
       const bookingId = uuidSchema.parse((request.params as { id: string }).id);
       const booking = await prisma.booking.findFirst({

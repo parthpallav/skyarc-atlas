@@ -1,0 +1,89 @@
+{
+  "testedAt": "2026-10-02T17:52:36.136Z",
+  "api": "http://127.0.0.1:3121",
+  "fixtures": {
+    "invId": "8ad17a2e-7cb6-4e77-8139-5711c3df83f5",
+    "noRateId": "",
+    "campaignId": "86cec6a1-7181-41c2-9b23-acfbeb5fd034",
+    "bookingId": "01fda5cd-6089-44f7-bf04-05d735fda42b",
+    "vendorOrgId": "00000000-0000-4000-8000-000000000002"
+  },
+  "results": [
+    {
+      "step": "pricing_unavailable",
+      "expected": "Missing rates → PRICING_UNAVAILABLE",
+      "actual": "status=400 body={\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Invalid request\",\"details\":[{\"path\":\"lines.0.inventoryId\",\"message\":\"Invalid uuid\"}]}}",
+      "status": "PARTIAL",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "quote_issue",
+      "expected": "Issue priced quote",
+      "actual": "status=200 id=06342365-448c-4dfb-a07b-448fa471dda1 body={\"data\":{\"id\":\"06342365-448c-4dfb-a07b-448fa471dda1\",\"campaignId\":\"86cec6a1-7181-41c2-9b23-acfbeb5fd034\",\"revisionNumber\":1,\"status\":\"ISSUED\",\"currency\":\"INR\",\"subtotalMinor\":50666",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "quote_accept_hold",
+      "expected": "Accept with requireVendorApproval → HELD/PENDING_VENDOR_APPROVAL",
+      "actual": "status=200 bookingId=01fda5cd-6089-44f7-bf04-05d735fda42b status=PENDING_VENDOR_APPROVAL body={\"data\":{\"quote\":{\"id\":\"06342365-448c-4dfb-a07b-448fa471dda1\",\"tenantOrganizationId\":\"00000000-0000-4000-8000-000000000001\",\"campaignId\":\"86cec6a1-7181-41c2-9b23-acfbeb5fd034\",\"mediaPlanId\":null,\"revi",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "vendor_respond_action",
+      "expected": "Vendor APPROVE {action,inventoryIds}",
+      "actual": "respond=200 booking=CONFIRMED body={\"data\":{\"id\":\"01fda5cd-6089-44f7-bf04-05d735fda42b\",\"tenantOrganizationId\":\"00000000-0000-4000-8000-000000000001\",\"campaignId\":\"86cec6a1-7181-41c2-9b23-acfbeb5fd034\",\"mediaPlanId\":null,\"status\":\"CONF",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "hold_expiry",
+      "expected": "create hold for expiry",
+      "actual": "a2=500 {\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"Invalid item transition CONFIRMED → PENDING_VENDOR_APPROVAL\",\"details\":[\"Error: Invalid item transition CONFIRMED →",
+      "status": "PARTIAL",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "concurrent_last_slot",
+      "expected": "Two clients accept overlapping last-slot holds",
+      "actual": "a=400 b=500 aBody={\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Quote cannot be accepted from status SUPERSEDED\",\"det bBody={\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"Invalid item transition CONFIRMED → PENDING_VENDOR_APPR",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "amend_preserves",
+      "expected": "Failed amend preserves reservation",
+      "actual": "amend=200 before=CONFIRMED after=CONFIRMED",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "finance_customer_isolation",
+      "expected": "Customer cannot read staff commercial margins",
+      "actual": "staff=200 customer=403",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    },
+    {
+      "step": "pulse_xlsx",
+      "expected": "Pulse XLSX with Atlas URL aligned",
+      "actual": "status=200 bytes=7311",
+      "status": "PASS",
+      "missing": [],
+      "layer": "api"
+    }
+  ],
+  "summary": {
+    "PARTIAL": 2,
+    "PASS": 7
+  }
+}

@@ -1,10 +1,11 @@
 import { isInternalUser, isVendorUser } from "@skyarc/shared";
 
-/** Feature gate — booking/quote APIs on unless ADTECH_BOOKING=false. */
+/**
+ * Feature gate — AdTech booking/quote/payment APIs are opt-in.
+ * Set ADTECH_BOOKING=true to enable. Default off so production keeps classic planning.
+ */
 export function isAdtechBookingEnabled(): boolean {
-  const flag = process.env.ADTECH_BOOKING;
-  if (flag === "false") return false;
-  return true;
+  return process.env.ADTECH_BOOKING === "true";
 }
 
 export type BookingSerializeInput = {

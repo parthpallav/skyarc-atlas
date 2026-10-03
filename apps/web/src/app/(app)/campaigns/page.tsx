@@ -75,7 +75,7 @@ function campaignLifecycle(row: CampaignRow): {
   if (row.lifecycleStatus === "ACTIVE") {
     return {
       key: "live",
-      label: "Active",
+      label: "Live",
       className: "bg-emerald-50 text-emerald-800 border-emerald-200",
     };
   }
@@ -97,8 +97,8 @@ function campaignLifecycle(row: CampaignRow): {
   const planStatus = row.latestPlan?.status;
   if (planStatus === "APPROVED") {
     return {
-      key: "live",
-      label: "Approved plan",
+      key: "planned",
+      label: "Current plan",
       className: "bg-emerald-50 text-emerald-800 border-emerald-200",
     };
   }
@@ -192,7 +192,7 @@ export default function CampaignsPage() {
 
   const filters: { id: ListFilter; label: string; count?: number }[] = [
     { id: "ALL", label: "All", count: stats.total },
-    { id: "LIVE", label: "Active plans", count: stats.live },
+    { id: "LIVE", label: "Live / scheduled", count: stats.live },
     { id: "DRAFT", label: "Drafts", count: stats.drafts },
   ];
 
@@ -233,7 +233,7 @@ export default function CampaignsPage() {
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {[
             { label: "Total", value: stats.total },
-            { label: "Active plans", value: stats.live },
+            { label: "Live / scheduled", value: stats.live },
             { label: "Drafts", value: stats.drafts },
           ].map((kpi) => (
             <div key={kpi.label} className="card-surface px-3 py-2.5">

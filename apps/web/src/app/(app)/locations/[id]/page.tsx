@@ -16,7 +16,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { ImageGallery } from "@/components/image-gallery";
 import { LocationInventoryPanel } from "@/components/location-inventory-panel";
 import { LocationOrbitTab } from "@/components/location-orbit-tab";
-import { showOrbitUi } from "@/lib/feature-flags";
+import { showAdtechBooking, showOrbitUi } from "@/lib/feature-flags";
 import { LocationCommercialPanel } from "@/components/location-commercial-panel";
 import { LocationSkyarcPricingPanel } from "@/components/location-skyarc-pricing-panel";
 import { formatInventoryType } from "@skyarc/shared";
@@ -376,18 +376,30 @@ export default function LocationDetailPage() {
   const destinationMode = isClient ? ("plan" as const) : ("request" as const);
   const canOpenDestination = isClient || isNetworkSite || isInternal;
   const scoreNum = score?.overallScore != null ? Number(score.overallScore) : null;
-  const customerCommerce = isClient;
+  const adtechBooking = showAdtechBooking();
+  /** Self-serve one-site builder + checkout — only when AdTech booking flag is on. */
+  const customerCommerce = isClient && adtechBooking;
 
   const configureHref = `/campaigns/builder?locationId=${encodeURIComponent(id)}&from=${encodeURIComponent(flight.from)}&to=${encodeURIComponent(flight.to)}`;
 
   // Single primary action — never duplicate Edit / Request beside itself
   const primaryCta = isClient ? (
-    <Link
-      href={configureHref}
-      className="btn-primary w-full justify-center gap-2 py-3 text-sm sm:w-auto"
-    >
-      Configure campaign
-    </Link>
+    customerCommerce ? (
+      <Link
+        href={configureHref}
+        className="btn-primary w-full justify-center gap-2 py-3 text-sm sm:w-auto"
+      >
+        Configure campaign
+      </Link>
+    ) : (
+      <button
+        type="button"
+        className="btn-primary w-full justify-center gap-2 py-3 text-sm sm:w-auto"
+        onClick={() => setDestinationOpen(true)}
+      >
+        Add to campaign
+      </button>
+    )
   ) : isNetworkSite ? (
     <button
       type="button"
@@ -553,7 +565,7 @@ export default function LocationDetailPage() {
                   isDigital={isDigital}
                   liveStatus={liveStatus}
                   locationId={id}
-                  showConfigureCta={isInternal}
+                  showConfigureCta={adtechBooking && isInternal}
                 />
               ) : null}
 
@@ -764,7 +776,7 @@ export default function LocationDetailPage() {
               liveStatus={liveStatus}
               locationId={id}
               configureHref={configureHref}
-              showConfigureCta={customerCommerce || isInternal}
+              showConfigureCta={adtechBooking && (customerCommerce || isInternal)}
             />
           </section>
         ) : null}

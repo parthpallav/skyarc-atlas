@@ -1022,21 +1022,36 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
     if (!canReadLocations(request.user)) throw forbidden();
     const id = uuidSchema.parse((request.params as { id: string }).id);
     const query = (request.query ?? {}) as { from?: string; to?: string };
-    const flightFrom = query.from
-      ? new Date(`${query.from}T00:00:00.000Z`)
-      : (() => {
-          const d = new Date();
-          d.setUTCHours(0, 0, 0, 0);
-          return d;
-        })();
-    const flightTo = query.to
-      ? new Date(`${query.to}T23:59:59.999Z`)
-      : (() => {
-          const d = new Date(flightFrom);
-          d.setUTCDate(d.getUTCDate() + 30);
-          d.setUTCHours(23, 59, 59, 999);
-          return d;
-        })();
+    const parseFlightBound = (raw: string | undefined, endOfDay: boolean): Date | null => {
+      if (!raw) return null;
+      const trimmed = raw.trim();
+      // Accept YYYY-MM-DD or full ISO. Never append T… when ISO already has a time.
+      const iso = trimmed.includes("T")
+        ? trimmed
+        : endOfDay
+          ? `${trimmed}T23:59:59.999Z`
+          : `${trimmed}T00:00:00.000Z`;
+      const d = new Date(iso);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    const flightFrom =
+      parseFlightBound(query.from, false) ??
+      (() => {
+        const d = new Date();
+        d.setUTCHours(0, 0, 0, 0);
+        return d;
+      })();
+    const flightTo =
+      parseFlightBound(query.to, true) ??
+      (() => {
+        const d = new Date(flightFrom);
+        d.setUTCDate(d.getUTCDate() + 30);
+        d.setUTCHours(23, 59, 59, 999);
+        return d;
+      })();
+    if (!(flightFrom.getTime() < flightTo.getTime())) {
+      throw validationError("Invalid from/to flight window");
+    }
     const fromKey = flightFrom.toISOString().slice(0, 10);
     const toKey = flightTo.toISOString().slice(0, 10);
     const platform = await loadPlatformConfig();

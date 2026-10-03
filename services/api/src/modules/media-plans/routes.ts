@@ -33,6 +33,11 @@ import {
 } from "../../lib/media-planning/run-optimization.js";
 import { syncCampaignLifecycle } from "../../lib/media-planning/campaign-lifecycle.js";
 import {
+  evaluateCampaignActivationReadiness,
+  getCampaignCommitmentSummary,
+  markCampaignLive,
+} from "../../lib/media-planning/campaign-activation.js";
+import {
   assignGoalAlternatives,
   parseCampaignGoal,
 } from "../../lib/media-planning/goal-fit.js";
@@ -662,6 +667,90 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
         readyForSiteRequestsAt: updated.readyForSiteRequestsAt,
         readyForSiteRequests: true,
       });
+    }
+  );
+
+  /** Inventory commitment summary (Atlas booking ledger — not a customer e-sign). */
+  fastify.get(
+    "/campaigns/:id/commitment",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      if (!canReadLocations(request.user)) throw forbidden();
+      const id = uuidSchema.parse((request.params as { id: string }).id);
+      const campaign = await prisma.campaign.findUnique({
+        where: { id },
+        select: { id: true, createdByUserId: true },
+      });
+      if (!campaign) throw notFound("Campaign not found");
+      if (isClientUser(request.user) && campaign.createdByUserId !== request.user.id) {
+        throw forbidden();
+      }
+      if (isVendorUser(request.user)) throw forbidden();
+      const summary = await getCampaignCommitmentSummary(prisma, id);
+      if (!summary) throw notFound("Campaign not found");
+      return success(summary);
+    }
+  );
+
+  /** Activation readiness — does not mark live. */
+  fastify.get(
+    "/campaigns/:id/activation-readiness",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      if (!canWriteCampaigns(request.user)) throw forbidden();
+      const id = uuidSchema.parse((request.params as { id: string }).id);
+      const campaign = await prisma.campaign.findUnique({ where: { id } });
+      if (!campaign) throw notFound("Campaign not found");
+      if (!canMutateCampaign(request.user, campaign)) throw forbidden();
+      return success(await evaluateCampaignActivationReadiness(prisma, id));
+    }
+  );
+
+  /**
+   * Authorized Mark live — server readiness checks + audit trail.
+   * Export / plan approve / Orbit must never call this automatically.
+   */
+  fastify.post(
+    "/campaigns/:id/mark-live",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      if (!canWriteCampaigns(request.user)) throw forbidden();
+      const id = uuidSchema.parse((request.params as { id: string }).id);
+      const campaign = await prisma.campaign.findUnique({ where: { id } });
+      if (!campaign) throw notFound("Campaign not found");
+      if (!canMutateCampaign(request.user, campaign)) throw forbidden();
+      if (campaign.lifecycleStatus === "ACTIVE") {
+        return success({
+          id,
+          lifecycleStatus: "ACTIVE",
+          alreadyLive: true,
+        });
+      }
+      try {
+        const result = await markCampaignLive(prisma, {
+          campaignId: id,
+          actorUserId: request.user.id,
+          reason:
+            typeof (request.body as { reason?: string } | null)?.reason === "string"
+              ? (request.body as { reason: string }).reason
+              : "mark_live",
+        });
+        return success({
+          id,
+          lifecycleStatus: result.lifecycleStatus,
+          readiness: result.readiness,
+          bookingIds: result.bookingIds,
+          alreadyLive: false,
+        });
+      } catch (err) {
+        const readiness = (err as Error & { readiness?: unknown }).readiness;
+        throw validationError(
+          err instanceof Error ? err.message : "Campaign is not ready to mark live",
+          readiness
+            ? [{ path: "readiness", message: JSON.stringify(readiness) }]
+            : []
+        );
+      }
     }
   );
 
@@ -1526,29 +1615,51 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       });
 
       if (body.status === "APPROVED") {
-        // One active plan per campaign: other approved packs go back to proposed
+        // One current planning revision per campaign: other approved packs return to proposed
         await prisma.mediaPlan.updateMany({
           where: { campaignId, id: { not: planId }, status: "APPROVED" },
           data: { status: "PROPOSED" },
         });
         if (plan.items.length > 0) {
-          await prisma.mediaPlanItem.updateMany({
-            where: { mediaPlanId: planId },
-            data: { approvalStatus: "APPROVED" },
-          });
-          // Convert soft hold → booked for the campaign flight
-          await holdInventoryForCampaign(
-            prisma,
-            campaignId,
-            plan.items.map((item) => item.inventoryId),
-            "book",
-            {
-              mediaPlanId: planId,
-              actorUserId: request.user.id,
-              tenantOrganizationId: request.user.organizationId ?? null,
-              requireVendorApproval: false,
-            }
-          );
+          const wasProposed = plan.status === "PROPOSED";
+          if (wasProposed) {
+            // Current plan selection: recheck + soft-hold with expiry; vendor item approvals still required.
+            // Do not silently BOOK or mark items APPROVED — that is vendor / confirmation work.
+            await prisma.mediaPlanItem.updateMany({
+              where: { mediaPlanId: planId, approvalStatus: { not: "REJECTED" } },
+              data: { approvalStatus: "PENDING" },
+            });
+            await holdInventoryForCampaign(
+              prisma,
+              campaignId,
+              plan.items.map((item) => item.inventoryId),
+              "hold",
+              {
+                mediaPlanId: planId,
+                actorUserId: request.user.id,
+                tenantOrganizationId: request.user.organizationId ?? null,
+                requireVendorApproval: true,
+              }
+            );
+          } else {
+            // DRAFT site-request pack approved by planner after vendor path / legacy: confirm bookings.
+            await prisma.mediaPlanItem.updateMany({
+              where: { mediaPlanId: planId },
+              data: { approvalStatus: "APPROVED" },
+            });
+            await holdInventoryForCampaign(
+              prisma,
+              campaignId,
+              plan.items.map((item) => item.inventoryId),
+              "book",
+              {
+                mediaPlanId: planId,
+                actorUserId: request.user.id,
+                tenantOrganizationId: request.user.organizationId ?? null,
+                requireVendorApproval: false,
+              }
+            );
+          }
         }
       }
 
@@ -1574,7 +1685,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       if (!orgId) throw forbidden("Vendor organization required");
 
       const plan = await prisma.mediaPlan.findFirst({
-        where: { id: planId, campaignId, status: "DRAFT" },
+        where: { id: planId, campaignId, status: { in: ["DRAFT", "APPROVED"] } },
         include: {
           items: {
             include: {
@@ -1634,11 +1745,13 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
         select: { approvalStatus: true },
       });
 
-      let nextStatus: "DRAFT" | "APPROVED" | "REJECTED" = "DRAFT";
+      let nextStatus: "DRAFT" | "APPROVED" | "REJECTED" = plan.status === "APPROVED" ? "APPROVED" : "DRAFT";
       if (remaining.length === 0) {
         nextStatus = "REJECTED";
       } else if (remaining.every((item) => item.approvalStatus === "APPROVED")) {
         nextStatus = "APPROVED";
+      } else if (plan.status === "APPROVED" && remaining.some((item) => item.approvalStatus === "PENDING")) {
+        nextStatus = "APPROVED"; // current plan stays; items still pending
       }
 
       const updated = await prisma.mediaPlan.update({

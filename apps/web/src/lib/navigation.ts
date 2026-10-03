@@ -14,6 +14,7 @@ import {
 import { canAccessAdmin, canAccessCampaigns, isVendorRole } from "@skyarc/shared";
 import type { StoredUser } from "./api";
 import { toAuthUser } from "./permissions";
+import { showAdtechBooking } from "./feature-flags";
 
 export interface NavLink {
   href: string;
@@ -25,12 +26,13 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
   if (!user) return [];
 
   const authUser = toAuthUser(user);
+  const adtech = showAdtechBooking();
 
   if (isVendorRole(user.role)) {
     return [
       { href: "/locations", label: "My Inventory", icon: MapPin },
       { href: "/requests", label: "Requests", icon: Send },
-      { href: "/bookings", label: "Bookings", icon: CalendarCheck2 },
+      ...(adtech ? [{ href: "/bookings", label: "Bookings", icon: CalendarCheck2 } as NavLink] : []),
       { href: "/organization", label: "My Organization", icon: Building2 },
       { href: "/map", label: "Map", icon: Map },
     ];
@@ -48,7 +50,9 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
     links.push({ href: "/campaigns", label: "Campaigns", icon: Megaphone });
     links.push({ href: "/requests", label: "Requests", icon: Send });
     links.push({ href: "/media-plans", label: "Media Plans", icon: Layers });
-    links.push({ href: "/bookings", label: "Bookings", icon: CalendarCheck2 });
+    if (adtech) {
+      links.push({ href: "/bookings", label: "Bookings", icon: CalendarCheck2 });
+    }
   }
 
   links.push({ href: "/map", label: "Map", icon: Map });

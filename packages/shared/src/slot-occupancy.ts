@@ -1,4 +1,8 @@
-/** Default concurrent brands on a digital loop when capacity is unset / 1. */
+/**
+ * Seed / admin suggestion when configuring a new digital loop.
+ * Never used as a silent substitute for missing Inventory.slotCapacity —
+ * capacity must come from the inventory row configuration.
+ */
 export const DEFAULT_DIGITAL_SLOT_CAPACITY = 6;
 
 /** Soft hold TTL while sales reps pitch (minutes). */
@@ -11,22 +15,15 @@ export function isDigitalInventoryType(inventoryType?: string | null): boolean {
 }
 
 /**
- * Effective concurrent capacity for a face.
- * Digital: configured values above 1 are honored; 1/null use the product loop default (6)
- * so legacy Prisma `@default(1)` rows still behave as a multi-brand loop until edited.
- * Static / other: 1 exclusive face (or explicit capacity when set).
+ * Effective concurrent capacity for a face / loop.
+ * Uses Inventory.slotCapacity when set (>= 1). Does not invent a digital default of 6 —
+ * unconfigured capacity is treated as 1 exclusive unit until staff configure the row.
  */
 export function effectiveSlotCapacity(
-  inventoryType?: string | null,
+  _inventoryType?: string | null,
   slotCapacity?: number | null
 ): number {
-  if (isDigitalInventoryType(inventoryType)) {
-    if (typeof slotCapacity === "number" && slotCapacity > 1) {
-      return Math.max(2, Math.floor(slotCapacity));
-    }
-    return DEFAULT_DIGITAL_SLOT_CAPACITY;
-  }
-  if (typeof slotCapacity === "number" && slotCapacity >= 1) {
+  if (typeof slotCapacity === "number" && Number.isFinite(slotCapacity) && slotCapacity >= 1) {
     return Math.max(1, Math.floor(slotCapacity));
   }
   return 1;

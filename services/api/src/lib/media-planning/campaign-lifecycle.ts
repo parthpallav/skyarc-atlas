@@ -4,13 +4,14 @@ import { isSiteRequestBrief } from "@skyarc/shared";
 /**
  * Recompute campaign lifecycle after site-request / plan approval changes.
  *
- * Rules:
+ * Rules (connected Media Planner journey):
  * - CANCELLED: all plans rejected / empty after rejects
- * - COMPLETED: flight endDate in the past and at least one APPROVED plan
- * - PENDING_APPROVAL: any DRAFT request plan (or pending item approvals) remains
- * - ACTIVE: every site-request plan for this campaign is APPROVED (none DRAFT),
- *   inventory is booked for the flight — campaign is live for that period
+ * - COMPLETED: flight endDate in the past and at least one APPROVED plan (or prior LIVE)
+ * - PENDING_APPROVAL: vendor/item approvals outstanding, or commitments not yet live
  * - DRAFT: nothing approved yet
+ * - ACTIVE is NEVER set here — only via authorized mark-live with readiness checks.
+ *
+ * Plan APPROVED means "current planning revision", not "live campaign".
  */
 export async function syncCampaignLifecycle(
   prisma: PrismaClient,
@@ -37,6 +38,8 @@ export async function syncCampaignLifecycle(
 
   if (!campaign) return "DRAFT";
 
+  // Preserve explicit LIVE / COMPLETED / CANCELLED set by mark-live or operators,
+  // except when we can detect completion/cancellation from plans.
   const now = Date.now();
   const plans = campaign.mediaPlans;
   const isRequestCampaign = isSiteRequestBrief(campaign.brief?.structuredRequirementsJson);
@@ -57,13 +60,6 @@ export async function syncCampaignLifecycle(
   const rejectedOnly =
     relevantPlans.length > 0 &&
     relevantPlans.every((p) => p.status === "REJECTED" || p.items.length === 0);
-  const allRequestsApproved =
-    relevantPlans.length > 0 &&
-    !hasDraftRequest &&
-    !hasPendingItems &&
-    approvedPlans.length > 0 &&
-    relevantPlans.every((p) => p.status === "APPROVED" || p.status === "REJECTED") &&
-    approvedPlans.length >= 1;
 
   let next: CampaignLifecycleStatus = "DRAFT";
 
@@ -72,16 +68,17 @@ export async function syncCampaignLifecycle(
   } else if (
     campaign.endDate &&
     campaign.endDate.getTime() < now &&
-    approvedPlans.length > 0
+    (approvedPlans.length > 0 || campaign.lifecycleStatus === "ACTIVE")
   ) {
     next = "COMPLETED";
-  } else if (hasDraftRequest || hasPendingItems) {
-    next = "PENDING_APPROVAL";
-  } else if (allRequestsApproved) {
-    // Fully approved for the flight window → active campaign
+  } else if (campaign.lifecycleStatus === "ACTIVE") {
+    // Mark-live is sticky until flight completes or cancel.
     next = "ACTIVE";
-  } else if (approvedPlans.length > 0 || plans.some((p) => p.status === "PROPOSED")) {
-    next = plans.some((p) => p.status === "APPROVED") ? "ACTIVE" : "DRAFT";
+  } else if (hasDraftRequest || hasPendingItems || approvedPlans.length > 0) {
+    // Approved current plan and/or pending vendor items → awaiting commitments / launch.
+    next = "PENDING_APPROVAL";
+  } else if (plans.some((p) => p.status === "PROPOSED")) {
+    next = "DRAFT";
   }
 
   if (next !== campaign.lifecycleStatus) {

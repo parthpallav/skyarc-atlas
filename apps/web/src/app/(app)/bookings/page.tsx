@@ -6,6 +6,7 @@ import { CalendarDays, ChevronRight } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
 import { formatDateIn } from "@/lib/dates";
 import { PageHeaderSkeleton, Skeleton } from "@/components/ui/skeleton";
+import { showAdtechBooking } from "@/lib/feature-flags";
 
 type BookingRow = {
   id: string;
@@ -33,14 +34,31 @@ function labelStatus(status: string) {
 }
 
 export default function BookingsPage() {
+  const adtechBooking = showAdtechBooking();
   const bookingsQuery = useQuery({
     queryKey: ["bookings"],
+    enabled: adtechBooking,
     queryFn: async () => {
       const client = createWebApiClient();
       const result = await client.listBookings();
       return result.data as { bookings: BookingRow[]; summary?: Record<string, number> };
     },
   });
+
+  if (!adtechBooking) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4 py-16 text-center">
+        <h1 className="text-xl font-semibold text-slate-900">Bookings are not enabled</h1>
+        <p className="text-sm text-muted">
+          This workspace is running classic media planning. Bookings stay hidden until AdTech booking
+          is turned on.
+        </p>
+        <Link href="/dashboard" className="btn-primary inline-flex">
+          Back to dashboard
+        </Link>
+      </div>
+    );
+  }
 
   if (bookingsQuery.isLoading) {
     return (

@@ -19,6 +19,8 @@ import { formatInr } from "@/lib/format";
 import { formatDateIn, durationDaysBetweenIso } from "@/lib/dates";
 import { CampaignSummary } from "@/components/campaign-summary";
 import { CampaignReservationPanel } from "@/components/campaign-reservation-panel";
+import { CampaignCommitmentPanel } from "@/components/campaign-commitment-panel";
+import { showAdtechBooking } from "@/lib/feature-flags";
 import { PageHeaderSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
@@ -98,7 +100,7 @@ function isSiteRequestCampaign(campaign: CampaignDetail): boolean {
 function planStatusPill(plan: MediaPlanRow) {
   if (isActiveMediaPlan(plan)) {
     return {
-      label: "Active",
+      label: "Current plan",
       className: "border-emerald-200 bg-emerald-50 text-emerald-800",
     };
   }
@@ -126,6 +128,7 @@ export default function CampaignDetailPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { canMutateCampaign, isClient, isInternal, isAdmin } = usePermissions();
+  const adtechBooking = showAdtechBooking();
   const [error, setError] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -475,8 +478,9 @@ export default function CampaignDetailPage() {
                 {isSiteRequest ? "Request plans" : "Media plans"}
               </h2>
               <p className="mt-0.5 text-sm text-muted">
-                Open a plan to review sites. Use Set as active to lock the pack for quote &
-                reservation.
+                {adtechBooking
+                  ? "Open a plan to curate sites. Use Set as current plan to lock the pack for hold & vendor approval."
+                  : "Open a plan to curate sites. Use Set as current plan to choose the pack for this campaign."}
               </p>
             </div>
             <div>
@@ -488,7 +492,7 @@ export default function CampaignDetailPage() {
                 <div className="divide-y divide-violet-50">
                   <div>
                     <p className="px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wide text-emerald-800">
-                      Active plan
+                      Current plan
                     </p>
                     <ul>
                       {activePlans.map((plan) => renderPlanRow(plan, true, campaign.id))}
@@ -536,18 +540,28 @@ export default function CampaignDetailPage() {
           </aside>
         </div>
 
-        <CampaignReservationPanel
-          campaignId={campaign.id}
-          canEdit={canEdit}
-          startDate={campaign.startDate}
-          endDate={campaign.endDate}
-          hasActivePlan={activePlans.some((p) => p.status === "APPROVED" || Boolean(p.isPrimary))}
-          mediaPlanId={
-            activePlans.find((p) => p.status === "APPROVED" || p.isPrimary)?.id ??
-            activePlans[0]?.id ??
-            null
-          }
-        />
+        {!isSiteRequest && !isClient ? (
+          <CampaignCommitmentPanel
+            campaignId={campaign.id}
+            canEdit={canEdit}
+            startDate={campaign.startDate}
+          />
+        ) : null}
+
+        {adtechBooking ? (
+          <CampaignReservationPanel
+            campaignId={campaign.id}
+            canEdit={canEdit}
+            startDate={campaign.startDate}
+            endDate={campaign.endDate}
+            hasActivePlan={activePlans.some((p) => p.status === "APPROVED" || Boolean(p.isPrimary))}
+            mediaPlanId={
+              activePlans.find((p) => p.status === "APPROVED" || p.isPrimary)?.id ??
+              activePlans[0]?.id ??
+              null
+            }
+          />
+        ) : null}
       </div>
 
       <ConfirmModal

@@ -497,9 +497,19 @@ export {
   isSiteRequestBrief,
   siteRequestBrief,
   campaignLifecycleLabel,
+  campaignLifecycleDisplayLabel,
   type SiteRequestKind,
   type CampaignLifecycleStatus,
 } from "./site-request.js";
+export {
+  resolveBookableUnit,
+  slotsConsumedForRequest,
+  bookableUnitLabel,
+  type BookableUnitKind,
+  type BookableUnitSpec,
+  type BookableUnitBucket,
+  type KioskSideMode,
+} from "./bookable-unit.js";
 export {
   isSuperAdmin,
   isAdminRole,

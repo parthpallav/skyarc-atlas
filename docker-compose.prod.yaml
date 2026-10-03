@@ -53,7 +53,7 @@ services:
       AI_MODEL: ${AI_MODEL:-openrouter/free}
       PORT: 3001
       NODE_ENV: production
-      ADTECH_BOOKING: ${ADTECH_BOOKING:-true}
+      ADTECH_BOOKING: ${ADTECH_BOOKING:-false}
       PAYMENTS_PROVIDER: ${PAYMENTS_PROVIDER:-test}
       CORS_ORIGINS: ${CORS_ORIGINS}
       WEB_APP_URL: ${WEB_APP_URL:-https://atlas.skyarcads.com}

@@ -26,12 +26,17 @@ export type CampaignLifecycleStatus =
   | "COMPLETED"
   | "CANCELLED";
 
+/**
+ * Human label for campaign lifecycle.
+ * ACTIVE means the campaign was marked live (execution authorized) — not merely that a plan is approved.
+ * Before flight start, callers should prefer "Scheduled" via campaignLifecycleDisplayLabel.
+ */
 export function campaignLifecycleLabel(status: CampaignLifecycleStatus | string | null | undefined) {
   switch (status) {
     case "PENDING_APPROVAL":
       return "Pending approvals";
     case "ACTIVE":
-      return "Active";
+      return "Live";
     case "COMPLETED":
       return "Completed";
     case "CANCELLED":
@@ -39,4 +44,26 @@ export function campaignLifecycleLabel(status: CampaignLifecycleStatus | string 
     default:
       return "Draft";
   }
+}
+
+/** Display label that distinguishes Scheduled (marked live, flight not started) from Live. */
+export function campaignLifecycleDisplayLabel(input: {
+  status?: CampaignLifecycleStatus | string | null;
+  startDate?: Date | string | null;
+  now?: Date;
+}): string {
+  const status = input.status ?? "DRAFT";
+  if (status === "ACTIVE") {
+    const start = input.startDate
+      ? input.startDate instanceof Date
+        ? input.startDate
+        : new Date(input.startDate)
+      : null;
+    const now = input.now ?? new Date();
+    if (start && !Number.isNaN(start.getTime()) && start.getTime() > now.getTime()) {
+      return "Scheduled";
+    }
+    return "Live";
+  }
+  return campaignLifecycleLabel(status);
 }

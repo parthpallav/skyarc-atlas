@@ -738,7 +738,7 @@ export default function MediaPlanDetailPage() {
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
           <p className="text-xs font-semibold text-slate-900">
             {plan.status === "PROPOSED"
-              ? "Set this pack as the active plan for the campaign"
+              ? "Set this pack as the current plan (hold + vendor approval; does not mark campaign live)"
               : "Site request — approve to book"}
           </p>
           <div className="flex gap-1.5">
@@ -759,7 +759,7 @@ export default function MediaPlanDetailPage() {
               {approveMutation.isPending
                 ? "…"
                 : plan.status === "PROPOSED"
-                  ? "Set as active"
+                  ? "Set as current plan"
                   : "Approve"}
             </button>
           </div>

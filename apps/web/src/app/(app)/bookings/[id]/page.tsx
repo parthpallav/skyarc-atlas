@@ -8,6 +8,7 @@ import { ArrowLeft } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
 import { formatDateIn } from "@/lib/dates";
 import { PageHeaderSkeleton, Skeleton } from "@/components/ui/skeleton";
+import { showAdtechBooking } from "@/lib/feature-flags";
 
 type BookingDetail = {
   id: string;
@@ -47,10 +48,12 @@ export default function BookingDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const queryClient = useQueryClient();
+  const adtechBooking = showAdtechBooking();
   const [creativeUrl, setCreativeUrl] = useState("");
 
   const bookingQuery = useQuery({
     queryKey: ["booking", id],
+    enabled: adtechBooking,
     queryFn: async () => {
       const client = createWebApiClient();
       const result = await client.getBooking(id);
@@ -68,6 +71,18 @@ export default function BookingDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["booking", id] });
     },
   });
+
+  if (!adtechBooking) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4 py-16 text-center">
+        <h1 className="text-xl font-semibold text-slate-900">Bookings are not enabled</h1>
+        <p className="text-sm text-muted">Classic media planning is active for this workspace.</p>
+        <Link href="/dashboard" className="btn-primary inline-flex">
+          Back to dashboard
+        </Link>
+      </div>
+    );
+  }
 
   if (bookingQuery.isLoading) {
     return (

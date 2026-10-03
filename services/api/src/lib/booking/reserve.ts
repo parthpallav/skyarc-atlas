@@ -130,8 +130,17 @@ export async function syncBookingWithWindows(tx: Db, input: SyncBookingInput) {
     });
   }
 
+  const windowRows = Object.values(input.windowIdsByInventory).length
+    ? await tx.availabilityWindow.findMany({
+        where: { id: { in: Object.values(input.windowIdsByInventory) } },
+        select: { id: true, slotsConsumed: true },
+      })
+    : [];
+  const slotsByWindow = new Map(windowRows.map((w) => [w.id, w.slotsConsumed]));
+
   for (const inventoryId of uniqueIds) {
     const windowId = input.windowIdsByInventory[inventoryId] ?? null;
+    const slotsConsumed = windowId ? Math.max(1, slotsByWindow.get(windowId) ?? 1) : 1;
     const existing = booking.items.find((item) => item.inventoryId === inventoryId);
     if (existing) {
       const from = existing.status;
@@ -141,7 +150,7 @@ export async function syncBookingWithWindows(tx: Db, input: SyncBookingInput) {
           status: nextItemStatus,
           availabilityWindowId: windowId,
           vendorOrganizationId: vendorByInventory.get(inventoryId) ?? existing.vendorOrganizationId,
-          slotsConsumed: 1,
+          slotsConsumed,
           updatedAt: new Date(),
         },
       });
@@ -161,7 +170,7 @@ export async function syncBookingWithWindows(tx: Db, input: SyncBookingInput) {
           availabilityWindowId: windowId,
           vendorOrganizationId: vendorByInventory.get(inventoryId) ?? null,
           status: nextItemStatus,
-          slotsConsumed: 1,
+          slotsConsumed,
         },
       });
       await recordTransition(tx, {
@@ -316,13 +325,38 @@ export async function applyVendorItemDecisions(
           reason: "vendor_reject",
         });
       } else {
-        // Promote HELD → BOOKED on linked window
-        if (item.availabilityWindowId) {
-          await tx.availabilityWindow.update({
-            where: { id: item.availabilityWindowId },
-            data: { status: "BOOKED", expiresAt: null, notes: `Booked for campaign ${booking.campaignId}` },
+        // Never restore an expired/missing hold — require a fresh capacity check.
+        const now = new Date();
+        let window = item.availabilityWindowId
+          ? await tx.availabilityWindow.findUnique({ where: { id: item.availabilityWindowId } })
+          : null;
+        if (
+          !window ||
+          window.status !== "HELD" ||
+          (window.expiresAt && window.expiresAt.getTime() < now.getTime())
+        ) {
+          await tx.bookingItem.update({
+            where: { id: item.id },
+            data: { status: "REJECTED", availabilityWindowId: null, updatedAt: now },
           });
+          await recordTransition(tx, {
+            bookingId: booking.id,
+            bookingItemId: item.id,
+            fromStatus: item.status,
+            toStatus: "REJECTED",
+            actorUserId: input.actorUserId,
+            reason: "vendor_approve_hold_expired_or_missing",
+          });
+          continue;
         }
+        await tx.availabilityWindow.update({
+          where: { id: window.id },
+          data: {
+            status: "BOOKED",
+            expiresAt: null,
+            notes: `Booked for campaign ${booking.campaignId}`,
+          },
+        });
         await tx.bookingItem.update({
           where: { id: item.id },
           data: { status: "CONFIRMED", updatedAt: new Date() },
