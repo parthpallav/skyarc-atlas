@@ -41,6 +41,7 @@ import {
   SiteDemandSignals,
   type SiteInterest,
 } from "@/components/site-demand-signals";
+import { showAdtechBooking } from "@/lib/feature-flags";
 
 interface PreviewMediaItem {
   id: string;
@@ -190,6 +191,7 @@ function locationBucket(loc: Location): InventoryTypeBucket {
 export default function LocationsPage() {
   const { isVendor, isReadOnly, isClient, isInternal, isAdmin } = usePermissions();
   const audience = isClient ? "client" : isVendor ? "vendor" : "internal";
+  const adtechBooking = showAdtechBooking();
   const queryClient = useQueryClient();
   const defaults = useMemo(() => defaultFlight(), []);
 
@@ -1136,7 +1138,7 @@ export default function LocationsPage() {
 
                   <SiteDemandSignals interest={interest} audience={audience} />
 
-                  {isDigital && slotCapacity != null ? (
+                  {adtechBooking && isDigital && slotCapacity != null ? (
                     <div className="flex items-center gap-2">
                       <SlotIndicators
                         indicators={live?.indicators ?? []}

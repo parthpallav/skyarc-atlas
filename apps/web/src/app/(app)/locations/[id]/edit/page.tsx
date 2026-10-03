@@ -16,7 +16,7 @@ import { LocationScoreIntel } from "@/components/location-score-intel";
 import { LocationCommercialPanel } from "@/components/location-commercial-panel";
 import { LocationSkyarcPricingPanel } from "@/components/location-skyarc-pricing-panel";
 import { LocationOrbitTab } from "@/components/location-orbit-tab";
-import { showOrbitUi } from "@/lib/feature-flags";
+import { showAdtechBooking, showOrbitUi } from "@/lib/feature-flags";
 import {
   resolveEditTab,
   resolveLocationUiGates,
@@ -103,6 +103,7 @@ export default function LocationEditPage() {
   const showVendorDetailsFlag =
     (location?.showVendorDetails as boolean | undefined) !== false;
 
+  const adtechBooking = showAdtechBooking();
   const gates = useMemo(
     () =>
       resolveLocationUiGates({
@@ -116,6 +117,7 @@ export default function LocationEditPage() {
         showVendorDetails: showVendorDetailsFlag,
         canViewClientPricing: Boolean(authUser && canViewClientPricing),
         orbitUiEnabled: showOrbitUi(),
+        adtechBookingEnabled: adtechBooking,
       }),
     [
       isClient,
@@ -128,6 +130,7 @@ export default function LocationEditPage() {
       showVendorDetailsFlag,
       authUser,
       canViewClientPricing,
+      adtechBooking,
     ]
   );
 

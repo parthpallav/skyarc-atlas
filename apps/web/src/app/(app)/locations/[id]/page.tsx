@@ -219,6 +219,7 @@ export default function LocationDetailPage() {
   const showVendorDetailsFlag =
     (location?.showVendorDetails as boolean | undefined) !== false;
 
+  const adtechBooking = showAdtechBooking();
   const gates = useMemo(
     () =>
       resolveLocationUiGates({
@@ -232,6 +233,7 @@ export default function LocationDetailPage() {
         showVendorDetails: showVendorDetailsFlag,
         canViewClientPricing: Boolean(authUser && canViewClientPricing),
         orbitUiEnabled: showOrbitUi(),
+        adtechBookingEnabled: adtechBooking,
       }),
     [
       isClient,
@@ -244,6 +246,7 @@ export default function LocationDetailPage() {
       showVendorDetailsFlag,
       authUser,
       canViewClientPricing,
+      adtechBooking,
     ]
   );
 
@@ -376,7 +379,6 @@ export default function LocationDetailPage() {
   const destinationMode = isClient ? ("plan" as const) : ("request" as const);
   const canOpenDestination = isClient || isNetworkSite || isInternal;
   const scoreNum = score?.overallScore != null ? Number(score.overallScore) : null;
-  const adtechBooking = showAdtechBooking();
   /** Self-serve one-site builder + checkout — only when AdTech booking flag is on. */
   const customerCommerce = isClient && adtechBooking;
 
@@ -513,7 +515,9 @@ export default function LocationDetailPage() {
                   label={isDigital ? "Ad places" : "Booking"}
                   value={
                     isDigital && slotCapacity != null
-                      ? `${slotOpen} free / ${slotCapacity}`
+                      ? adtechBooking
+                        ? `${slotOpen} free / ${slotCapacity}`
+                        : `${slotCapacity} on loop`
                       : liveStatus === "UNAVAILABLE"
                         ? "Exclusive booked"
                         : "1 exclusive face"
@@ -547,7 +551,7 @@ export default function LocationDetailPage() {
                 />
               </div>
 
-              {customerCommerce ? (
+              {adtechBooking && customerCommerce ? (
                 <DigitalAvailabilityPanel
                   live={live}
                   flightFrom={flight.from}
@@ -557,7 +561,7 @@ export default function LocationDetailPage() {
                   locationId={id}
                   configureHref={configureHref}
                 />
-              ) : isDigital && slotCapacity != null ? (
+              ) : adtechBooking && isDigital && slotCapacity != null ? (
                 <DigitalAvailabilityPanel
                   live={live}
                   flightFrom={flight.from}
@@ -565,7 +569,7 @@ export default function LocationDetailPage() {
                   isDigital={isDigital}
                   liveStatus={liveStatus}
                   locationId={id}
-                  showConfigureCta={adtechBooking && isInternal}
+                  showConfigureCta={isInternal}
                 />
               ) : null}
 
@@ -689,7 +693,7 @@ export default function LocationDetailPage() {
                     {showMediaOwner ? (
                       <OverviewRow label="Media owner" value={String(location.mediaOwner)} />
                     ) : null}
-                    {isDigital && slotCapacity != null ? (
+                    {adtechBooking && isDigital && slotCapacity != null ? (
                       <OverviewRow
                         label="Ad places open"
                         value={`${slotOpen} of ${slotCapacity} for this window`}
@@ -700,7 +704,9 @@ export default function LocationDetailPage() {
                         value={
                           liveStatus === "UNAVAILABLE"
                             ? "Exclusive booked"
-                            : "Exclusive face available"
+                            : isDigital && slotCapacity != null
+                              ? `${slotCapacity} ad places on loop`
+                              : "Exclusive face available"
                         }
                       />
                     )}
@@ -763,7 +769,7 @@ export default function LocationDetailPage() {
           </section>
         ) : null}
 
-        {tab === "availability" ? (
+        {tab === "availability" && gates.showAvailabilityTab ? (
           <section className="space-y-4">
             <div className="rounded-2xl border border-violet-100 bg-white p-5 shadow-card sm:p-6">
               <FlightDateRangePicker from={flight.from} to={flight.to} />
@@ -776,7 +782,7 @@ export default function LocationDetailPage() {
               liveStatus={liveStatus}
               locationId={id}
               configureHref={configureHref}
-              showConfigureCta={adtechBooking && (customerCommerce || isInternal)}
+              showConfigureCta={customerCommerce || isInternal}
             />
           </section>
         ) : null}

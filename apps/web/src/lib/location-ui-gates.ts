@@ -40,6 +40,8 @@ export interface LocationUiGateInput {
   canViewClientPricing: boolean;
   /** NEXT_PUBLIC_ORBIT_UI === "true". */
   orbitUiEnabled: boolean;
+  /** NEXT_PUBLIC_ADTECH_BOOKING === "true" — digital slot meters / Availability tab. */
+  adtechBookingEnabled: boolean;
 }
 
 export interface LocationUiGates {
@@ -91,6 +93,7 @@ export function resolveLocationUiGates(input: LocationUiGateInput): LocationUiGa
     showVendorDetails,
     canViewClientPricing,
     orbitUiEnabled,
+    adtechBookingEnabled,
   } = input;
 
   const canOpenEdit = canEdit && !isClient && !isReadOnly && (isOwned || isInternal);
@@ -111,7 +114,8 @@ export function resolveLocationUiGates(input: LocationUiGateInput): LocationUiGa
   // Orbit: never vendors or clients — internal/admin + feature flag only.
   const showOrbitTab = orbitUiEnabled && isInternal && !isVendor && !isClient;
   const showAdminTab = isAdmin;
-  const showAvailabilityTab = true;
+  // Digital availability / slot meters are AdTech-only (classic UX stays media-plan focused).
+  const showAvailabilityTab = adtechBookingEnabled;
 
   const canEditScoreInputs =
     isInternal && !isClient && !isReadOnly && (canEdit || isAdmin || isInternal);
@@ -129,8 +133,8 @@ export function resolveLocationUiGates(input: LocationUiGateInput): LocationUiGa
 
   const detailTabs: Array<{ id: DetailTabId; label: string }> = [
     { id: "overview", label: "Overview" },
-    { id: "availability", label: "Availability" },
   ];
+  if (showAvailabilityTab) detailTabs.push({ id: "availability", label: "Availability" });
   if (showRatesTab) detailTabs.push({ id: "rates", label: "Rates" });
   if (showFacesTab) detailTabs.push({ id: "faces", label: "Faces" });
   if (showOrbitTab) detailTabs.push({ id: "orbit", label: "Orbit" });

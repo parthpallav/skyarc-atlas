@@ -1,6 +1,7 @@
 "use client";
 
 import { Eye, FolderKanban, Gauge } from "lucide-react";
+import { showAdtechBooking } from "@/lib/feature-flags";
 
 export type SiteInterest = {
   viewersNow: number;
@@ -38,8 +39,9 @@ export function SiteDemandSignals({
   const inActivePlans = demand?.planCount ?? interest?.inActivePlans ?? 0;
   const highDemand = demand?.highDemand ?? false;
   const criticallyLow = demand?.criticallyLowSlots ?? false;
-  const slotsOpen = demand?.slotsOpen;
-  const slotCapacity = demand?.slotCapacity;
+  const showSlots = showAdtechBooking();
+  const slotsOpen = showSlots ? demand?.slotsOpen : null;
+  const slotCapacity = showSlots ? demand?.slotCapacity : null;
 
   if (
     viewersNow <= 0 &&

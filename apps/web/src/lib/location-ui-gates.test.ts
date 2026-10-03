@@ -17,6 +17,7 @@ function base(overrides: Partial<LocationUiGateInput> = {}): LocationUiGateInput
     showVendorDetails: true,
     canViewClientPricing: true,
     orbitUiEnabled: true,
+    adtechBookingEnabled: true,
     ...overrides,
   };
 }
@@ -84,6 +85,18 @@ describe("resolveLocationUiGates", () => {
     const gates = resolveLocationUiGates(base());
     expect(gates.detailTabs.some((t) => /\d/.test(t.label))).toBe(false);
     expect(gates.detailTabs.map((t) => t.id)).not.toContain("index");
+  });
+
+  it("hides Availability tab when AdTech booking is off", () => {
+    const gates = resolveLocationUiGates(base({ adtechBookingEnabled: false }));
+    expect(gates.showAvailabilityTab).toBe(false);
+    expect(gates.detailTabs.map((t) => t.id)).not.toContain("availability");
+  });
+
+  it("shows Availability tab when AdTech booking is on", () => {
+    const gates = resolveLocationUiGates(base({ adtechBookingEnabled: true }));
+    expect(gates.showAvailabilityTab).toBe(true);
+    expect(gates.detailTabs.map((t) => t.id)).toContain("availability");
   });
 });
 

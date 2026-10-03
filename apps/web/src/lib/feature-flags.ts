@@ -15,7 +15,8 @@ export function showOrbitUi(): boolean {
  * AdTech self-serve booking / quote / reservation UI.
  * Opt-in only (`NEXT_PUBLIC_ADTECH_BOOKING=true`). When off, production keeps the
  * classic media-planning UX: no Bookings nav, classic dashboard, no customer
- * one-site "Configure campaign" builder, no reservation panel.
+ * one-site "Configure campaign" builder, no reservation panel, and no Digital
+ * Availability / slot-meter surfaces on location detail.
  */
 export function showAdtechBooking(): boolean {
   return process.env.NEXT_PUBLIC_ADTECH_BOOKING === "true";
