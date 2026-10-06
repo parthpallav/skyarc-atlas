@@ -8,7 +8,7 @@ import {
 import { prisma } from "../../lib/prisma.js";
 import { success } from "../../lib/response.js";
 import { canWriteLocation, isReadOnly, canAccessLocation } from "../../lib/rbac.js";
-import { forbidden, notFound } from "../../lib/errors.js";
+import { forbidden, notFound, validationError } from "../../lib/errors.js";
 import { allocateSkyarcScreenCode } from "../../lib/screen-code.js";
 
 function serializeScreen(screen: {
@@ -145,6 +145,37 @@ export async function screenRoutes(fastify: FastifyInstance) {
       },
     });
     return success(serializeScreen(updated));
+  });
+
+  fastify.delete("/screens/:id", { preHandler: [fastify.authenticate] }, async (request) => {
+    const id = uuidSchema.parse((request.params as { id: string }).id);
+    const screen = await prisma.screen.findUnique({
+      where: { id },
+      include: {
+        location: true,
+        inventories: { select: { id: true } },
+      },
+    });
+    if (!screen) throw notFound("Screen not found");
+    if (!canWriteLocation(request.user, screen.location) || isReadOnly(request.user)) {
+      throw forbidden();
+    }
+
+    const inventoryIds = screen.inventories.map((i) => i.id);
+    if (inventoryIds.length > 0) {
+      const [planRefs, bookingRefs] = await Promise.all([
+        prisma.mediaPlanItem.count({ where: { inventoryId: { in: inventoryIds } } }),
+        prisma.bookingItem.count({ where: { inventoryId: { in: inventoryIds } } }),
+      ]);
+      if (planRefs > 0 || bookingRefs > 0) {
+        throw validationError(
+          "This face is used in a media plan or booking and cannot be removed. Remove those references first."
+        );
+      }
+    }
+
+    await prisma.screen.delete({ where: { id } });
+    return success({ deleted: true, id });
   });
 
   fastify.put(

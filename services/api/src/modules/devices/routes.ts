@@ -184,4 +184,33 @@ export async function deviceRoutes(fastify: FastifyInstance, env: Env) {
       return success({ device: serializeDevice(device) });
     }
   );
+
+  fastify.delete(
+    "/devices/:id",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      const id = uuidSchema.parse((request.params as { id: string }).id);
+      const device = await prisma.device.findUnique({
+        where: { id },
+        include: { screen: { include: { location: true } } },
+      });
+      if (!device) throw notFound("Device not found");
+      if (
+        !canWriteLocation(request.user, device.screen.location) ||
+        isReadOnly(request.user)
+      ) {
+        throw forbidden();
+      }
+
+      await prisma.device.delete({ where: { id } });
+      await prisma.screenExternalId.deleteMany({
+        where: {
+          screenId: device.screenId,
+          provider: device.provider,
+          externalId: device.externalId,
+        },
+      });
+      return success({ deleted: true, id });
+    }
+  );
 }

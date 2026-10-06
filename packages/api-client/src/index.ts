@@ -994,6 +994,18 @@ export class ApiClient {
     });
   }
 
+  deleteScreen(screenId: string) {
+    return this.request<{ deleted: boolean; id: string }>(`/screens/${screenId}`, {
+      method: "DELETE",
+    });
+  }
+
+  deleteDevice(deviceId: string) {
+    return this.request<{ deleted: boolean; id: string }>(`/devices/${deviceId}`, {
+      method: "DELETE",
+    });
+  }
+
   updateLocationCommercial(
     locationId: string,
     data: {

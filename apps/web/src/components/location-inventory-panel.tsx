@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
-import { formatInventoryType } from "@skyarc/shared";
+import { formatInventoryType, isDigitalInventoryType } from "@skyarc/shared";
 import { ConfirmModal } from "@/components/confirm-modal";
 
 interface ScreenRow {
@@ -64,6 +64,10 @@ const INVENTORY_TYPE_OPTIONS = [
   { value: "CUSTOM", label: "Custom / Other format…" },
 ];
 
+const inputClass =
+  "w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/30";
+const labelClass = "mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted";
+
 export function LocationInventoryPanel({
   locationId,
   canWrite,
@@ -71,19 +75,28 @@ export function LocationInventoryPanel({
 }: LocationInventoryPanelProps) {
   const queryClient = useQueryClient();
   const { isReadOnly } = usePermissions();
+  const writable = canWrite && !isReadOnly;
+
   const [screenLabel, setScreenLabel] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; productCode: string } | null>(
-    null
-  );
-  const [expandedScreen, setExpandedScreen] = useState<string | null>(null);
+  const [renamingScreenId, setRenamingScreenId] = useState<string | null>(null);
+  const [renameLabel, setRenameLabel] = useState("");
+  const [deleteScreenTarget, setDeleteScreenTarget] = useState<ScreenRow | null>(null);
+  const [deleteProductTarget, setDeleteProductTarget] = useState<{
+    id: string;
+    productCode: string;
+  } | null>(null);
+  const [actionError, setActionError] = useState("");
+
+  const [addForScreenId, setAddForScreenId] = useState<string | null>(null);
   const [productCode, setProductCode] = useState("");
   const [inventoryType, setInventoryType] = useState("DIGITAL_BILLBOARD");
   const [customType, setCustomType] = useState("");
   const [rateAmount, setRateAmount] = useState("");
-  const [ratePeriod, setRatePeriod] = useState("monthly");
+  const [ratePeriod] = useState("monthly");
   const [widthFt, setWidthFt] = useState("");
   const [heightFt, setHeightFt] = useState("");
   const [slotCapacity, setSlotCapacity] = useState("6");
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editProductCode, setEditProductCode] = useState("");
   const [editInventoryType, setEditInventoryType] = useState("DIGITAL_BILLBOARD");
@@ -94,8 +107,6 @@ export function LocationInventoryPanel({
   const [editHeightFt, setEditHeightFt] = useState("");
   const [editSlotCapacity, setEditSlotCapacity] = useState("6");
 
-  const writable = canWrite && !isReadOnly;
-
   const { data: screens, isLoading } = useQuery({
     queryKey: ["location-screens", locationId],
     queryFn: async () => {
@@ -105,27 +116,31 @@ export function LocationInventoryPanel({
     },
   });
 
-  // Open the first screen so format/size edit is one click away
-  useEffect(() => {
-    if (!expandedScreen && screens && screens.length > 0) {
-      setExpandedScreen(screens[0]!.id);
-    }
-  }, [screens, expandedScreen]);
+  const screenIds = useMemo(() => (screens ?? []).map((s) => s.id), [screens]);
 
-  const { data: inventoriesByScreen } = useQuery({
-    queryKey: ["screen-inventories", expandedScreen, showVendorRates],
+  const { data: inventoriesByScreenId, isLoading: invLoading } = useQuery({
+    queryKey: ["location-faces-inventories", locationId, screenIds.join(","), showVendorRates],
     queryFn: async () => {
-      if (!expandedScreen) return [] as InventoryRow[];
       const client = createWebApiClient();
-      const result = await client.listScreenInventories(expandedScreen);
-      return result.data as InventoryRow[];
+      const map: Record<string, InventoryRow[]> = {};
+      await Promise.all(
+        screenIds.map(async (screenId) => {
+          const result = await client.listScreenInventories(screenId);
+          map[screenId] = (result.data as InventoryRow[]) ?? [];
+        })
+      );
+      return map;
     },
-    enabled: Boolean(expandedScreen),
+    enabled: screenIds.length > 0,
   });
 
-  const invalidateInventory = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["screen-inventories", expandedScreen] });
+  const invalidateAll = async () => {
     await queryClient.invalidateQueries({ queryKey: ["location-screens", locationId] });
+    await queryClient.invalidateQueries({ queryKey: ["location-faces-inventories", locationId] });
+    await queryClient.invalidateQueries({ queryKey: ["screen-inventories"] });
+    await queryClient.invalidateQueries({ queryKey: ["location", locationId] });
+    await queryClient.invalidateQueries({ queryKey: ["locations"] });
+    await queryClient.invalidateQueries({ queryKey: ["location-all-inventories", locationId] });
   };
 
   const createScreenMutation = useMutation({
@@ -135,7 +150,44 @@ export function LocationInventoryPanel({
     },
     onSuccess: async () => {
       setScreenLabel("");
-      await invalidateInventory();
+      setActionError("");
+      await invalidateAll();
+    },
+    onError: (e) => {
+      setActionError(e instanceof Error ? e.message : "Failed to add face");
+    },
+  });
+
+  const renameScreenMutation = useMutation({
+    mutationFn: async () => {
+      if (!renamingScreenId || !renameLabel.trim()) throw new Error("Label is required");
+      const client = createWebApiClient();
+      return client.updateScreen(renamingScreenId, { label: renameLabel.trim() });
+    },
+    onSuccess: async () => {
+      setRenamingScreenId(null);
+      setRenameLabel("");
+      setActionError("");
+      await invalidateAll();
+    },
+    onError: (e) => {
+      setActionError(e instanceof Error ? e.message : "Failed to rename face");
+    },
+  });
+
+  const deleteScreenMutation = useMutation({
+    mutationFn: async (screenId: string) => {
+      const client = createWebApiClient();
+      return client.deleteScreen(screenId);
+    },
+    onSuccess: async () => {
+      setDeleteScreenTarget(null);
+      setActionError("");
+      await invalidateAll();
+    },
+    onError: (e) => {
+      setActionError(e instanceof Error ? e.message : "Failed to remove face");
+      setDeleteScreenTarget(null);
     },
   });
 
@@ -143,17 +195,14 @@ export function LocationInventoryPanel({
     mutationFn: async (screenId: string) => {
       const client = createWebApiClient();
       const resolvedType =
-        inventoryType === "CUSTOM"
-          ? (customType.trim() || "OTHER")
-          : inventoryType;
+        inventoryType === "CUSTOM" ? customType.trim() || "OTHER" : inventoryType;
+      const digital = isDigitalInventoryType(resolvedType);
 
       const inv = await client.createInventory(screenId, {
         productCode: productCode.trim(),
         inventoryType: resolvedType,
         status: "AVAILABLE",
-        ...(resolvedType.toUpperCase().includes("DIGITAL") && slotCapacity
-          ? { slotCapacity: Number(slotCapacity) }
-          : {}),
+        ...(digital && slotCapacity ? { slotCapacity: Number(slotCapacity) } : {}),
         ...(widthFt || heightFt
           ? {
               staticSpecsJson: {
@@ -179,7 +228,12 @@ export function LocationInventoryPanel({
       setWidthFt("");
       setHeightFt("");
       setSlotCapacity("6");
-      await invalidateInventory();
+      setAddForScreenId(null);
+      setActionError("");
+      await invalidateAll();
+    },
+    onError: (e) => {
+      setActionError(e instanceof Error ? e.message : "Failed to add product");
     },
   });
 
@@ -187,11 +241,14 @@ export function LocationInventoryPanel({
     mutationFn: async (inventoryId: string) => {
       const client = createWebApiClient();
       const resolvedType =
-        editInventoryType === "CUSTOM"
-          ? (editCustomType.trim() || "OTHER")
-          : editInventoryType;
+        editInventoryType === "CUSTOM" ? editCustomType.trim() || "OTHER" : editInventoryType;
+      const digital = isDigitalInventoryType(resolvedType);
 
-      const existing = inventoriesByScreen?.find((row) => row.id === inventoryId);
+      let existing: InventoryRow | undefined;
+      for (const rows of Object.values(inventoriesByScreenId ?? {})) {
+        existing = rows.find((row) => row.id === inventoryId);
+        if (existing) break;
+      }
       const prevSpecs =
         existing?.staticSpecsJson && typeof existing.staticSpecsJson === "object"
           ? { ...existing.staticSpecsJson }
@@ -199,14 +256,18 @@ export function LocationInventoryPanel({
       const nextSpecs: Record<string, unknown> = { ...prevSpecs };
       if (editWidthFt.trim()) nextSpecs.widthFt = Number(editWidthFt);
       if (editHeightFt.trim()) nextSpecs.heightFt = Number(editHeightFt);
+      if (
+        typeof nextSpecs.widthFt === "number" &&
+        typeof nextSpecs.heightFt === "number"
+      ) {
+        nextSpecs.sqft = Number(nextSpecs.widthFt) * Number(nextSpecs.heightFt);
+      }
 
       await client.updateInventory(inventoryId, {
         productCode: editProductCode.trim(),
         inventoryType: resolvedType,
         status: editStatus,
-        ...(resolvedType.toUpperCase().includes("DIGITAL") && editSlotCapacity
-          ? { slotCapacity: Number(editSlotCapacity) }
-          : {}),
+        slotCapacity: digital ? Math.max(2, Number(editSlotCapacity) || 6) : 1,
         staticSpecsJson: nextSpecs,
       });
       if (editRateAmount) {
@@ -219,10 +280,11 @@ export function LocationInventoryPanel({
     },
     onSuccess: async () => {
       setEditingId(null);
-      await invalidateInventory();
-      await queryClient.invalidateQueries({ queryKey: ["location", locationId] });
-      await queryClient.invalidateQueries({ queryKey: ["locations"] });
-      await queryClient.invalidateQueries({ queryKey: ["location-all-inventories", locationId] });
+      setActionError("");
+      await invalidateAll();
+    },
+    onError: (e) => {
+      setActionError(e instanceof Error ? e.message : "Failed to save product");
     },
   });
 
@@ -232,13 +294,19 @@ export function LocationInventoryPanel({
       return client.deleteInventory(inventoryId);
     },
     onSuccess: async () => {
-      setDeleteTarget(null);
-      await invalidateInventory();
+      setDeleteProductTarget(null);
+      setActionError("");
+      await invalidateAll();
+    },
+    onError: (e) => {
+      setActionError(e instanceof Error ? e.message : "Failed to delete product");
+      setDeleteProductTarget(null);
     },
   });
 
   const startEdit = (inv: InventoryRow) => {
     setEditingId(inv.id);
+    setAddForScreenId(null);
     setEditProductCode(inv.productCode);
     setEditStatus(inv.status);
     const existingType = inv.inventoryType ?? "DIGITAL_BILLBOARD";
@@ -254,7 +322,9 @@ export function LocationInventoryPanel({
     const specs = inv.staticSpecsJson ?? {};
     setEditWidthFt(specs.widthFt != null ? String(specs.widthFt) : "");
     setEditHeightFt(specs.heightFt != null ? String(specs.heightFt) : "");
-    setEditSlotCapacity(String(inv.slotCapacity && inv.slotCapacity > 1 ? inv.slotCapacity : 6));
+    setEditSlotCapacity(
+      String(inv.slotCapacity && inv.slotCapacity > 1 ? inv.slotCapacity : 6)
+    );
   };
 
   if (!writable && !(screens?.length ?? 0)) {
@@ -262,63 +332,131 @@ export function LocationInventoryPanel({
   }
 
   return (
-    <section id="inventory-config" className="card-surface scroll-mt-24 p-5 sm:p-6 mb-4">
-      <h2 className="font-semibold text-slate-900 mb-1">Screens &amp; inventory</h2>
-      <p className="text-sm text-muted mb-3">
-        Manage faces, formats, vendor rates — and for digital faces, how many brands share the loop.
-      </p>
-      <div className="mb-4 rounded-lg border border-violet-100 bg-violet-50/70 px-3 py-2.5 text-xs text-slate-700">
-        <p className="font-semibold text-slate-900">Ad places (digital slots)</p>
-        <p className="mt-0.5 text-muted">
-          Edit a digital product and set <strong className="font-semibold text-slate-800">Ad places on loop</strong>{" "}
-          (2–48). Default is 6. Static faces are always 1 exclusive booking.
+    <section id="inventory-config" className="space-y-4 scroll-mt-24">
+      <div className="card-surface p-5 sm:p-6">
+        <h2 className="font-semibold text-slate-900">Faces</h2>
+        <p className="mt-1 text-sm text-muted">
+          Each face is a sellable screen on this site — rename, remove, or set products here.
         </p>
       </div>
 
-      {isLoading && <p className="text-sm text-muted">Loading screens…</p>}
+      {actionError ? (
+        <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          {actionError}
+        </p>
+      ) : null}
 
-      {!isLoading && (screens ?? []).length === 0 && writable && (
-        <p className="text-sm text-muted mb-4">No screens yet — add your first screen below.</p>
-      )}
+      {isLoading || invLoading ? (
+        <p className="text-sm text-muted">Loading faces…</p>
+      ) : null}
 
-      <div className="space-y-3">
-        {(screens ?? []).map((screen) => (
-          <div key={screen.id} className="border border-slate-200 rounded-lg overflow-hidden">
-            <button
-              type="button"
-              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50"
-              onClick={() =>
-                setExpandedScreen((prev) => (prev === screen.id ? null : screen.id))
-              }
-            >
-              <span className="font-medium text-slate-900">
-                {screen.skyarcScreenCode ? `${screen.skyarcScreenCode} · ` : ""}
-                {screen.label}
-              </span>
-              <span className="text-xs text-muted">{screen.inventoryStatus}</span>
-            </button>
+      {!isLoading && (screens ?? []).length === 0 && writable ? (
+        <div className="card-surface p-5 sm:p-6">
+          <p className="text-sm text-muted">No faces yet. Add the first face below.</p>
+        </div>
+      ) : null}
 
-            {expandedScreen === screen.id && (
-              <div className="px-4 pb-4 border-t border-slate-100 bg-slate-50/50">
-                <ul className="mt-3 space-y-2">
-                  {(inventoriesByScreen ?? []).map((inv) => (
-                    <li
-                      key={inv.id}
-                      className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-2"
+      <div className="space-y-4">
+        {(screens ?? []).map((screen) => {
+          const inventories = inventoriesByScreenId?.[screen.id] ?? [];
+          const renaming = renamingScreenId === screen.id;
+
+          return (
+            <article key={screen.id} className="card-surface p-5 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  {renaming ? (
+                    <div className="flex max-w-md flex-col gap-2 sm:flex-row sm:items-center">
+                      <input
+                        className={inputClass}
+                        value={renameLabel}
+                        onChange={(e) => setRenameLabel(e.target.value)}
+                        autoFocus
+                        aria-label="Face label"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="btn-primary px-3 py-2 text-sm"
+                          disabled={renameScreenMutation.isPending || !renameLabel.trim()}
+                          onClick={() => renameScreenMutation.mutate()}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary px-3 py-2 text-sm"
+                          onClick={() => {
+                            setRenamingScreenId(null);
+                            setRenameLabel("");
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <h3 className="font-semibold text-slate-900">
+                        {screen.skyarcScreenCode
+                          ? `${screen.skyarcScreenCode} · ${screen.label}`
+                          : screen.label}
+                      </h3>
+                      <p className="mt-0.5 text-xs text-muted">{screen.inventoryStatus}</p>
+                    </>
+                  )}
+                </div>
+
+                {writable && !renaming ? (
+                  <div className="flex shrink-0 gap-1">
+                    <button
+                      type="button"
+                      aria-label="Rename face"
+                      className="rounded-lg p-2 text-slate-500 hover:bg-violet-50 hover:text-primary"
+                      onClick={() => {
+                        setRenamingScreenId(screen.id);
+                        setRenameLabel(screen.label);
+                        setEditingId(null);
+                        setAddForScreenId(null);
+                      }}
                     >
-                      {editingId === inv.id ? (
-                        <div className="space-y-2">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Remove face"
+                      className="rounded-lg p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-700"
+                      onClick={() => setDeleteScreenTarget(screen)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
+              <ul className="mt-4 space-y-2">
+                {inventories.map((inv) => (
+                  <li
+                    key={inv.id}
+                    className="rounded-xl border border-violet-100 bg-violet-50/30 px-3 py-3 sm:px-4"
+                  >
+                    {editingId === inv.id ? (
+                      <div className="space-y-3">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div>
+                            <label className={labelClass}>Product code</label>
                             <input
-                              placeholder="Product code"
+                              className={inputClass}
                               value={editProductCode}
                               onChange={(e) => setEditProductCode(e.target.value)}
-                              className="w-full rounded border border-violet-200 px-2 py-1.5 text-sm"
                             />
+                          </div>
+                          <div>
+                            <label className={labelClass}>Format</label>
                             <select
+                              className={inputClass}
                               value={editInventoryType}
                               onChange={(e) => setEditInventoryType(e.target.value)}
-                              className="w-full rounded border border-violet-200 px-2 py-1.5 text-sm"
                             >
                               {INVENTORY_TYPE_OPTIONS.map((opt) => (
                                 <option key={opt.value} value={opt.value}>
@@ -327,284 +465,348 @@ export function LocationInventoryPanel({
                               ))}
                             </select>
                           </div>
-                          {editInventoryType === "CUSTOM" && (
+                        </div>
+                        {editInventoryType === "CUSTOM" ? (
+                          <div>
+                            <label className={labelClass}>Custom format</label>
                             <input
-                              placeholder="Type custom format (e.g. Mall Totem, Lift TV)"
+                              className={inputClass}
                               value={editCustomType}
                               onChange={(e) => setEditCustomType(e.target.value)}
-                              className="w-full rounded border border-violet-200 px-2 py-1.5 text-sm"
                             />
-                          )}
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          </div>
+                        ) : null}
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div>
+                            <label className={labelClass}>Status</label>
                             <select
+                              className={inputClass}
                               value={editStatus}
                               onChange={(e) => setEditStatus(e.target.value)}
-                              className="w-full rounded border border-violet-200 px-2 py-1.5 text-sm"
                             >
-                              <option value="AVAILABLE">AVAILABLE</option>
-                              <option value="RESERVED">RESERVED</option>
-                              <option value="UNAVAILABLE">UNAVAILABLE</option>
+                              <option value="AVAILABLE">Available</option>
+                              <option value="RESERVED">Reserved</option>
+                              <option value="UNAVAILABLE">Unavailable</option>
                             </select>
-                            <input
-                              type="number"
-                              placeholder="Vendor rate (INR)"
-                              value={editRateAmount}
-                              onChange={(e) => setEditRateAmount(e.target.value)}
-                              className="w-full rounded border border-violet-200 px-2 py-1.5 text-sm"
-                            />
                           </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          {showVendorRates ? (
+                            <div>
+                              <label className={labelClass}>Vendor rate (INR / month)</label>
+                              <input
+                                type="number"
+                                className={inputClass}
+                                value={editRateAmount}
+                                onChange={(e) => setEditRateAmount(e.target.value)}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <div>
+                            <label className={labelClass}>Width (ft)</label>
                             <input
                               type="number"
-                              placeholder="Width (ft)"
+                              min={0}
+                              step="0.1"
+                              className={inputClass}
                               value={editWidthFt}
                               onChange={(e) => setEditWidthFt(e.target.value)}
-                              className="w-full rounded border border-violet-200 px-2 py-1.5 text-sm"
                             />
+                          </div>
+                          <div>
+                            <label className={labelClass}>Height (ft)</label>
                             <input
                               type="number"
-                              placeholder="Height (ft)"
+                              min={0}
+                              step="0.1"
+                              className={inputClass}
                               value={editHeightFt}
                               onChange={(e) => setEditHeightFt(e.target.value)}
-                              className="w-full rounded border border-violet-200 px-2 py-1.5 text-sm"
                             />
-                            {editInventoryType.toUpperCase().includes("DIGITAL") ||
-                            editCustomType.toUpperCase().includes("DIGITAL") ? (
-                              <label className="block">
-                                <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted">
-                                  Ad places on loop
-                                </span>
-                                <input
-                                  type="number"
-                                  min={2}
-                                  max={48}
-                                  title="How many brands share this digital loop (2–48)"
-                                  value={editSlotCapacity}
-                                  onChange={(e) => setEditSlotCapacity(e.target.value)}
-                                  className="w-full rounded border border-violet-200 px-2 py-1.5 text-sm"
-                                />
-                              </label>
-                            ) : (
-                              <div />
-                            )}
                           </div>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              className="btn-primary text-xs py-1.5 px-3"
-                              disabled={updateInventoryMutation.isPending || !editProductCode.trim()}
-                              onClick={() => updateInventoryMutation.mutate(inv.id)}
-                            >
-                              Save
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-secondary text-xs py-1.5 px-3"
-                              onClick={() => setEditingId(null)}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex items-start justify-between gap-2">
+                          {isDigitalInventoryType(
+                            editInventoryType === "CUSTOM" ? editCustomType : editInventoryType
+                          ) ? (
                             <div>
-                              <span className="font-medium">{inv.productCode}</span>
-                              <span className="text-muted">
-                                {" "}
-                                · {formatInventoryType(inv.inventoryType)} · {inv.status}
-                              </span>
-                              <p className="text-xs text-muted mt-1">
-                                {inv.staticSpecsJson?.widthFt && inv.staticSpecsJson?.heightFt
-                                  ? `${inv.staticSpecsJson.widthFt}×${inv.staticSpecsJson.heightFt} ft`
-                                  : "Size not set"}
-                                {inv.inventoryType &&
-                                (inv.inventoryType.toUpperCase().includes("DIGITAL") ||
-                                  inv.inventoryType.toUpperCase().includes("KIOSK"))
-                                  ? ` · ${inv.slotCapacity && inv.slotCapacity > 1 ? inv.slotCapacity : 6} ad places on loop`
-                                  : ""}
-                              </p>
-                              {inv.staticSpecsJson?.production &&
-                              "resolutionW" in inv.staticSpecsJson.production &&
-                              inv.staticSpecsJson.production.resolutionW ? (
-                                <p className="mt-1 text-xs text-slate-600">
-                                  Specs: {inv.staticSpecsJson.production.resolutionW}×
-                                  {inv.staticSpecsJson.production.resolutionH}px
-                                  {inv.staticSpecsJson.production.staticFormats?.length
-                                    ? ` · ${inv.staticSpecsJson.production.staticFormats.join("/")}`
-                                    : ""}
-                                  {inv.staticSpecsJson.production.motionFormats?.length
-                                    ? ` · ${inv.staticSpecsJson.production.motionFormats.join("/")}`
-                                    : ""}
-                                  {inv.staticSpecsJson.production.maxFileSizeMb
-                                    ? ` · max ${inv.staticSpecsJson.production.maxFileSizeMb}MB`
-                                    : ""}
-                                </p>
-                              ) : null}
-                              {showVendorRates && inv.latestRate && (
-                                <p className="text-xs text-muted mt-1">
-                                  Vendor rate: {inv.latestRate.currency}{" "}
-                                  {inv.latestRate.amount.toLocaleString()} /{" "}
-                                  {inv.latestRate.period}
-                                </p>
-                              )}
+                              <label className={labelClass}>Ad places on loop</label>
+                              <input
+                                type="number"
+                                min={2}
+                                max={48}
+                                className={inputClass}
+                                value={editSlotCapacity}
+                                onChange={(e) => setEditSlotCapacity(e.target.value)}
+                              />
                             </div>
-                            {writable && (
-                              <div className="flex gap-1 shrink-0">
-                                <button
-                                  type="button"
-                                  aria-label="Edit product"
-                                  className="p-1.5 text-slate-500 hover:text-primary"
-                                  onClick={() => startEdit(inv)}
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  aria-label="Delete product"
-                                  className="p-1.5 text-slate-500 hover:text-red-600"
-                                  disabled={deleteInventoryMutation.isPending}
-                                  onClick={() =>
-                                    setDeleteTarget({ id: inv.id, productCode: inv.productCode })
-                                  }
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            )}
+                          ) : (
+                            <div className="flex items-end">
+                              <p className="pb-2 text-xs text-muted">Exclusive · 1 booking</p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            className="btn-primary px-4 py-2 text-sm"
+                            disabled={
+                              updateInventoryMutation.isPending || !editProductCode.trim()
+                            }
+                            onClick={() => updateInventoryMutation.mutate(inv.id)}
+                          >
+                            Save product
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-secondary px-4 py-2 text-sm"
+                            onClick={() => setEditingId(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-900">
+                            {inv.productCode}
+                            <span className="font-normal text-muted">
+                              {" "}
+                              · {formatInventoryType(inv.inventoryType)} · {inv.status}
+                            </span>
+                          </p>
+                          <p className="mt-1 text-xs text-muted">
+                            {inv.staticSpecsJson?.widthFt && inv.staticSpecsJson?.heightFt
+                              ? `${inv.staticSpecsJson.widthFt}×${inv.staticSpecsJson.heightFt} ft`
+                              : "Size not set"}
+                            {isDigitalInventoryType(inv.inventoryType)
+                              ? ` · ${inv.slotCapacity && inv.slotCapacity > 1 ? inv.slotCapacity : 6} ad places`
+                              : ""}
+                          </p>
+                          {showVendorRates && inv.latestRate ? (
+                            <p className="mt-1 text-xs text-muted">
+                              Vendor: {inv.latestRate.currency}{" "}
+                              {inv.latestRate.amount.toLocaleString()} / {inv.latestRate.period}
+                            </p>
+                          ) : null}
+                        </div>
+                        {writable ? (
+                          <div className="flex shrink-0 gap-1">
+                            <button
+                              type="button"
+                              aria-label="Edit product"
+                              className="rounded-lg p-2 text-slate-500 hover:bg-white hover:text-primary"
+                              onClick={() => startEdit(inv)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="Delete product"
+                              className="rounded-lg p-2 text-slate-500 hover:bg-white hover:text-rose-700"
+                              onClick={() =>
+                                setDeleteProductTarget({
+                                  id: inv.id,
+                                  productCode: inv.productCode,
+                                })
+                              }
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
                           </div>
-                        </>
-                      )}
-                    </li>
-                  ))}
-                  {(inventoriesByScreen ?? []).length === 0 && (
-                    <li className="text-sm text-muted">No products yet.</li>
-                  )}
-                </ul>
+                        ) : null}
+                      </div>
+                    )}
+                  </li>
+                ))}
+                {inventories.length === 0 ? (
+                  <li className="text-sm text-muted">No product on this face yet.</li>
+                ) : null}
+              </ul>
 
-                {writable && (
-                  <div className="mt-3 space-y-2">
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                      <select
-                        value={inventoryType}
-                        onChange={(e) => setInventoryType(e.target.value)}
-                        className="rounded-lg border border-violet-200 px-3 py-2 text-sm"
-                      >
-                        {INVENTORY_TYPE_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        placeholder="Product code (e.g. FACE-A)"
-                        value={productCode}
-                        onChange={(e) => setProductCode(e.target.value)}
-                        className="rounded-lg border border-violet-200 px-3 py-2 text-sm"
-                      />
-                      <input
-                        placeholder="Vendor rate (INR)"
-                        type="number"
-                        value={rateAmount}
-                        onChange={(e) => setRateAmount(e.target.value)}
-                        className="rounded-lg border border-violet-200 px-3 py-2 text-sm"
-                      />
-                      <button
-                        type="button"
-                        disabled={!productCode.trim() || createInventoryMutation.isPending}
-                        className="btn-primary text-sm py-2 disabled:opacity-50"
-                        onClick={() => createInventoryMutation.mutate(screen.id)}
-                      >
-                        Add product
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <input
-                        type="number"
-                        placeholder="Width (ft)"
-                        value={widthFt}
-                        onChange={(e) => setWidthFt(e.target.value)}
-                        className="rounded-lg border border-violet-200 px-3 py-2 text-sm"
-                      />
-                      <input
-                        type="number"
-                        placeholder="Height (ft)"
-                        value={heightFt}
-                        onChange={(e) => setHeightFt(e.target.value)}
-                        className="rounded-lg border border-violet-200 px-3 py-2 text-sm"
-                      />
-                      {inventoryType.toUpperCase().includes("DIGITAL") ? (
-                        <label className="block">
-                          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted">
-                            Ad places on loop (2–48)
-                          </span>
+              {writable ? (
+                <div className="mt-4 border-t border-violet-100 pt-4">
+                  {addForScreenId === screen.id ? (
+                    <div className="space-y-3">
+                      <p className="text-sm font-semibold text-slate-900">Add product</p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className={labelClass}>Format</label>
+                          <select
+                            className={inputClass}
+                            value={inventoryType}
+                            onChange={(e) => setInventoryType(e.target.value)}
+                          >
+                            {INVENTORY_TYPE_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={labelClass}>Product code</label>
+                          <input
+                            className={inputClass}
+                            value={productCode}
+                            onChange={(e) => setProductCode(e.target.value)}
+                            placeholder="e.g. FACE-A"
+                          />
+                        </div>
+                      </div>
+                      {inventoryType === "CUSTOM" ? (
+                        <div>
+                          <label className={labelClass}>Custom format</label>
+                          <input
+                            className={inputClass}
+                            value={customType}
+                            onChange={(e) => setCustomType(e.target.value)}
+                          />
+                        </div>
+                      ) : null}
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div>
+                          <label className={labelClass}>Width (ft)</label>
+                          <input
+                            type="number"
+                            className={inputClass}
+                            value={widthFt}
+                            onChange={(e) => setWidthFt(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Height (ft)</label>
+                          <input
+                            type="number"
+                            className={inputClass}
+                            value={heightFt}
+                            onChange={(e) => setHeightFt(e.target.value)}
+                          />
+                        </div>
+                        {showVendorRates ? (
+                          <div>
+                            <label className={labelClass}>Vendor rate (INR)</label>
+                            <input
+                              type="number"
+                              className={inputClass}
+                              value={rateAmount}
+                              onChange={(e) => setRateAmount(e.target.value)}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                      {isDigitalInventoryType(inventoryType) ? (
+                        <div className="max-w-xs">
+                          <label className={labelClass}>Ad places on loop</label>
                           <input
                             type="number"
                             min={2}
                             max={48}
-                            title="How many brands share this digital loop"
+                            className={inputClass}
                             value={slotCapacity}
                             onChange={(e) => setSlotCapacity(e.target.value)}
-                            className="w-full rounded-lg border border-violet-200 px-3 py-2 text-sm"
                           />
-                        </label>
-                      ) : (
-                        <div />
-                      )}
+                        </div>
+                      ) : null}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="btn-primary px-4 py-2 text-sm"
+                          disabled={!productCode.trim() || createInventoryMutation.isPending}
+                          onClick={() => createInventoryMutation.mutate(screen.id)}
+                        >
+                          Save product
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary px-4 py-2 text-sm"
+                          onClick={() => setAddForScreenId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </div>
-                    {inventoryType === "CUSTOM" && (
-                      <input
-                        placeholder="Enter custom inventory format (e.g. Elevator Screen, Fuel Station LED)"
-                        value={customType}
-                        onChange={(e) => setCustomType(e.target.value)}
-                        className="w-full rounded-lg border border-violet-200 px-3 py-2 text-sm bg-white"
-                      />
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
+                  ) : (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
+                      onClick={() => {
+                        setAddForScreenId(screen.id);
+                        setEditingId(null);
+                        setRenamingScreenId(null);
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add product
+                    </button>
+                  )}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
       </div>
 
-      {writable && (
-        <div className="mt-4 flex flex-col sm:flex-row gap-2">
-          <input
-            placeholder="New screen label (e.g. Main face)"
-            value={screenLabel}
-            onChange={(e) => setScreenLabel(e.target.value)}
-            className="flex-1 rounded-lg border border-violet-200 px-3 py-2.5 text-sm"
-          />
-          <button
-            type="button"
-            disabled={!screenLabel.trim() || createScreenMutation.isPending}
-            className="btn-secondary gap-2 text-sm py-2.5"
-            onClick={() => createScreenMutation.mutate()}
-          >
-            <Plus className="w-4 h-4" />
-            Add screen
-          </button>
+      {writable ? (
+        <div className="card-surface p-5 sm:p-6">
+          <h3 className="font-semibold text-slate-900">Add face</h3>
+          <p className="mt-1 text-sm text-muted">
+            Use a clear label (Main face, East face, LED A).
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <input
+              className={inputClass}
+              placeholder="Face label"
+              value={screenLabel}
+              onChange={(e) => setScreenLabel(e.target.value)}
+            />
+            <button
+              type="button"
+              disabled={!screenLabel.trim() || createScreenMutation.isPending}
+              className="btn-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm disabled:opacity-50"
+              onClick={() => createScreenMutation.mutate()}
+            >
+              <Plus className="h-4 w-4" />
+              Add face
+            </button>
+          </div>
         </div>
-      )}
+      ) : null}
 
       <ConfirmModal
-        open={Boolean(deleteTarget)}
+        open={Boolean(deleteProductTarget)}
         title="Delete product"
         description={
-          deleteTarget
-            ? `Delete ${deleteTarget.productCode}? This removes the product from this screen.`
+          deleteProductTarget
+            ? `Delete ${deleteProductTarget.productCode}? This removes the product from this face.`
             : undefined
         }
         confirmLabel="Delete product"
         danger
         busy={deleteInventoryMutation.isPending}
         onClose={() => {
-          if (!deleteInventoryMutation.isPending) setDeleteTarget(null);
+          if (!deleteInventoryMutation.isPending) setDeleteProductTarget(null);
         }}
         onConfirm={() => {
-          if (deleteTarget) deleteInventoryMutation.mutate(deleteTarget.id);
+          if (deleteProductTarget) deleteInventoryMutation.mutate(deleteProductTarget.id);
+        }}
+      />
+
+      <ConfirmModal
+        open={Boolean(deleteScreenTarget)}
+        title="Remove face"
+        description={
+          deleteScreenTarget
+            ? `Remove “${deleteScreenTarget.label}” and its products from this site?`
+            : undefined
+        }
+        confirmLabel="Remove face"
+        danger
+        busy={deleteScreenMutation.isPending}
+        onClose={() => {
+          if (!deleteScreenMutation.isPending) setDeleteScreenTarget(null);
+        }}
+        onConfirm={() => {
+          if (deleteScreenTarget) deleteScreenMutation.mutate(deleteScreenTarget.id);
         }}
       />
     </section>
