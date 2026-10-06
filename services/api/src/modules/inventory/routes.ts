@@ -224,6 +224,16 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
       }
 
       const body = updateInventoryBodySchema.parse(request.body);
+      const prevSpecs =
+        inventory.staticSpecsJson &&
+        typeof inventory.staticSpecsJson === "object" &&
+        !Array.isArray(inventory.staticSpecsJson)
+          ? (inventory.staticSpecsJson as Record<string, unknown>)
+          : {};
+      const nextSpecs =
+        body.staticSpecsJson !== undefined
+          ? ({ ...prevSpecs, ...body.staticSpecsJson } as Prisma.InputJsonValue)
+          : undefined;
       const updated = await prisma.inventory.update({
         where: { id },
         data: {
@@ -232,7 +242,7 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
           notes: body.notes,
           status: body.status,
           ...(body.slotCapacity != null ? { slotCapacity: body.slotCapacity } : {}),
-          staticSpecsJson: body.staticSpecsJson as Prisma.InputJsonValue | undefined,
+          ...(nextSpecs !== undefined ? { staticSpecsJson: nextSpecs } : {}),
         },
       });
       invalidateLocationCaches(inventory.screen.locationId);

@@ -84,6 +84,7 @@ export function LocationInventoryWizard({
 
   const [step, setStep] = useState<Step>(0);
   const [busy, setBusy] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
 
   // Site
   const [name, setName] = useState(initial?.name ?? "");
@@ -173,9 +174,13 @@ export function LocationInventoryWizard({
     return null;
   }
 
-  async function submit() {
+  async function submit(options?: { siteOnly?: boolean }) {
+    const siteOnly =
+      Boolean(options?.siteOnly) ||
+      (mode === "edit" && allowSiteOnlySave && !productCode.trim());
+
     // Site-only edit: skip inventory validation when no product code
-    if (mode === "edit" && allowSiteOnlySave && !productCode.trim()) {
+    if (siteOnly) {
       const siteErr = validateStep(0);
       if (siteErr) {
         onError(siteErr);
@@ -189,12 +194,13 @@ export function LocationInventoryWizard({
       }
     }
     setBusy(true);
+    setSaveMessage("");
     try {
       const client = createWebApiClient();
       const market = getMarketCity(cityId);
       const lat = Number(latitude);
       const lng = Number(longitude);
-      const addFace = Boolean(productCode.trim());
+      const addFace = !siteOnly && Boolean(productCode.trim());
 
       let locationId = initial?.id;
 
@@ -313,6 +319,9 @@ export function LocationInventoryWizard({
         });
       }
 
+      setSaveMessage(
+        addFace ? "Site saved and face added." : "Site details saved."
+      );
       onSuccess(locationId!);
     } catch (e) {
       onError(e instanceof Error ? e.message : "Failed to save location");
@@ -805,6 +814,12 @@ export function LocationInventoryWizard({
         </div>
       ) : null}
 
+      {saveMessage ? (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          {saveMessage}
+        </p>
+      ) : null}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <button
           type="button"
@@ -815,32 +830,62 @@ export function LocationInventoryWizard({
           Back
         </button>
         <div className="flex flex-wrap items-center gap-2">
-          {allowSiteOnlySave && mode === "edit" && step < 2 ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void submit()}
-              className="rounded-lg border border-violet-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-violet-50"
-            >
-              {busy ? "Saving…" : "Save site only"}
-            </button>
-          ) : null}
-          {step < 2 ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                const msg = validateStep(step);
-                if (msg) {
-                  onError(msg);
-                  return;
-                }
-                setStep((s) => ((s + 1) as Step));
-              }}
-              className="btn-primary px-5 py-2.5"
-            >
-              Continue
-            </button>
+          {mode === "edit" && allowSiteOnlySave && step === 0 ? (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  const msg = validateStep(0);
+                  if (msg) {
+                    onError(msg);
+                    return;
+                  }
+                  setSaveMessage("");
+                  setStep(1);
+                }}
+                className="rounded-lg border border-violet-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-violet-50"
+              >
+                Add a face…
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void submit({ siteOnly: true })}
+                className="btn-primary px-5 py-2.5"
+              >
+                {busy ? "Saving…" : "Save changes"}
+              </button>
+            </>
+          ) : step < 2 ? (
+            <>
+              {allowSiteOnlySave && mode === "edit" ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void submit({ siteOnly: true })}
+                  className="rounded-lg border border-violet-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-violet-50"
+                >
+                  {busy ? "Saving…" : "Save site only"}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  const msg = validateStep(step);
+                  if (msg) {
+                    onError(msg);
+                    return;
+                  }
+                  setSaveMessage("");
+                  setStep((s) => ((s + 1) as Step));
+                }}
+                className="btn-primary px-5 py-2.5"
+              >
+                Continue
+              </button>
+            </>
           ) : (
             <button
               type="button"

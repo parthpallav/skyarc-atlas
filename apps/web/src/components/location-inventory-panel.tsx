@@ -184,6 +184,15 @@ export function LocationInventoryPanel({
           ? (editCustomType.trim() || "OTHER")
           : editInventoryType;
 
+      const existing = inventoriesByScreen?.find((row) => row.id === inventoryId);
+      const prevSpecs =
+        existing?.staticSpecsJson && typeof existing.staticSpecsJson === "object"
+          ? { ...existing.staticSpecsJson }
+          : {};
+      const nextSpecs: Record<string, unknown> = { ...prevSpecs };
+      if (editWidthFt.trim()) nextSpecs.widthFt = Number(editWidthFt);
+      if (editHeightFt.trim()) nextSpecs.heightFt = Number(editHeightFt);
+
       await client.updateInventory(inventoryId, {
         productCode: editProductCode.trim(),
         inventoryType: resolvedType,
@@ -191,10 +200,7 @@ export function LocationInventoryPanel({
         ...(resolvedType.toUpperCase().includes("DIGITAL") && editSlotCapacity
           ? { slotCapacity: Number(editSlotCapacity) }
           : {}),
-        staticSpecsJson: {
-          ...(editWidthFt ? { widthFt: Number(editWidthFt) } : {}),
-          ...(editHeightFt ? { heightFt: Number(editHeightFt) } : {}),
-        },
+        staticSpecsJson: nextSpecs,
       });
       if (editRateAmount) {
         await client.createRateCard(inventoryId, {

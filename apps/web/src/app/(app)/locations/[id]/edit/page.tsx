@@ -42,6 +42,7 @@ export default function LocationEditPage() {
     authUser,
   } = usePermissions();
   const [error, setError] = useState("");
+  const [saveNotice, setSaveNotice] = useState("");
   const [ready, setReady] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -247,6 +248,14 @@ export default function LocationEditPage() {
           {error}
         </p>
       ) : null}
+      {saveNotice ? (
+        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          {saveNotice}{" "}
+          <Link href={`/locations/${id}`} className="font-semibold text-primary hover:underline">
+            View location
+          </Link>
+        </p>
+      ) : null}
 
       {gates.editTabs.length > 1 ? (
         <div className="mb-4 flex gap-1 overflow-x-auto border-b border-violet-100 pb-px">
@@ -299,10 +308,14 @@ export default function LocationEditPage() {
                 mountingType: location.mountingType ? String(location.mountingType) : "",
                 mountingNotes: location.mountingNotes ? String(location.mountingNotes) : "",
               }}
-              onError={setError}
+              onError={(message) => {
+                setSaveNotice("");
+                setError(message);
+              }}
               onSuccess={async () => {
                 await invalidateAll();
                 setError("");
+                setSaveNotice("Site details saved.");
               }}
             />
           </section>
