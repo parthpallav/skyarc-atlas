@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { createWebApiClient } from "@/lib/api";
@@ -104,6 +104,13 @@ export function LocationInventoryPanel({
       return result.data as ScreenRow[];
     },
   });
+
+  // Open the first screen so format/size edit is one click away
+  useEffect(() => {
+    if (!expandedScreen && screens && screens.length > 0) {
+      setExpandedScreen(screens[0]!.id);
+    }
+  }, [screens, expandedScreen]);
 
   const { data: inventoriesByScreen } = useQuery({
     queryKey: ["screen-inventories", expandedScreen, showVendorRates],
@@ -213,6 +220,9 @@ export function LocationInventoryPanel({
     onSuccess: async () => {
       setEditingId(null);
       await invalidateInventory();
+      await queryClient.invalidateQueries({ queryKey: ["location", locationId] });
+      await queryClient.invalidateQueries({ queryKey: ["locations"] });
+      await queryClient.invalidateQueries({ queryKey: ["location-all-inventories", locationId] });
     },
   });
 

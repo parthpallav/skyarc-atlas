@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/page-header";
 import { LocationPhotoEditor } from "@/components/location-photo-editor";
 import { LocationInventoryPanel } from "@/components/location-inventory-panel";
 import { LocationInventoryWizard } from "@/components/location-inventory-wizard";
+import { LocationPrimaryFaceEditor } from "@/components/location-primary-face-editor";
 import { LocationScoreEditor } from "@/components/location-score-editor";
 import { LocationScoreIntel } from "@/components/location-score-intel";
 import { LocationCommercialPanel } from "@/components/location-commercial-panel";
@@ -286,39 +287,49 @@ export default function LocationEditPage() {
         ) : null}
 
         {activeTab === "site" && gates.showEditSite ? (
-          <section className="card-surface p-5 sm:p-6">
-            <h2 className="mb-1 font-semibold text-slate-900">Site & market</h2>
-            <p className="mb-4 text-sm text-muted">
-              Update geo and mounting. Leave product code blank to save site details only.
-            </p>
-            <LocationInventoryWizard
-              mode="edit"
-              allowSiteOnlySave
-              initial={{
-                id,
-                name: String(location.name ?? ""),
-                latitude: location.latitude as number,
-                longitude: location.longitude as number,
-                address: location.address ? String(location.address) : "",
-                road: location.road ? String(location.road) : "",
-                junction: location.junction ? String(location.junction) : "",
-                city: location.city ? String(location.city) : "",
-                district: location.district ? String(location.district) : "",
-                state: location.state ? String(location.state) : "",
-                mountingType: location.mountingType ? String(location.mountingType) : "",
-                mountingNotes: location.mountingNotes ? String(location.mountingNotes) : "",
-              }}
-              onError={(message) => {
-                setSaveNotice("");
-                setError(message);
-              }}
-              onSuccess={async () => {
+          <div className="space-y-4">
+            <section className="card-surface p-5 sm:p-6">
+              <h2 className="mb-1 font-semibold text-slate-900">Site & market</h2>
+              <p className="mb-4 text-sm text-muted">
+                Address, map pin, and mounting. Format and size are saved in the section below.
+              </p>
+              <LocationInventoryWizard
+                mode="edit"
+                allowSiteOnlySave
+                initial={{
+                  id,
+                  name: String(location.name ?? ""),
+                  latitude: location.latitude as number,
+                  longitude: location.longitude as number,
+                  address: location.address ? String(location.address) : "",
+                  road: location.road ? String(location.road) : "",
+                  junction: location.junction ? String(location.junction) : "",
+                  city: location.city ? String(location.city) : "",
+                  district: location.district ? String(location.district) : "",
+                  state: location.state ? String(location.state) : "",
+                  mountingType: location.mountingType ? String(location.mountingType) : "",
+                  mountingNotes: location.mountingNotes ? String(location.mountingNotes) : "",
+                }}
+                onError={(message) => {
+                  setSaveNotice("");
+                  setError(message);
+                }}
+                onSuccess={async () => {
+                  await invalidateAll();
+                  setError("");
+                  setSaveNotice("Site details saved.");
+                }}
+              />
+            </section>
+            <LocationPrimaryFaceEditor
+              locationId={id}
+              onSaved={async () => {
                 await invalidateAll();
                 setError("");
-                setSaveNotice("Site details saved.");
+                setSaveNotice("Format & size saved.");
               }}
             />
-          </section>
+          </div>
         ) : null}
 
         {activeTab === "faces" && gates.showEditFaces ? (
