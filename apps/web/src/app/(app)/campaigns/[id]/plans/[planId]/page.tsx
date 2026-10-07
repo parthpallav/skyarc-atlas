@@ -674,6 +674,13 @@ export default function MediaPlanDetailPage() {
   const pricingReady = plan.pricingVisible !== false && plan.status === "APPROVED";
   const showPendingVendor = isVendor && isDraftRequest && !plan.canRespond;
   const showClientPricing = Boolean(plan.pricingVisible) || isClient || isInternal;
+  const missingStandardRateCount = isInternal
+    ? plan.items.filter(
+        (item) =>
+          (item.pricing?.clientRate == null || item.pricing.clientRate <= 0) &&
+          (item.pricing?.vendorRate != null && item.pricing.vendorRate > 0)
+      ).length
+    : 0;
   const canApprove = Boolean(plan.canApprove) || (isInternal && (plan.status === "DRAFT" || plan.status === "PROPOSED"));
   const canRespond = Boolean(plan.canRespond);
   const statusBadge = planLifecycleBadge(plan.status, plan.isSiteRequest);
@@ -722,6 +729,16 @@ export default function MediaPlanDetailPage() {
 
   const alerts = (
     <>
+      {missingStandardRateCount > 0 ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          <span className="font-semibold">
+            {missingStandardRateCount} site
+            {missingStandardRateCount === 1 ? "" : "s"} lack a Standard rate.
+          </span>{" "}
+          Client pitches and Skyarc margin need the site Pricing → Standard rate; vendor card rate is
+          cost-only until then.
+        </div>
+      ) : null}
       {showPendingVendor ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
           <span className="font-semibold">Request pending.</span> Sites held for this flight;

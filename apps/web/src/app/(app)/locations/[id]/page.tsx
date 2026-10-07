@@ -611,6 +611,18 @@ export default function LocationDetailPage() {
                   ask a planner or admin for changes.
                 </p>
               ) : null}
+              {rateIsVendorFallback && canEdit ? (
+                <p className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
+                  Showing vendor card rate — set a Standard rate on Pricing so pitches and media
+                  plans use client-facing costing with Skyarc margin.
+                </p>
+              ) : null}
+              {rateIsVendorFallback && !canEdit && isInternal ? (
+                <p className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
+                  Vendor rate only — ask an admin to set the Standard (client) rate for full planner
+                  costing.
+                </p>
+              ) : null}
             </div>
 
             <div className="space-y-2 border-t border-violet-50 pt-4">

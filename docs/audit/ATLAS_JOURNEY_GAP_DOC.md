@@ -54,7 +54,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | V-08 | Vendor | Extra faces lack full static/digital wizard parity (loop, production specs) | Vendor | `OPEN` |
 | V-09 | Vendor | Classic prod: no slot-level block UI for digital truth | Vendor | `DEFERRED` (with D-02) |
 | V-10 | Vendor | Sites can save with no rate → planner pricing unavailable | Vendor, Planner | `DONE` 2026-10-07 — vendor card rate required on commercial save |
-| V-11 | Vendor | Planner costing weak without Skyarc client/base rate | Planner | `OPEN` |
+| V-11 | Vendor | Planner costing weak without Skyarc client/base rate | Planner | `DONE` 2026-10-07 — Standard rate required + plan/detail nudges |
 | V-12 | Vendor | “Show vendor details” can hide Pricing on owned vendor sites | Vendor, Admin | `DONE` 2026-10-07 — owned vendors keep Pricing; showcase only hides for internal |
 | L-01 | Locations | Client: list can show rate; detail often “—” | Client | `DONE` 2026-10-07 — Overview reads client rate even without Rates tab |
 | L-02 | Locations | Map popups ≠ list card (no format / size / rate) | All browse | `DONE` 2026-10-07 — popup shows format · size · rate |
@@ -67,7 +67,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | L-09 | Locations | Client “Fit” copy not tied to selected dates | Client | `DONE` 2026-10-07 — Fit includes selected flight label |
 | L-10 | Locations | Planner cards: no vendor cost when client rate empty | Planner, Admin | `DONE` 2026-10-07 — vendor rate fallback labeled on list + detail |
 | L-11 | Locations | Availability chips (Partial/Held/Booked) loud without slot meters | Planner, Client | `DONE` 2026-10-07 — classic quieter badges + free/capacity hint |
-| L-12 | Locations | VIEWER / VENDOR_OPS same screens as full roles, actions missing | VIEWER, VENDOR_OPS | `OPEN` |
+| L-12 | Locations | VIEWER / VENDOR_OPS same screens as full roles, actions missing | VIEWER, VENDOR_OPS | `DONE` 2026-10-07 — app-shell view-only banner + role labels |
 | T-01 | Trading | ACTIVE campaign amounts must lock when rates change later — **confirmed**: plan/swap re-reads live rates; no ACTIVE commercial lock | Planner, Vendor, Admin | `OPEN` → D-04 |
 | T-02 | Trading | No Quotation / PO / Work Order for inventory trading — **confirmed** absent in classic prod | Planner, Client, Vendor, Admin | `OPEN` → D-05 |
 | C-01 | Campaigns | Vendor cannot approve sites on planner **current plan** in classic UI (Requests = DRAFT-only; booking respond AdTech-gated) | Planner, Vendor, Admin | `OPEN` |

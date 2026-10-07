@@ -362,8 +362,8 @@ export default function LocationEditPage() {
                   used on cards and media plans.
                 </li>
                 <li>
-                  <span className="font-medium text-slate-800">Vendor card rate</span> — your B2B cost;
-                  required for planner costing when Standard rate is empty.
+                  <span className="font-medium text-slate-800">Vendor card rate</span> — B2B cost;
+                  fallback only when Standard rate is empty (weak planner margin view).
                 </li>
                 <li>
                   <span className="font-medium text-slate-800">Face rate (Faces tab)</span> — optional

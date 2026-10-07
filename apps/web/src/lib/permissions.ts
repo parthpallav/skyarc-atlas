@@ -102,5 +102,12 @@ export function roleLabel(role: UserRole | string): string {
   if (role === UserRole.MEDIA_PLANNER) return "Media Planner";
   if (role === UserRole.FIELD_OPERATOR) return "Field Operator";
   if (role === UserRole.VENDOR) return "Vendor / Media Owner";
+  if (role === UserRole.VIEWER) return "Viewer (read-only)";
+  if (role === UserRole.VENDOR_OPS) return "Vendor Ops (read-only)";
   return role.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Legacy VIEWER / VENDOR_OPS see full chrome but cannot mutate. */
+export function isLegacyViewOnlyRole(role: UserRole | string | null | undefined): boolean {
+  return role === UserRole.VIEWER || role === UserRole.VENDOR_OPS;
 }
