@@ -70,7 +70,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | L-12 | Locations | VIEWER / VENDOR_OPS same screens as full roles, actions missing | VIEWER, VENDOR_OPS | `DONE` 2026-10-07 — app-shell view-only banner + role labels |
 | T-01 | Trading | ACTIVE campaign amounts must lock when rates change later — **confirmed**: plan/swap re-reads live rates; no ACTIVE commercial lock | Planner, Vendor, Admin | `OPEN` → D-04 |
 | T-02 | Trading | No Quotation / PO / Work Order for inventory trading — **confirmed** absent in classic prod | Planner, Client, Vendor, Admin | `OPEN` → D-05 |
-| C-01 | Campaigns | Vendor cannot approve sites on planner **current plan** in classic UI (Requests = DRAFT-only; booking respond AdTech-gated) | Planner, Vendor, Admin | `OPEN` |
+| C-01 | Campaigns | Vendor cannot approve sites on planner **current plan** in classic UI (Requests = DRAFT-only; booking respond AdTech-gated) | Planner, Vendor, Admin | `DONE` 2026-10-07 — canRespond on APPROVED + pending-only respond |
 | C-02 | Campaigns | Copy implies campaign becomes Active when all sites approved; real launch is **Mark live** only | Planner, Client | `DONE` 2026-10-07 — Mark live / current-plan copy clarified |
 | C-03 | Campaigns | Client lacks commitment / hold / booking visibility on campaign review | Client | `DONE` 2026-10-07 — client Holds & commitments panel (read-only) |
 | C-04 | Campaigns | Brand site requests need Skyarc “Ready for site requests” — gate not obvious on campaign spine | Client, Planner | `DONE` 2026-10-07 — ready/locked banners on campaign header |

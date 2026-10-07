@@ -1253,8 +1253,15 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
         canApprove: canApproveMediaPlan(request.user) && (plan.status === "DRAFT" || plan.status === "PROPOSED"),
         canRespond:
           canRespondToSiteRequest(request.user) &&
-          plan.status === "DRAFT" &&
-          ownedItemCount > 0,
+          ownedItemCount > 0 &&
+          (plan.status === "DRAFT" ||
+            (plan.status === "APPROVED" &&
+              plan.items.some(
+                (item) =>
+                  item.inventory.screen.location.organizationId === orgId &&
+                  ((item as { approvalStatus?: string }).approvalStatus ?? "PENDING") ===
+                    "PENDING"
+              ))),
         ownedItemCount,
         pricingVisible:
           !isVendorUser(request.user) || plan.status === "APPROVED",
@@ -1698,7 +1705,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
     }
   );
 
-  /** Vendor approves/rejects their owned sites inside a draft site request. */
+  /** Vendor approves/rejects owned sites on a draft request or current (APPROVED) plan. */
   fastify.post(
     "/campaigns/:campaignId/media-plans/:planId/respond",
     { preHandler: [fastify.authenticate] },
@@ -1724,7 +1731,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
           },
         },
       });
-      if (!plan) throw notFound("Draft request not found");
+      if (!plan) throw notFound("Media plan not found");
 
       const ownedItems = plan.items.filter(
         (item) => item.inventory.screen.location.organizationId === orgId
@@ -1733,13 +1740,21 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
         throw forbidden("This request has no inventory from your organization");
       }
 
+      const ownedPendingItems = ownedItems.filter(
+        (item) => ((item as { approvalStatus?: string }).approvalStatus ?? "PENDING") === "PENDING"
+      );
+
       const targetIds = body.inventoryIds?.length
-        ? ownedItems
+        ? ownedPendingItems
             .filter((item) => body.inventoryIds!.includes(item.inventoryId))
             .map((item) => item.id)
-        : ownedItems.map((item) => item.id);
+        : ownedPendingItems.map((item) => item.id);
       if (targetIds.length === 0) {
-        throw validationError("No matching owned sites in this request");
+        throw validationError(
+          ownedPendingItems.length === 0
+            ? "No pending sites left for your organization on this plan"
+            : "No matching owned sites in this request"
+        );
       }
 
       const inventoryIds = plan.items

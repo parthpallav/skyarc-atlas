@@ -748,7 +748,9 @@ export default function MediaPlanDetailPage() {
       {canRespond ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
           <p className="text-xs font-semibold text-slate-900">
-            Request for your inventory
+            {plan.status === "APPROVED"
+              ? "Confirm your sites on this current plan"
+              : "Request for your inventory"}
             {ownedItemCount ? ` · ${ownedItemCount}` : ""}
           </p>
           <div className="flex gap-1.5">
