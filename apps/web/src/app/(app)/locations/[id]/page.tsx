@@ -693,6 +693,21 @@ export default function LocationDetailPage() {
                     {showMediaOwner ? (
                       <OverviewRow label="Media owner" value={String(location.mediaOwner)} />
                     ) : null}
+                    {location.mountingType ? (
+                      <OverviewRow
+                        label="Mounting"
+                        value={
+                          location.mountingNotes
+                            ? `${String(location.mountingType)} — ${String(location.mountingNotes)}`
+                            : String(location.mountingType)
+                        }
+                      />
+                    ) : location.mountingNotes ? (
+                      <OverviewRow
+                        label="Mounting notes"
+                        value={String(location.mountingNotes)}
+                      />
+                    ) : null}
                     {adtechBooking && isDigital && slotCapacity != null ? (
                       <OverviewRow
                         label="Ad places open"
@@ -713,7 +728,7 @@ export default function LocationDetailPage() {
                     {isClient ? (
                       <OverviewRow
                         label="Fit"
-                        value={`${roadLabel} — strong daily exposure for this flight.`}
+                        value={`${roadLabel} — strong daily exposure for ${formatFlightLabel(flight.from, flight.to)}.`}
                       />
                     ) : null}
                     {isNetworkSite ? (
@@ -745,7 +760,13 @@ export default function LocationDetailPage() {
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
                       Live on site
                     </p>
-                    <h3 className="mt-0.5 text-sm font-semibold text-slate-900">Campaign proof photos</h3>
+                    <h3 className="mt-0.5 text-sm font-semibold text-slate-900">
+                      Live campaign photos
+                    </h3>
+                    <p className="mt-1 text-xs text-muted">
+                      Execution proofs captured while the campaign is live — separate from plan
+                      shortlist history above.
+                    </p>
                     <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                       {assets
                         .filter((a) => a.kind === "CAMPAIGN_LIVE_PROOF" && a.url)

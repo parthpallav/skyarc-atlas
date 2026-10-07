@@ -89,7 +89,8 @@ export function CampaignCommitmentPanel({
       <div className="border-b border-primary/10 px-4 py-3">
         <h2 className="text-base font-bold text-slate-900">Inventory commitments</h2>
         <p className="mt-0.5 text-sm text-muted">
-          Atlas booking ledger — vendor approval is not customer acceptance.
+          Holds and vendor confirmations for the current plan. Approving sites does not make the
+          campaign live — use Mark live when ready.
         </p>
       </div>
       <div className="space-y-3 p-4 text-sm">
@@ -160,19 +161,25 @@ export function CampaignCommitmentPanel({
               </ul>
             ) : null}
             {canEdit && data.lifecycleStatus !== "ACTIVE" ? (
-              <button
-                type="button"
-                className="btn-primary mt-3 px-3 py-1.5 text-xs"
-                disabled={!data.activation.ready || markLive.isPending}
-                onClick={() => markLive.mutate()}
-                title={
-                  data.activation.ready
-                    ? "Mark campaign live with audit trail"
-                    : "Resolve readiness blockers first"
-                }
-              >
-                {markLive.isPending ? "…" : "Mark live"}
-              </button>
+              <div className="mt-3 space-y-1.5">
+                <p className="text-xs text-muted">
+                  Vendor approvals alone do not launch the campaign. Mark live is the only step that
+                  sets status to Active.
+                </p>
+                <button
+                  type="button"
+                  className="btn-primary px-3 py-1.5 text-xs"
+                  disabled={!data.activation.ready || markLive.isPending}
+                  onClick={() => markLive.mutate()}
+                  title={
+                    data.activation.ready
+                      ? "Mark campaign live with audit trail"
+                      : "Resolve readiness blockers first"
+                  }
+                >
+                  {markLive.isPending ? "…" : "Mark live"}
+                </button>
+              </div>
             ) : null}
             {markLive.isError ? (
               <p className="mt-2 text-xs text-red-700">

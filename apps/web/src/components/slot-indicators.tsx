@@ -43,7 +43,7 @@ export function liveStatusBadge(status?: string | null) {
     return {
       label: "Fully booked",
       short: "Booked",
-      hint: "No open place for your dates",
+      hint: "No open place for your selected dates (plan hold/book — not a Bookings stage)",
       className: "bg-rose-50 text-rose-700 border-rose-200",
       dot: "bg-rose-500",
     };
@@ -52,7 +52,7 @@ export function liveStatusBadge(status?: string | null) {
     return {
       label: "On hold",
       short: "On hold",
-      hint: "Temporarily reserved by another plan",
+      hint: "Soft-held by a media plan for these dates — not a separate Bookings workflow",
       className: "bg-amber-50 text-amber-800 border-amber-200",
       dot: "bg-amber-500",
     };
@@ -61,7 +61,7 @@ export function liveStatusBadge(status?: string | null) {
     return {
       label: "Some slots free",
       short: "Partial",
-      hint: "Digital loop — some ad places still open",
+      hint: "Digital loop — some ad places still open for these dates",
       className: "bg-sky-50 text-sky-800 border-sky-200",
       dot: "bg-sky-500",
     };
@@ -69,7 +69,7 @@ export function liveStatusBadge(status?: string | null) {
   return {
     label: "Ready to book",
     short: "Open",
-    hint: "Fully free for your campaign dates",
+    hint: "Fully free for your selected campaign dates",
     className: "bg-emerald-50 text-emerald-700 border-emerald-200",
     dot: "bg-emerald-500",
   };

@@ -55,9 +55,15 @@ export function LocationCampaignProof({
       <div className="flex items-end justify-between gap-3">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-            Recent on this site
+            Plan history
           </p>
-          <h3 className="mt-0.5 text-sm font-semibold text-slate-900">Campaign proof</h3>
+          <h3 className="mt-0.5 text-sm font-semibold text-slate-900">
+            Shortlisted on plans
+          </h3>
+          <p className="mt-1 text-xs text-muted">
+            Media-plan activity — not live execution photos. Live on-site proofs appear separately
+            when uploaded.
+          </p>
         </div>
         <BriefcaseBusiness className="h-4 w-4 text-violet-400" aria-hidden />
       </div>
@@ -70,7 +76,7 @@ export function LocationCampaignProof({
         </ul>
       ) : !campaigns || campaigns.length === 0 ? (
         <p className="mt-4 text-sm leading-relaxed text-muted">
-          No campaigns have shortlisted or booked this site yet. Being first here is a visibility
+          No campaigns have shortlisted this site on a plan yet. Being first here is a visibility
           advantage.
         </p>
       ) : (

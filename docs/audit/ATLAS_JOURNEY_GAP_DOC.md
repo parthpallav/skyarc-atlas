@@ -4,7 +4,8 @@ Living audit log. **Fill gaps here first.** No code, merges, or new features unt
 
 **Prod baseline:** classic UX — `NEXT_PUBLIC_ADTECH_BOOKING=false`, Bookings / Digital Availability chrome hidden.  
 **Journey canvas:** `atlas-role-journey-maps` (Cursor canvas).  
-**Last updated:** 2026-10-04
+**Last updated:** 2026-10-07  
+**Implementation branch:** `feat/journey-gaps` (off prod `main` @ `677956b`)
 
 ---
 
@@ -33,7 +34,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | D-03 | Vendors **may edit margin %** on own inventory | `ACCEPTED` |
 | D-04 | Amounts on **ACTIVE** campaigns stay fixed if rates change later | `NEEDED` (gap T-01) |
 | D-05 | **Quotation / PO / Work Order** required for inventory trading | `NEEDED` (gap T-02) |
-| D-06 | Allow **custom inventory type** when not in preset list | `NEEDED` (gap L-06 / V-related) |
+| D-06 | Allow **custom inventory type** when not in preset list | `ACCEPTED` (edit paths DONE via L-06; create wizard Conceptual remains) |
 | D-07 | Clarity over portal clutter — no extra widgets without a journey job | `ACCEPTED` |
 | D-08 | Classic journey has **no Bookings stage** — AdTech booking pipeline is gated; do not fill Mounting/Proofs with Bookings UI | `ACCEPTED` |
 
@@ -56,42 +57,42 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | V-11 | Vendor | Planner costing weak without Skyarc client/base rate | Planner | `OPEN` |
 | V-12 | Vendor | “Show vendor details” can hide Pricing on owned vendor sites | Vendor, Admin | `OPEN` |
 | L-01 | Locations | Client: list can show rate; detail often “—” | Client | `OPEN` |
-| L-02 | Locations | Map popups ≠ list card (no format / size / rate) | All browse | `OPEN` |
-| L-03 | Locations | Map “View details” drops flight `from`/`to` | All browse | `OPEN` |
-| L-04 | Locations | Default “Open” filter hides held/booked unless widened | Planner, Admin | `OPEN` |
-| L-05 | Locations | Transit/venue formats buried under “Conceptual” | All browse | `OPEN` |
-| L-06 | Locations | No free-text **custom inventory type** outside preset list | Vendor, Planner, Admin | `OPEN` → D-06 |
+| L-02 | Locations | Map popups ≠ list card (no format / size / rate) | All browse | `DONE` 2026-10-07 — popup shows format · size · rate |
+| L-03 | Locations | Map “View details” drops flight `from`/`to` | All browse | `DONE` 2026-10-07 — detail href built with flight options |
+| L-04 | Locations | Default “Open” filter hides held/booked unless widened | Planner, Admin | `DONE` 2026-10-07 — Locations + Map default to All |
+| L-05 | Locations | Transit/venue formats buried under “Conceptual” | All browse | `DONE` 2026-10-07 — filter label “Transit & other” |
+| L-06 | Locations | No free-text **custom inventory type** outside preset list | Vendor, Planner, Admin | `DONE` 2026-10-07 — CUSTOM on Site + Faces edit (create wizard still Conceptual class) |
 | L-07 | Locations | ~250 site fetch cap — large markets may look incomplete | Planner, Admin | `OPEN` |
 | L-08 | Locations | FIELD_OPERATOR sees Add but edit only own-created (confusing) | FO | `OPEN` |
-| L-09 | Locations | Client “Fit” copy not tied to selected dates | Client | `OPEN` |
+| L-09 | Locations | Client “Fit” copy not tied to selected dates | Client | `DONE` 2026-10-07 — Fit includes selected flight label |
 | L-10 | Locations | Planner cards: no vendor cost when client rate empty | Planner, Admin | `OPEN` |
 | L-11 | Locations | Availability chips (Partial/Held/Booked) loud without slot meters | Planner, Client | `OPEN` |
 | L-12 | Locations | VIEWER / VENDOR_OPS same screens as full roles, actions missing | VIEWER, VENDOR_OPS | `OPEN` |
 | T-01 | Trading | ACTIVE campaign amounts must lock when rates change later — **confirmed**: plan/swap re-reads live rates; no ACTIVE commercial lock | Planner, Vendor, Admin | `OPEN` → D-04 |
 | T-02 | Trading | No Quotation / PO / Work Order for inventory trading — **confirmed** absent in classic prod | Planner, Client, Vendor, Admin | `OPEN` → D-05 |
 | C-01 | Campaigns | Vendor cannot approve sites on planner **current plan** in classic UI (Requests = DRAFT-only; booking respond AdTech-gated) | Planner, Vendor, Admin | `OPEN` |
-| C-02 | Campaigns | Copy implies campaign becomes Active when all sites approved; real launch is **Mark live** only | Planner, Client | `OPEN` |
+| C-02 | Campaigns | Copy implies campaign becomes Active when all sites approved; real launch is **Mark live** only | Planner, Client | `DONE` 2026-10-07 — Mark live / current-plan copy clarified |
 | C-03 | Campaigns | Client lacks commitment / hold / booking visibility on campaign review | Client | `OPEN` |
-| C-04 | Campaigns | Brand site requests need Skyarc “Ready for site requests” — gate not obvious on campaign spine | Client, Planner | `OPEN` |
+| C-04 | Campaigns | Brand site requests need Skyarc “Ready for site requests” — gate not obvious on campaign spine | Client, Planner | `DONE` 2026-10-07 — ready/locked banners on campaign header |
 | MP-01 | Media Plans | Plan lines omit per-site vendor approval status (pending / approved / rejected) | Planner | `OPEN` |
 | MP-02 | Media Plans | No planner line-level discount / negotiated rate on media plan editor | Planner | `OPEN` |
 | MP-03 | Media Plans | Plan add/swap on APPROVED packs without lifecycle / commercial lock (feeds T-01) | Planner, Admin | `OPEN` |
 | MP-04 | Media Plans | Packs vs site-request drafts split across Campaign / Requests / Media Plans — no single “pending vendor” view for current plans | Planner | `OPEN` |
 | B-01 | Bookings | Bookings **stage UI** not in classic product (by design) — holds/ledger may still run under plans; do not add Bookings nav as a journey stage | Planner, Admin | `ACCEPTED` → D-08 |
 | B-02 | Bookings | Vendor confirm via AdTech booking path — N/A for classic journey; track under **C-01 / R-01** | Planner, Vendor | `ACCEPTED` → D-08 |
-| B-03 | Bookings | Locations show Held/Booked from windows without a Bookings stage — **clarity/copy** gap only (not “build Bookings”) | All | `OPEN` |
+| B-03 | Bookings | Locations show Held/Booked from windows without a Bookings stage — **clarity/copy** gap only (not “build Bookings”) | All | `DONE` 2026-10-07 — chip hints clarify plan-hold vs Bookings stage |
 | P-01 | Proofs | No UI to upload live campaign proof (`CAMPAIGN_LIVE_PROOF`) on web or mobile (API exists) | FO, Vendor, Planner, Admin | `OPEN` |
-| P-02 | Proofs | Location “Campaign proof” card = plan shortlist history, not live execution proof — misleading vs ACTIVE / Mark live | All browse | `OPEN` |
+| P-02 | Proofs | Location “Campaign proof” card = plan shortlist history, not live execution proof — misleading vs ACTIVE / Mark live | All browse | `DONE` 2026-10-07 — renamed plan history vs live photos |
 | P-03 | Proofs | Live proof gallery lacks campaign / flight attribution in API + UI | All browse | `OPEN` |
 | P-04 | Proofs | No campaign-level proofs module (list / review / approve) | Planner, Admin, Client | `OPEN` |
 | P-05 | Proofs | Mark live / ACTIVE does not require or track mounting completeness or live proof | Planner, Admin | `OPEN` |
 | P-06 | Proofs | Client plan-name redaction inconsistent with live proof photo visibility | Client | `OPEN` |
 | P-07 | Proofs | Classic prod: creative / delivery / PoP not available post-launch (AdTech Bookings only) | Planner, Client, Vendor | `OPEN` → D-08 |
 | P-08 | Proofs | When proof upload ships: require ACTIVE + site on campaign (policy gap) | FO, Vendor, Admin | `NEEDED` |
-| MT-01 | Mounting | Mounting type not on location Overview for planners/clients/vendors (notes mostly admin) | Planner, Client, Vendor | `OPEN` |
+| MT-01 | Mounting | Mounting type not on location Overview for planners/clients/vendors (notes mostly admin) | Planner, Client, Vendor | `DONE` 2026-10-07 — Mounting on Overview Site context |
 | MT-02 | Mounting | Mobile field survey omits mounting type (web has type + notes) | FO | `OPEN` |
 | MT-03 | Mounting | No “installation / mount complete” stage vs survey metadata only | FO, Vendor, Planner | `NEEDED` |
-| MT-04 | Mounting | Mounting notes vs face material notes easy to confuse in wizard | Vendor | `OPEN` |
+| MT-04 | Mounting | Mounting notes vs face material notes easy to confuse in wizard | Vendor | `DONE` 2026-10-07 — separate site mounting vs face material fields |
 | MT-05 | Mounting | FIELD_OPERATOR mounting/proof blocked on vendor-owned sites (edit RBAC) | FO, Vendor | `OPEN` → L-08 |
 | R-01 | Requests | Requests list treats APPROVED like done; does not surface pending vendor items on planner’s **current** plan | Planner, Vendor | `OPEN` |
 | M-01 | Map | *(fill on Map audit)* | | |

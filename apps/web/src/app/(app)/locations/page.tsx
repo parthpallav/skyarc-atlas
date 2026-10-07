@@ -103,7 +103,7 @@ const TYPE_FILTERS: Array<{ value: TypeFilter; label: string }> = [
   { value: "digital", label: "Digital" },
   { value: "hoarding", label: "Static" },
   { value: "kiosk", label: "Kiosks" },
-  { value: "other", label: "Conceptual" },
+  { value: "other", label: "Transit & other" },
 ];
 
 const AVAIL_FILTERS: Array<{
@@ -115,7 +115,7 @@ const AVAIL_FILTERS: Array<{
   {
     value: "ALL",
     label: "All",
-    hint: "Every site in the catalog",
+    hint: "Every site in the catalog for these dates",
     dot: "bg-slate-400",
   },
   {
@@ -133,13 +133,13 @@ const AVAIL_FILTERS: Array<{
   {
     value: "HELD",
     label: "On hold",
-    hint: "Temporarily reserved by another plan",
+    hint: "Soft-held by a media plan for these dates",
     dot: "bg-amber-500",
   },
   {
     value: "FULL",
     label: "Booked",
-    hint: "No open place for your campaign dates",
+    hint: "No open place for your selected dates",
     dot: "bg-rose-500",
   },
 ];
@@ -201,7 +201,7 @@ export default function LocationsPage() {
   const [cityFilters, setCityFilters] = useState<Set<string>>(new Set());
   const [stateFilters, setStateFilters] = useState<Set<string>>(new Set());
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
-  const [availFilter, setAvailFilter] = useState<AvailFilter>("BOOKABLE");
+  const [availFilter, setAvailFilter] = useState<AvailFilter>("ALL");
   const [sortBy, setSortBy] = useState<SortKey>("name");
   const [flightFrom, setFlightFrom] = useState(defaults.from);
   const [flightTo, setFlightTo] = useState(defaults.to);
