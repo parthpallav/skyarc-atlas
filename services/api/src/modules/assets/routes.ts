@@ -26,6 +26,7 @@ import type { StorageProvider } from "../../lib/storage/index.js";
 import { prisma } from "../../lib/prisma.js";
 import { success, toIso } from "../../lib/response.js";
 import { canAccessLocation, canWriteLocation, isReadOnly } from "../../lib/rbac.js";
+import { isClientUser } from "@skyarc/shared";
 import { forbidden, notFound, validationError } from "../../lib/errors.js";
 import { resolveAssetUrl } from "../../lib/asset-url.js";
 import { invalidateLocationCaches } from "../../lib/cache/location-cache.js";
@@ -144,9 +145,38 @@ export async function assetRoutes(
       const location = await prisma.location.findUnique({ where: { id: locationId } });
       if (!location) throw notFound("Location not found");
       if (!canAccessLocation(request.user, location)) throw forbidden();
-      const assets = await prisma.locationAsset.findMany({
+      let assets = await prisma.locationAsset.findMany({
         where: { locationId },
       });
+      // Clients: live proofs only for campaigns they created (align with plan-history redaction).
+      if (isClientUser(request.user)) {
+        const liveProofs = assets.filter((a) => a.kind === AssetKind.CAMPAIGN_LIVE_PROOF);
+        const other = assets.filter((a) => a.kind !== AssetKind.CAMPAIGN_LIVE_PROOF);
+        const campaignIds = [
+          ...new Set(
+            liveProofs
+              .map((a) => a.campaignId)
+              .filter((id): id is string => Boolean(id))
+          ),
+        ];
+        const owned =
+          campaignIds.length > 0
+            ? await prisma.campaign.findMany({
+                where: {
+                  id: { in: campaignIds },
+                  createdByUserId: request.user.id,
+                },
+                select: { id: true },
+              })
+            : [];
+        const ownedSet = new Set(owned.map((c) => c.id));
+        assets = [
+          ...other,
+          ...liveProofs.filter(
+            (a) => a.campaignId != null && ownedSet.has(a.campaignId)
+          ),
+        ];
+      }
       const sorted = sortAssetsByView(assets);
       return success(
         await Promise.all(sorted.map((a) => serializeAsset(a, env, storage)))

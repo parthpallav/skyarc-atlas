@@ -805,11 +805,12 @@ export default function LocationDetailPage() {
                       Live on site
                     </p>
                     <h3 className="mt-0.5 text-sm font-semibold text-slate-900">
-                      Live campaign photos
+                      {isClient ? "Your live campaign photos" : "Live campaign photos"}
                     </h3>
                     <p className="mt-1 text-xs text-muted">
-                      Execution proofs captured while the campaign is live — separate from plan
-                      shortlist history above.
+                      {isClient
+                        ? "Only proofs from your campaigns — competitor brands stay hidden, same as plan history."
+                        : "Execution proofs captured while the campaign is live — separate from plan shortlist history above."}
                     </p>
                     <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                       {assets
@@ -823,7 +824,11 @@ export default function LocationDetailPage() {
                             className="relative aspect-[4/3] overflow-hidden rounded-lg bg-slate-100"
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={a.url!} alt="Campaign live proof" className="h-full w-full object-cover" />
+                            <img
+                              src={a.url!}
+                              alt={isClient ? "Your campaign live proof" : "Campaign live proof"}
+                              className="h-full w-full object-cover"
+                            />
                           </a>
                         ))}
                     </div>

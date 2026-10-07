@@ -19,7 +19,7 @@ import {
   Filter,
 } from "lucide-react";
 import { FileSpreadsheet } from "lucide-react";
-import { createWebApiClient } from "@/lib/api";
+import { createWebApiClient, listAllLocations } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { PageHeader } from "@/components/page-header";
 import { LocationCardMedia } from "@/components/location-card-media";
@@ -278,19 +278,19 @@ export default function LocationsPage() {
       [...stateFilters].sort().join(","),
       [...roadFilters].sort().join(","),
     ],
-    queryFn: async () => {
-      const client = createWebApiClient();
-      const result = await client.listLocations(1, 250, isVendor ? scope : undefined, {
-        q: searchTerm.trim() || undefined,
-        from: flightFrom,
-        to: flightTo,
-        cities: cityFilters.size ? [...cityFilters] : undefined,
-        states: stateFilters.size ? [...stateFilters] : undefined,
-        corridors: roadFilters.size ? [...roadFilters] : undefined,
-        visibility,
-      });
-      return result.data as Location[];
-    },
+    queryFn: async () =>
+      listAllLocations<Location>(
+        {
+          q: searchTerm.trim() || undefined,
+          from: flightFrom,
+          to: flightTo,
+          cities: cityFilters.size ? [...cityFilters] : undefined,
+          states: stateFilters.size ? [...stateFilters] : undefined,
+          corridors: roadFilters.size ? [...roadFilters] : undefined,
+          visibility,
+        },
+        isVendor ? scope : undefined
+      ),
     retry: 2,
     refetchInterval: 30_000,
     staleTime: 10_000,
@@ -921,6 +921,7 @@ export default function LocationsPage() {
       <p className="px-0.5 text-xs text-slate-600">
         <strong className="text-slate-900">{totalItems}</strong>
         {totalItems === 1 ? " site" : " sites"}
+        <span className="text-muted"> · full catalog for this filter</span>
         {typeFilter !== "ALL" ? (
           <span className="text-muted">
             {" "}

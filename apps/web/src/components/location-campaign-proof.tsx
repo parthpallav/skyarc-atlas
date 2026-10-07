@@ -83,8 +83,13 @@ export function LocationCampaignProof({
         <ul className="mt-4 divide-y divide-violet-50">
           {campaigns.map((c, index) => {
             const flight = formatFlight(c.startDate, c.endDate);
-            const title = redactNames ? `Brand campaign ${index + 1}` : c.advertiserName;
-            const subtitle = redactNames ? "Recently planned on this site" : c.campaignName;
+            // API already redacts names for clients; keep display-only fallbacks.
+            const title =
+              c.advertiserName ||
+              (redactNames ? `Brand campaign ${index + 1}` : "Advertiser");
+            const subtitle =
+              c.campaignName ||
+              (redactNames ? "Recently planned on this site" : c.planName || "Plan");
             const inner = (
               <div className="flex flex-wrap items-start justify-between gap-2 px-1.5 py-1">
                 <div className="min-w-0">
@@ -107,8 +112,15 @@ export function LocationCampaignProof({
               </div>
             );
             return (
-              <li key={`${c.campaignId}-${c.planId}`} className="py-3 first:pt-0 last:pb-0">
-                {redactNames ? (
+              <li
+                key={
+                  c.campaignId && c.planId
+                    ? `${c.campaignId}-${c.planId}`
+                    : `redacted-${index}-${c.updatedAt}`
+                }
+                className="py-3 first:pt-0 last:pb-0"
+              >
+                {redactNames || !c.campaignId || !c.planId ? (
                   <div className="rounded-lg">{inner}</div>
                 ) : (
                   <Link

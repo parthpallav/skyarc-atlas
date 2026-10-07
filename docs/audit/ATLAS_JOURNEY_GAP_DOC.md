@@ -62,7 +62,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | L-04 | Locations | Default “Open” filter hides held/booked unless widened | Planner, Admin | `DONE` 2026-10-07 — Locations + Map default to All |
 | L-05 | Locations | Transit/venue formats buried under “Conceptual” | All browse | `DONE` 2026-10-07 — filter label “Transit & other” |
 | L-06 | Locations | No free-text **custom inventory type** outside preset list | Vendor, Planner, Admin | `DONE` 2026-10-07 — CUSTOM on Site + Faces edit (create wizard still Conceptual class) |
-| L-07 | Locations | ~250 site fetch cap — large markets may look incomplete | Planner, Admin | `OPEN` |
+| L-07 | Locations | ~250 site fetch cap — large markets may look incomplete | Planner, Admin | `DONE` 2026-10-07 — Locations list pages via listAllLocations |
 | L-08 | Locations | FIELD_OPERATOR sees Add but edit only own-created (confusing) | FO | `DONE` 2026-10-07 — Survey site CTA + own-created edit copy |
 | L-09 | Locations | Client “Fit” copy not tied to selected dates | Client | `DONE` 2026-10-07 — Fit includes selected flight label |
 | L-10 | Locations | Planner cards: no vendor cost when client rate empty | Planner, Admin | `DONE` 2026-10-07 — vendor rate fallback labeled on list + detail |
@@ -77,7 +77,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | MP-01 | Media Plans | Plan lines omit per-site vendor approval status (pending / approved / rejected) | Planner | `DONE` 2026-10-07 — list + detail show vendor approval badge |
 | MP-02 | Media Plans | No planner line-level discount / negotiated rate on media plan editor | Planner | `OPEN` |
 | MP-03 | Media Plans | Plan add/swap on APPROVED packs without lifecycle / commercial lock (feeds T-01) | Planner, Admin | `OPEN` |
-| MP-04 | Media Plans | Packs vs site-request drafts split across Campaign / Requests / Media Plans — no single “pending vendor” view for current plans | Planner | `OPEN` |
+| MP-04 | Media Plans | Packs vs site-request drafts split across Campaign / Requests / Media Plans — no single “pending vendor” view for current plans | Planner | `DONE` 2026-10-07 — Media Plans Vendor pending filter + Requests |
 | B-01 | Bookings | Bookings **stage UI** not in classic product (by design) — holds/ledger may still run under plans; do not add Bookings nav as a journey stage | Planner, Admin | `ACCEPTED` → D-08 |
 | B-02 | Bookings | Vendor confirm via AdTech booking path — N/A for classic journey; track under **C-01 / R-01** | Planner, Vendor | `ACCEPTED` → D-08 |
 | B-03 | Bookings | Locations show Held/Booked from windows without a Bookings stage — **clarity/copy** gap only (not “build Bookings”) | All | `DONE` 2026-10-07 — chip hints clarify plan-hold vs Bookings stage |
@@ -86,7 +86,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | P-03 | Proofs | Live proof gallery lacks campaign / flight attribution in API + UI | All browse | `OPEN` |
 | P-04 | Proofs | No campaign-level proofs module (list / review / approve) | Planner, Admin, Client | `OPEN` |
 | P-05 | Proofs | Mark live / ACTIVE does not require or track mounting completeness or live proof | Planner, Admin | `OPEN` |
-| P-06 | Proofs | Client plan-name redaction inconsistent with live proof photo visibility | Client | `OPEN` |
+| P-06 | Proofs | Client plan-name redaction inconsistent with live proof photo visibility | Client | `DONE` 2026-10-07 — API redacts history; live proofs only own campaigns |
 | P-07 | Proofs | Classic prod: creative / delivery / PoP not available post-launch (AdTech Bookings only) | Planner, Client, Vendor | `OPEN` → D-08 |
 | P-08 | Proofs | When proof upload ships: require ACTIVE + site on campaign (policy gap) | FO, Vendor, Admin | `NEEDED` |
 | MT-01 | Mounting | Mounting type not on location Overview for planners/clients/vendors (notes mostly admin) | Planner, Client, Vendor | `DONE` 2026-10-07 — Mounting on Overview Site context |
