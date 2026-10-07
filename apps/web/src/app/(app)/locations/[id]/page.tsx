@@ -30,6 +30,7 @@ import { parseLiveInventory } from "@/lib/live-inventory";
 import { SiteDemandSignals } from "@/components/site-demand-signals";
 import { LocationScoreIntel } from "@/components/location-score-intel";
 import { LocationCampaignProof } from "@/components/location-campaign-proof";
+import { LocationLiveProofPanel } from "@/components/location-live-proof-panel";
 import { CampaignSiteDestination } from "@/components/campaign-site-destination";
 import { formatInr } from "@/lib/format";
 import {
@@ -46,6 +47,11 @@ interface AssetRow {
   sortOrder?: number;
   contentType?: string;
   uploadStatus: string;
+  campaignId?: string | null;
+  campaignName?: string | null;
+  advertiserName?: string | null;
+  flightStart?: string | null;
+  flightEnd?: string | null;
 }
 
 function isoDateLocal(d: Date) {
@@ -799,41 +805,16 @@ export default function LocationDetailPage() {
                   isLoading={campaignHistoryLoading}
                   redactNames={isClient}
                 />
-                {assets && assets.some((a) => a.kind === "CAMPAIGN_LIVE_PROOF" && a.url) ? (
-                  <div className="rounded-2xl border border-violet-100 bg-white p-5 shadow-card">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                      Live on site
-                    </p>
-                    <h3 className="mt-0.5 text-sm font-semibold text-slate-900">
-                      {isClient ? "Your live campaign photos" : "Live campaign photos"}
-                    </h3>
-                    <p className="mt-1 text-xs text-muted">
-                      {isClient
-                        ? "Only proofs from your campaigns — competitor brands stay hidden, same as plan history."
-                        : "Execution proofs captured while the campaign is live — separate from plan shortlist history above."}
-                    </p>
-                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      {assets
-                        .filter((a) => a.kind === "CAMPAIGN_LIVE_PROOF" && a.url)
-                        .map((a) => (
-                          <a
-                            key={a.id}
-                            href={a.url!}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="relative aspect-[4/3] overflow-hidden rounded-lg bg-slate-100"
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={a.url!}
-                              alt={isClient ? "Your campaign live proof" : "Campaign live proof"}
-                              className="h-full w-full object-cover"
-                            />
-                          </a>
-                        ))}
-                    </div>
-                  </div>
-                ) : null}
+                <LocationLiveProofPanel
+                  locationId={id}
+                  assets={assets}
+                  isClient={isClient}
+                  canUpload={
+                    !isClient &&
+                    !isReadOnly &&
+                    (canEdit || isFieldOperator || isVendor || isInternal)
+                  }
+                />
               </div>
             </div>
           </section>

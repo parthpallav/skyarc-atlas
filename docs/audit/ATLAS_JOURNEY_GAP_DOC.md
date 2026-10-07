@@ -81,14 +81,14 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | B-01 | Bookings | Bookings **stage UI** not in classic product (by design) — holds/ledger may still run under plans; do not add Bookings nav as a journey stage | Planner, Admin | `ACCEPTED` → D-08 |
 | B-02 | Bookings | Vendor confirm via AdTech booking path — N/A for classic journey; track under **C-01 / R-01** | Planner, Vendor | `ACCEPTED` → D-08 |
 | B-03 | Bookings | Locations show Held/Booked from windows without a Bookings stage — **clarity/copy** gap only (not “build Bookings”) | All | `DONE` 2026-10-07 — chip hints clarify plan-hold vs Bookings stage |
-| P-01 | Proofs | No UI to upload live campaign proof (`CAMPAIGN_LIVE_PROOF`) on web or mobile (API exists) | FO, Vendor, Planner, Admin | `OPEN` |
+| P-01 | Proofs | No UI to upload live campaign proof (`CAMPAIGN_LIVE_PROOF`) on web or mobile (API exists) | FO, Vendor, Planner, Admin | `DONE` 2026-10-07 — web upload on location Overview (mobile deferred) |
 | P-02 | Proofs | Location “Campaign proof” card = plan shortlist history, not live execution proof — misleading vs ACTIVE / Mark live | All browse | `DONE` 2026-10-07 — renamed plan history vs live photos |
-| P-03 | Proofs | Live proof gallery lacks campaign / flight attribution in API + UI | All browse | `OPEN` |
+| P-03 | Proofs | Live proof gallery lacks campaign / flight attribution in API + UI | All browse | `DONE` 2026-10-07 — asset list returns campaign/flight; gallery captions |
 | P-04 | Proofs | No campaign-level proofs module (list / review / approve) | Planner, Admin, Client | `OPEN` |
 | P-05 | Proofs | Mark live / ACTIVE does not require or track mounting completeness or live proof | Planner, Admin | `OPEN` |
 | P-06 | Proofs | Client plan-name redaction inconsistent with live proof photo visibility | Client | `DONE` 2026-10-07 — API redacts history; live proofs only own campaigns |
 | P-07 | Proofs | Classic prod: creative / delivery / PoP not available post-launch (AdTech Bookings only) | Planner, Client, Vendor | `OPEN` → D-08 |
-| P-08 | Proofs | When proof upload ships: require ACTIVE + site on campaign (policy gap) | FO, Vendor, Admin | `NEEDED` |
+| P-08 | Proofs | When proof upload ships: require ACTIVE + site on campaign (policy gap) | FO, Vendor, Admin | `DONE` 2026-10-07 — enforced in assertCanMutateLiveProof |
 | MT-01 | Mounting | Mounting type not on location Overview for planners/clients/vendors (notes mostly admin) | Planner, Client, Vendor | `DONE` 2026-10-07 — Mounting on Overview Site context |
 | MT-02 | Mounting | Mobile field survey omits mounting type (web has type + notes) | FO | `DONE` 2026-10-07 — mobile edit + detail include mounting type |
 | MT-03 | Mounting | No “installation / mount complete” stage vs survey metadata only | FO, Vendor, Planner | `NEEDED` |

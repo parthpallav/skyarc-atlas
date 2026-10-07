@@ -30,11 +30,16 @@ import { isClientUser } from "@skyarc/shared";
 import { forbidden, notFound, validationError } from "../../lib/errors.js";
 import { resolveAssetUrl } from "../../lib/asset-url.js";
 import { invalidateLocationCaches } from "../../lib/cache/location-cache.js";
+import {
+  assertCanMutateLiveProof,
+  listLiveProofTargetCampaigns,
+} from "../../lib/live-proof.js";
 
 async function serializeAsset(
   asset: {
     id: string;
     locationId: string;
+    campaignId?: string | null;
     kind: string;
     view: string;
     r2Key: string;
@@ -60,6 +65,7 @@ async function serializeAsset(
   return {
     id: asset.id,
     locationId: asset.locationId,
+    campaignId: asset.campaignId ?? null,
     kind: asset.kind,
     view,
     viewLabel: PHOTO_VIEW_LABELS[view] ?? view,
@@ -178,9 +184,68 @@ export async function assetRoutes(
         ];
       }
       const sorted = sortAssetsByView(assets);
-      return success(
-        await Promise.all(sorted.map((a) => serializeAsset(a, env, storage)))
+      const serialized = await Promise.all(
+        sorted.map((a) => serializeAsset(a, env, storage))
       );
+
+      const proofCampaignIds = [
+        ...new Set(
+          serialized
+            .filter((a) => a.kind === AssetKind.CAMPAIGN_LIVE_PROOF && a.campaignId)
+            .map((a) => a.campaignId as string)
+        ),
+      ];
+      const campaigns =
+        proofCampaignIds.length > 0
+          ? await prisma.campaign.findMany({
+              where: { id: { in: proofCampaignIds } },
+              select: {
+                id: true,
+                name: true,
+                startDate: true,
+                endDate: true,
+                advertiser: { select: { name: true } },
+              },
+            })
+          : [];
+      const campaignById = new Map(campaigns.map((c) => [c.id, c]));
+      const redact = isClientUser(request.user);
+
+      return success(
+        serialized.map((a) => {
+          if (a.kind !== AssetKind.CAMPAIGN_LIVE_PROOF || !a.campaignId) {
+            return a;
+          }
+          const c = campaignById.get(a.campaignId);
+          if (!c) return a;
+          return {
+            ...a,
+            campaignName: redact ? null : c.name,
+            advertiserName: redact ? null : c.advertiser.name,
+            flightStart: c.startDate?.toISOString() ?? null,
+            flightEnd: c.endDate?.toISOString() ?? null,
+          };
+        })
+      );
+    }
+  );
+
+  fastify.get(
+    "/locations/:id/live-proof-targets",
+    { preHandler: [fastify.authenticate] },
+    async (request) => {
+      const locationId = uuidSchema.parse((request.params as { id: string }).id);
+      const location = await prisma.location.findUnique({ where: { id: locationId } });
+      if (!location) throw notFound("Location not found");
+      if (!canAccessLocation(request.user, location)) throw forbidden();
+      if (isClientUser(request.user) || isReadOnly(request.user)) {
+        return success({ campaigns: [] as const, canUpload: false });
+      }
+      const campaigns = await listLiveProofTargetCampaigns(locationId);
+      return success({
+        campaigns,
+        canUpload: campaigns.length > 0,
+      });
     }
   );
 
@@ -191,16 +256,18 @@ export async function assetRoutes(
       const locationId = uuidSchema.parse((request.params as { id: string }).id);
       const location = await prisma.location.findUnique({ where: { id: locationId } });
       if (!location) throw notFound("Location not found");
-      if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
-        throw forbidden();
-      }
 
       const body = presignAssetBodySchema.parse(request.body);
-      if (body.kind === AssetKind.CAMPAIGN_LIVE_PROOF && !body.campaignId) {
-        throw validationError("campaignId is required for live campaign proof photos");
+      if (body.kind === AssetKind.CAMPAIGN_LIVE_PROOF) {
+        if (!body.campaignId) {
+          throw validationError("campaignId is required for live campaign proof photos");
+        }
+        await assertCanMutateLiveProof(request.user, location, body.campaignId);
+      } else if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
+        throw forbidden();
       }
       if (
-        body.kind === AssetKind.PHOTO &&
+        (body.kind === AssetKind.PHOTO || body.kind === AssetKind.CAMPAIGN_LIVE_PROOF) &&
         !isLocationMediaContentType(body.contentType)
       ) {
         throw validationError(
@@ -282,15 +349,19 @@ export async function assetRoutes(
       const assetId = uuidSchema.parse((request.params as { assetId: string }).assetId);
       const location = await prisma.location.findUnique({ where: { id: locationId } });
       if (!location) throw notFound("Location not found");
-      if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
-        throw forbidden();
-      }
 
       const body = confirmAssetBodySchema.parse(request.body ?? {});
       const asset = await prisma.locationAsset.findFirst({
         where: { id: assetId, locationId },
       });
       if (!asset) throw notFound("Asset not found");
+
+      if (asset.kind === AssetKind.CAMPAIGN_LIVE_PROOF) {
+        if (!asset.campaignId) throw forbidden();
+        await assertCanMutateLiveProof(request.user, location, asset.campaignId);
+      } else if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
+        throw forbidden();
+      }
 
       const head = await storage.headObject(asset.r2Key);
       if (!head) {
@@ -387,14 +458,18 @@ export async function assetRoutes(
       const assetId = uuidSchema.parse((request.params as { assetId: string }).assetId);
       const location = await prisma.location.findUnique({ where: { id: locationId } });
       if (!location) throw notFound("Location not found");
-      if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
-        throw forbidden();
-      }
 
       const asset = await prisma.locationAsset.findFirst({
         where: { id: assetId, locationId },
       });
       if (!asset) throw notFound("Asset not found");
+
+      if (asset.kind === AssetKind.CAMPAIGN_LIVE_PROOF) {
+        if (!asset.campaignId) throw forbidden();
+        await assertCanMutateLiveProof(request.user, location, asset.campaignId);
+      } else if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
+        throw forbidden();
+      }
 
       await prisma.locationAsset.delete({ where: { id: assetId } });
       invalidateLocationCaches(locationId);
