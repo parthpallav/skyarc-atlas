@@ -77,7 +77,9 @@ export default function LocationDetailPage() {
     isAdmin,
     authUser,
     canViewClientPricing,
+    user,
   } = usePermissions();
+  const isFieldOperator = user?.role === "FIELD_OPERATOR";
 
   const flight = useMemo(() => {
     const fromParam = searchParams.get("from");
@@ -323,17 +325,19 @@ export default function LocationDetailPage() {
           | undefined) ?? commercialView)
       : undefined;
 
-  const skyarcCommercialView = gates.showSkyarcPricing
-    ? (location.skyarcCommercialView as
-        | {
-            clientRateAmount: number | null;
-            ratePeriod: string | null;
-            currency: string;
-            notes: string | null;
-            premium?: boolean;
-          }
-        | undefined)
-    : undefined;
+  // Rates tab is internal-only, but clients still need client rate on Overview (matches list cards).
+  const skyarcCommercialView =
+    gates.showSkyarcPricing || (isClient && canViewClientPricing)
+      ? (location.skyarcCommercialView as
+          | {
+              clientRateAmount: number | null;
+              ratePeriod: string | null;
+              currency: string;
+              notes: string | null;
+              premium?: boolean;
+            }
+          | undefined)
+      : undefined;
 
   const live = parseLiveInventory(location.liveInventory);
   const primaryFace = location.primaryFace as
@@ -368,9 +372,23 @@ export default function LocationDetailPage() {
     location.skyarcSiteCode ?? `SKY-${id.slice(0, 4).toUpperCase()}`
   );
 
+  const vendorRateFromApi =
+    commercialView?.defaultRateAmount ??
+    (isInternal
+      ? (
+          location.commercialView as
+            | { defaultRateAmount?: number | null }
+            | undefined
+        )?.defaultRateAmount ?? null
+      : null);
   const rateAmount =
     skyarcCommercialView?.clientRateAmount ??
-    (isOwned && isVendor ? commercialView?.defaultRateAmount : null);
+    (isOwned && isVendor ? vendorRateFromApi : null) ??
+    (isInternal ? vendorRateFromApi : null);
+  const rateIsVendorFallback =
+    isInternal &&
+    skyarcCommercialView?.clientRateAmount == null &&
+    vendorRateFromApi != null;
   const ratePeriod =
     skyarcCommercialView?.ratePeriod?.toLowerCase() ??
     commercialView?.ratePeriod?.toLowerCase() ??
@@ -538,13 +556,13 @@ export default function LocationDetailPage() {
                   />
                 ) : null}
                 <FactCell
-                  label="Rate"
+                  label={rateIsVendorFallback ? "Vendor rate" : "Rate"}
                   value={
                     rateAmount != null
                       ? `${formatInr(rateAmount)}/${ratePeriod}`
                       : isNetworkSite
                         ? "After approval"
-                        : "—"
+                        : "Rate on request"
                   }
                   emphasize={rateAmount != null}
                   muted={rateAmount == null && isNetworkSite}
@@ -577,6 +595,12 @@ export default function LocationDetailPage() {
                 <p className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
                   View-only network inventory. Request this site for your campaign window — Superadmin
                   or a media planner approves, then you get the priced plan.
+                </p>
+              ) : null}
+              {isFieldOperator && !canEdit ? (
+                <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-700">
+                  Field operators can edit sites they created. This site is view-only for you —
+                  ask a planner or admin for changes.
                 </p>
               ) : null}
             </div>

@@ -56,16 +56,16 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | V-10 | Vendor | Sites can save with no rate → planner pricing unavailable | Vendor, Planner | `OPEN` |
 | V-11 | Vendor | Planner costing weak without Skyarc client/base rate | Planner | `OPEN` |
 | V-12 | Vendor | “Show vendor details” can hide Pricing on owned vendor sites | Vendor, Admin | `OPEN` |
-| L-01 | Locations | Client: list can show rate; detail often “—” | Client | `OPEN` |
+| L-01 | Locations | Client: list can show rate; detail often “—” | Client | `DONE` 2026-10-07 — Overview reads client rate even without Rates tab |
 | L-02 | Locations | Map popups ≠ list card (no format / size / rate) | All browse | `DONE` 2026-10-07 — popup shows format · size · rate |
 | L-03 | Locations | Map “View details” drops flight `from`/`to` | All browse | `DONE` 2026-10-07 — detail href built with flight options |
 | L-04 | Locations | Default “Open” filter hides held/booked unless widened | Planner, Admin | `DONE` 2026-10-07 — Locations + Map default to All |
 | L-05 | Locations | Transit/venue formats buried under “Conceptual” | All browse | `DONE` 2026-10-07 — filter label “Transit & other” |
 | L-06 | Locations | No free-text **custom inventory type** outside preset list | Vendor, Planner, Admin | `DONE` 2026-10-07 — CUSTOM on Site + Faces edit (create wizard still Conceptual class) |
 | L-07 | Locations | ~250 site fetch cap — large markets may look incomplete | Planner, Admin | `OPEN` |
-| L-08 | Locations | FIELD_OPERATOR sees Add but edit only own-created (confusing) | FO | `OPEN` |
+| L-08 | Locations | FIELD_OPERATOR sees Add but edit only own-created (confusing) | FO | `DONE` 2026-10-07 — Survey site CTA + own-created edit copy |
 | L-09 | Locations | Client “Fit” copy not tied to selected dates | Client | `DONE` 2026-10-07 — Fit includes selected flight label |
-| L-10 | Locations | Planner cards: no vendor cost when client rate empty | Planner, Admin | `OPEN` |
+| L-10 | Locations | Planner cards: no vendor cost when client rate empty | Planner, Admin | `DONE` 2026-10-07 — vendor rate fallback labeled on list + detail |
 | L-11 | Locations | Availability chips (Partial/Held/Booked) loud without slot meters | Planner, Client | `OPEN` |
 | L-12 | Locations | VIEWER / VENDOR_OPS same screens as full roles, actions missing | VIEWER, VENDOR_OPS | `OPEN` |
 | T-01 | Trading | ACTIVE campaign amounts must lock when rates change later — **confirmed**: plan/swap re-reads live rates; no ACTIVE commercial lock | Planner, Vendor, Admin | `OPEN` → D-04 |

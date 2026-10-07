@@ -30,6 +30,7 @@ import {
   listMarketCities,
   corridorsForCity,
   locationMatchesCorridor,
+  UserRole,
   type InventoryTypeBucket,
 } from "@skyarc/shared";
 import { formatInr } from "@/lib/format";
@@ -74,7 +75,7 @@ interface Location {
     slotCapacity: number;
     isDigital: boolean;
   } | null;
-  commercialView?: { defaultRateAmount: number | null };
+  commercialView?: { defaultRateAmount: number | null; ratePeriod?: string | null };
   skyarcCommercialView?: {
     clientRateAmount: number | null;
     ratePeriod: string;
@@ -189,7 +190,8 @@ function locationBucket(loc: Location): InventoryTypeBucket {
 }
 
 export default function LocationsPage() {
-  const { isVendor, isReadOnly, isClient, isInternal, isAdmin } = usePermissions();
+  const { isVendor, isReadOnly, isClient, isInternal, isAdmin, user } = usePermissions();
+  const isFieldOperator = user?.role === UserRole.FIELD_OPERATOR;
   const audience = isClient ? "client" : isVendor ? "vendor" : "internal";
   const adtechBooking = showAdtechBooking();
   const queryClient = useQueryClient();
@@ -560,7 +562,9 @@ export default function LocationsPage() {
         description={
           viewingHidden
             ? `${(data ?? []).length} hidden · restore to return them to pitching`
-            : `${bookableCount} bookable for selected dates`
+            : isFieldOperator
+              ? `${bookableCount} bookable for selected dates · you can edit sites you created`
+              : `${bookableCount} bookable for selected dates`
         }
         action={
           <div className="flex items-center gap-1.5">
@@ -568,16 +572,20 @@ export default function LocationsPage() {
               <>
                 <Link href="/locations/new" className="btn-secondary gap-1.5 text-xs py-2 px-2.5">
                   <Plus className="w-4 h-4 text-primary" />
-                  <span className="hidden sm:inline">Add</span>
+                  <span className="hidden sm:inline">
+                    {isFieldOperator ? "Survey site" : "Add"}
+                  </span>
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => setIsImportModalOpen(true)}
-                  className="btn-secondary gap-1.5 text-xs py-2 px-2.5 hidden sm:inline-flex"
-                >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                  Import
-                </button>
+                {!isFieldOperator ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="btn-secondary gap-1.5 text-xs py-2 px-2.5 hidden sm:inline-flex"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                    Import
+                  </button>
+                ) : null}
               </>
             )}
             <Link href="/map" className="btn-primary gap-1.5 text-xs py-2 px-2.5">
@@ -1045,9 +1053,13 @@ export default function LocationsPage() {
             const status = effectiveStatus(loc);
             const badge = liveStatusBadge(status);
             const full = isFullyUnavailable(loc);
+            const clientRate = loc.skyarcCommercialView?.clientRateAmount ?? null;
+            const vendorRate = loc.commercialView?.defaultRateAmount ?? null;
             const rate =
-              loc.skyarcCommercialView?.clientRateAmount ??
-              (isVendor ? loc.commercialView?.defaultRateAmount : null);
+              clientRate ??
+              (isVendor || isInternal || isAdmin ? vendorRate : null);
+            const rateIsVendorFallback =
+              (isInternal || isAdmin) && clientRate == null && vendorRate != null;
             const slotCapacity = live?.capacity ?? face?.slotCapacity ?? null;
             const slotUsed = live?.used ?? 0;
             const slotOpen = slotCapacity != null ? Math.max(0, slotCapacity - slotUsed) : null;
@@ -1156,9 +1168,17 @@ export default function LocationsPage() {
                     <p className="text-sm font-bold tabular-nums text-slate-900">
                       {rate != null ? (
                         <>
+                          {rateIsVendorFallback ? (
+                            <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                              Vendor
+                            </span>
+                          ) : null}
                           {formatInr(rate)}
                           <span className="text-[11px] font-normal text-muted">
-                            /{loc.skyarcCommercialView?.ratePeriod?.toLowerCase() ?? "mo"}
+                            /
+                            {loc.skyarcCommercialView?.ratePeriod?.toLowerCase() ??
+                              loc.commercialView?.ratePeriod?.toLowerCase() ??
+                              "mo"}
                           </span>
                         </>
                       ) : (
