@@ -1428,6 +1428,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
           ],
         }
       : {};
+    const vendorOrgId = request.user.organizationId ?? "__none__";
     const vendorScope = isVendorUser(request.user)
       ? {
           OR: [
@@ -1438,7 +1439,21 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
                 some: {
                   inventory: {
                     screen: {
-                      location: { organizationId: request.user.organizationId ?? "__none__" },
+                      location: { organizationId: vendorOrgId },
+                    },
+                  },
+                },
+              },
+            },
+            // Current-plan lines still awaiting this vendor (APPROVED ≠ done).
+            {
+              status: "APPROVED" as const,
+              items: {
+                some: {
+                  approvalStatus: "PENDING" as const,
+                  inventory: {
+                    screen: {
+                      location: { organizationId: vendorOrgId },
                     },
                   },
                 },
@@ -1470,6 +1485,9 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
               brief: { select: { structuredRequirementsJson: true } },
             },
           },
+          items: {
+            select: { approvalStatus: true },
+          },
           _count: { select: { items: true } },
         },
       }),
@@ -1479,12 +1497,16 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
     return success(
       plans.map((plan) => {
         const briefJson = plan.campaign?.brief?.structuredRequirementsJson;
+        const pendingVendorItemCount = plan.items.filter(
+          (item) => item.approvalStatus === "PENDING"
+        ).length;
         const isSiteRequest =
           isSiteRequestBrief(briefJson) ||
           plan.status === "DRAFT" ||
           plan.name.toLowerCase().includes("request");
+        const { items: _items, ...planRest } = plan;
         return {
-          ...plan,
+          ...planRest,
           campaign: plan.campaign
             ? {
                 id: plan.campaign.id,
@@ -1502,7 +1524,11 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
                 ? Number(plan.totalBudget)
                 : null,
           isSiteRequest,
-          canApprove: canApproveMediaPlan(request.user) && (plan.status === "DRAFT" || plan.status === "PROPOSED"),
+          pendingVendorItemCount,
+          needsVendorAction: plan.status === "APPROVED" && pendingVendorItemCount > 0,
+          canApprove:
+            canApproveMediaPlan(request.user) &&
+            (plan.status === "DRAFT" || plan.status === "PROPOSED"),
         };
       }),
       listMeta(query.page, query.limit, total)

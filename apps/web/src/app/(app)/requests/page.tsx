@@ -29,6 +29,8 @@ interface RequestRow {
   campaignId: string;
   canApprove?: boolean;
   isSiteRequest?: boolean;
+  pendingVendorItemCount?: number;
+  needsVendorAction?: boolean;
   campaign?: {
     name: string;
     startDate?: string | null;
@@ -40,6 +42,15 @@ interface RequestRow {
 }
 
 function requestStatusMeta(row: RequestRow) {
+  if (row.needsVendorAction || (row.status === "APPROVED" && (row.pendingVendorItemCount ?? 0) > 0)) {
+    return {
+      label:
+        (row.pendingVendorItemCount ?? 0) > 0
+          ? `Vendor pending · ${row.pendingVendorItemCount}`
+          : "Vendor pending",
+      className: "bg-amber-50 text-amber-900 border-amber-200",
+    };
+  }
   if (row.campaign?.lifecycleStatus === "ACTIVE" || row.status === "APPROVED") {
     return {
       label: row.campaign?.lifecycleStatus === "ACTIVE" ? "Active campaign" : "Approved",
@@ -66,38 +77,50 @@ function flightLabel(start?: string | null, end?: string | null) {
   return a || b || "Dates not set";
 }
 
-function isRequestRow(row: RequestRow) {
+function isActionableRequestRow(row: RequestRow) {
+  const pendingOnCurrentPlan =
+    row.status === "APPROVED" && (row.pendingVendorItemCount ?? 0) > 0;
   return (
     Boolean(row.isSiteRequest) ||
     row.status === "DRAFT" ||
-    row.name.toLowerCase().includes("request")
+    row.name.toLowerCase().includes("request") ||
+    pendingOnCurrentPlan
+  );
+}
+
+function isPendingAction(row: RequestRow) {
+  return (
+    row.status === "DRAFT" ||
+    (row.status === "APPROVED" && (row.pendingVendorItemCount ?? 0) > 0)
   );
 }
 
 function matchesFilter(row: RequestRow, filter: ListFilter) {
   if (filter === "ALL") return true;
-  if (filter === "PENDING") return row.status === "DRAFT";
-  if (filter === "APPROVED") return row.status === "APPROVED";
+  if (filter === "PENDING") return isPendingAction(row);
+  if (filter === "APPROVED") {
+    return row.status === "APPROVED" && (row.pendingVendorItemCount ?? 0) === 0;
+  }
   if (filter === "REJECTED") return row.status === "REJECTED";
   return true;
 }
 
 export default function RequestsPage() {
-  const { isVendor } = usePermissions();
+  const { isVendor, isInternal } = usePermissions();
   const [searchTerm, setSearchTerm] = useState("");
-  const [listFilter, setListFilter] = useState<ListFilter>("ALL");
+  const [listFilter, setListFilter] = useState<ListFilter>("PENDING");
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["site-requests", searchTerm],
     queryFn: async () => {
       const client = createWebApiClient();
       const result = await client.listMediaPlans(1, 100, searchTerm.trim() || undefined);
-      return (result.data as RequestRow[]).filter(isRequestRow);
+      return (result.data as RequestRow[]).filter(isActionableRequestRow);
     },
     // Near real-time: pick up vendor/admin approvals without a full refresh
     refetchInterval: (query) => {
       const rows = query.state.data as RequestRow[] | undefined;
-      const pending = rows?.some((r) => r.status === "DRAFT") ?? false;
+      const pending = rows?.some((r) => isPendingAction(r)) ?? false;
       return pending ? 12_000 : false;
     },
   });
@@ -109,16 +132,18 @@ export default function RequestsPage() {
   );
 
   const stats = useMemo(() => {
-    const pending = rows.filter((r) => r.status === "DRAFT").length;
-    const approved = rows.filter((r) => r.status === "APPROVED").length;
+    const pending = rows.filter((r) => isPendingAction(r)).length;
+    const approved = rows.filter(
+      (r) => r.status === "APPROVED" && (r.pendingVendorItemCount ?? 0) === 0
+    ).length;
     const rejected = rows.filter((r) => r.status === "REJECTED").length;
     return { total: rows.length, pending, approved, rejected };
   }, [rows]);
 
   const filters: { id: ListFilter; label: string; count?: number }[] = [
+    { id: "PENDING", label: "Needs action", count: stats.pending },
     { id: "ALL", label: "All", count: stats.total },
-    { id: "PENDING", label: "Pending", count: stats.pending },
-    { id: "APPROVED", label: "Approved", count: stats.approved },
+    { id: "APPROVED", label: "Fully approved", count: stats.approved },
     { id: "REJECTED", label: "Rejected", count: stats.rejected },
   ];
 
@@ -128,8 +153,10 @@ export default function RequestsPage() {
         title="Site Requests"
         description={
           isVendor
-            ? "Inbound asks on your inventory — approve, reject, or track holds"
-            : "Soft-hold asks from Locations. Separate from campaign media plans."
+            ? "Inbound asks on your inventory — including current-plan lines still waiting on you"
+            : isInternal
+              ? "Soft-hold site requests plus current plans with vendor lines still pending"
+              : "Soft-hold asks from Locations. Separate from campaign media plans."
         }
         action={
           <Link href="/locations" className="btn-secondary gap-1.5 text-xs py-2 px-2.5">
@@ -141,9 +168,9 @@ export default function RequestsPage() {
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
+          { label: "Needs action", value: stats.pending },
           { label: "Total", value: stats.total },
-          { label: "Pending", value: stats.pending },
-          { label: "Approved", value: stats.approved },
+          { label: "Fully approved", value: stats.approved },
           { label: "Rejected", value: stats.rejected },
         ].map((kpi) => (
           <div key={kpi.label} className="card-surface px-3 py-2.5">
@@ -227,23 +254,23 @@ export default function RequestsPage() {
         <div className="card-surface px-6 py-12 text-center">
           <Send className="mx-auto mb-3 h-10 w-10 text-primary opacity-80" />
           <p className="mb-1 font-medium text-slate-900">
-            {searchTerm || listFilter !== "ALL" ? "No matching requests" : "No site requests yet"}
+            {searchTerm || listFilter !== "PENDING" ? "No matching requests" : "Nothing needs action"}
           </p>
           <p className="mx-auto mb-5 max-w-md text-sm text-muted">
-            {searchTerm || listFilter !== "ALL"
+            {searchTerm || listFilter !== "PENDING"
               ? "Try another search or clear filters."
-              : "Pick sites on Locations and send a request. Holds keep inventory free of double-booking until approved."}
+              : "Draft site requests and current plans with vendor-pending lines show up here."}
           </p>
-          {searchTerm || listFilter !== "ALL" ? (
+          {searchTerm || listFilter !== "PENDING" ? (
             <button
               type="button"
               className="btn-secondary"
               onClick={() => {
                 setSearchTerm("");
-                setListFilter("ALL");
+                setListFilter("PENDING");
               }}
             >
-              Clear filters
+              Show needs action
             </button>
           ) : (
             <Link href="/locations" className="btn-primary gap-1.5">
@@ -259,7 +286,11 @@ export default function RequestsPage() {
           {requests.map((row) => {
             const status = requestStatusMeta(row);
             const siteCount = row._count?.items ?? 0;
-            const href = `/requests/${row.campaignId}/${row.id}`;
+            const href =
+              row.status === "APPROVED" && (row.pendingVendorItemCount ?? 0) > 0
+                ? `/campaigns/${row.campaignId}/plans/${row.id}`
+                : `/requests/${row.campaignId}/${row.id}`;
+            const pendingLines = row.pendingVendorItemCount ?? 0;
 
             return (
               <article
@@ -294,12 +325,17 @@ export default function RequestsPage() {
                         Sites
                       </p>
                       <p className="mt-0.5 font-medium text-slate-800">
-                        {siteCount} {siteCount === 1 ? "site" : "sites"} held
+                        {siteCount} {siteCount === 1 ? "site" : "sites"}
+                        {pendingLines > 0 ? ` · ${pendingLines} vendor pending` : " held"}
                       </p>
-                      {row.totalBudget != null && row.status === "APPROVED" ? (
+                      {row.totalBudget != null &&
+                      row.status === "APPROVED" &&
+                      pendingLines === 0 ? (
                         <p className="text-[11px] text-muted">{formatInrCompact(row.totalBudget)}</p>
                       ) : (
-                        <p className="text-[11px] text-muted">Pricing after approval</p>
+                        <p className="text-[11px] text-muted">
+                          {pendingLines > 0 ? "Awaiting vendor lines" : "Pricing after approval"}
+                        </p>
                       )}
                     </div>
                     <div className="rounded-lg bg-amber-50/80 px-2.5 py-2">
@@ -310,7 +346,9 @@ export default function RequestsPage() {
                       <p className="mt-0.5 font-medium text-slate-800">
                         {flightLabel(row.campaign?.startDate, row.campaign?.endDate)}
                       </p>
-                      {row.totalBudget != null && row.status === "APPROVED" ? (
+                      {row.totalBudget != null &&
+                      row.status === "APPROVED" &&
+                      pendingLines === 0 ? (
                         <p className="text-[11px] text-muted">{formatInr(row.totalBudget)}</p>
                       ) : (
                         <p className="text-[11px] text-muted">Soft hold active</p>

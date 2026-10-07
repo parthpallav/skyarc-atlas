@@ -553,11 +553,12 @@ export default function CampaignDetailPage() {
           </aside>
         </div>
 
-        {!isSiteRequest && !isClient ? (
+        {!isSiteRequest ? (
           <CampaignCommitmentPanel
             campaignId={campaign.id}
-            canEdit={canEdit}
+            canEdit={canEdit && !isClient}
             startDate={campaign.startDate}
+            audience={isClient ? "client" : "internal"}
           />
         ) : null}
 

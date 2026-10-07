@@ -63,11 +63,15 @@ export function LocationSkyarcPricingPanel({
 
   return (
     <section className="card-surface p-5 sm:p-6 mb-4 border border-violet-200 bg-violet-50/30">
-      <h2 className="font-semibold text-slate-900 mb-1">Standard rate</h2>
-      {canWrite && (
-        <p className="text-sm text-muted mb-4">
-          Rate shown on this site for pitching and media plans. Vendor card rate and margin live under
-          Admin metadata.
+      <h2 className="font-semibold text-slate-900 mb-1">Standard rate (client-facing)</h2>
+      {canWrite ? (
+        <p className="mb-4 text-sm text-muted">
+          This is what pitches and media plans use. It wins over vendor card rate for client pricing.
+          Optional face rates on Faces are face-level overrides for digital products only.
+        </p>
+      ) : (
+        <p className="mb-3 mt-1 text-sm text-muted">
+          Client-facing rate used on location cards and media plans.
         </p>
       )}
 

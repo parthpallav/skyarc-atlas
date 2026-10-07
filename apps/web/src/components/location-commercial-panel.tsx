@@ -54,10 +54,14 @@ export function LocationCommercialPanel({
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const amount = Number(defaultRateAmount);
+      if (!defaultRateAmount.trim() || !Number.isFinite(amount) || amount <= 0) {
+        throw new Error("Vendor card rate is required so planners can cost this site.");
+      }
       const client = createWebApiClient();
       return client.updateLocationCommercial(locationId, {
         marginPercent: marginPercent ? Number(marginPercent) : undefined,
-        defaultRateAmount: defaultRateAmount ? Number(defaultRateAmount) : undefined,
+        defaultRateAmount: amount,
         ratePeriod,
         paymentTermsDays: paymentTermsDays ? Number(paymentTermsDays) : undefined,
         notes: notes.trim() || undefined,
@@ -72,12 +76,23 @@ export function LocationCommercialPanel({
 
   if (!commercialView && !canWrite) return null;
 
+  const missingRate =
+    canWrite &&
+    !defaultRateAmount.trim() &&
+    (commercialView?.defaultRateAmount == null || commercialView.defaultRateAmount <= 0);
+
   return (
     <section className="card-surface p-5 sm:p-6 mb-4">
-      <h2 className="font-semibold text-slate-900 mb-1">Vendor Card Rate & Commercials</h2>
-      <p className="text-sm text-muted mb-4">
-        Vendor proposed monthly net rate for this site. Customer-facing pricing is managed independently by SkyArc.
+      <h2 className="font-semibold text-slate-900 mb-1">Vendor card rate</h2>
+      <p className="text-sm text-muted mb-3">
+        Your B2B net rate for this site. Required for planner costing. This is not the client-facing
+        Standard rate — Skyarc sets that separately for pitches and media plans.
       </p>
+      {missingRate ? (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          No vendor rate yet — plans cannot price this site until you save a card rate.
+        </p>
+      ) : null}
 
       {commercialView && !canWrite && (
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
@@ -126,10 +141,13 @@ export function LocationCommercialPanel({
               />
             </label>
             <label className="block text-sm">
-              <span className="text-muted font-medium">Vendor Proposed Card Rate (INR)</span>
+              <span className="text-muted font-medium">
+                Vendor card rate (INR) <span className="text-rose-600">*</span>
+              </span>
               <input
                 type="number"
-                min={0}
+                min={1}
+                required
                 placeholder="e.g. 150000"
                 value={defaultRateAmount}
                 onChange={(e) => setDefaultRateAmount(e.target.value)}
@@ -168,17 +186,24 @@ export function LocationCommercialPanel({
               className="mt-1 w-full rounded-lg border border-violet-200 px-3 py-2.5"
             />
           </label>
-          {message && (
+          {message ? (
             <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
               {message}
             </p>
-          )}
+          ) : null}
+          {saveMutation.isError ? (
+            <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+              {saveMutation.error instanceof Error
+                ? saveMutation.error.message
+                : "Failed to save commercial terms"}
+            </p>
+          ) : null}
           <button
             type="submit"
-            disabled={saveMutation.isPending}
+            disabled={saveMutation.isPending || !defaultRateAmount.trim()}
             className="btn-primary px-5 py-2.5 text-sm disabled:opacity-50"
           >
-            {saveMutation.isPending ? "Saving…" : "Save commercial terms"}
+            {saveMutation.isPending ? "Saving…" : "Save vendor card rate"}
           </button>
         </form>
       )}

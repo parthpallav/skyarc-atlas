@@ -48,12 +48,12 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | V-02 | Vendor | VENDOR_OPS cannot approve/reject requests | VENDOR_OPS | `OPEN` |
 | V-03 | Vendor | Requests: approve/reject only — no counter-offer | Vendor | `OPEN` |
 | V-04 | Vendor | Digital rate per face (not per ad place) | Vendor, Planner | `ACCEPTED` → D-01 |
-| V-05 | Vendor | Three overlapping rate UIs (org / site card / face) — unclear which wins for plans | Vendor, Planner | `OPEN` |
+| V-05 | Vendor | Three overlapping rate UIs (org / site card / face) — unclear which wins for plans | Vendor, Planner | `DONE` 2026-10-07 — Pricing tab hierarchy + labels |
 | V-06 | Vendor | Vendor margin % editable | Vendor | `ACCEPTED` → D-03 |
 | V-07 | Vendor | Create site: only one front photo required; multi-angle / digital media afterthought | Vendor | `OPEN` |
 | V-08 | Vendor | Extra faces lack full static/digital wizard parity (loop, production specs) | Vendor | `OPEN` |
 | V-09 | Vendor | Classic prod: no slot-level block UI for digital truth | Vendor | `DEFERRED` (with D-02) |
-| V-10 | Vendor | Sites can save with no rate → planner pricing unavailable | Vendor, Planner | `OPEN` |
+| V-10 | Vendor | Sites can save with no rate → planner pricing unavailable | Vendor, Planner | `DONE` 2026-10-07 — vendor card rate required on commercial save |
 | V-11 | Vendor | Planner costing weak without Skyarc client/base rate | Planner | `OPEN` |
 | V-12 | Vendor | “Show vendor details” can hide Pricing on owned vendor sites | Vendor, Admin | `DONE` 2026-10-07 — owned vendors keep Pricing; showcase only hides for internal |
 | L-01 | Locations | Client: list can show rate; detail often “—” | Client | `DONE` 2026-10-07 — Overview reads client rate even without Rates tab |
@@ -72,7 +72,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | T-02 | Trading | No Quotation / PO / Work Order for inventory trading — **confirmed** absent in classic prod | Planner, Client, Vendor, Admin | `OPEN` → D-05 |
 | C-01 | Campaigns | Vendor cannot approve sites on planner **current plan** in classic UI (Requests = DRAFT-only; booking respond AdTech-gated) | Planner, Vendor, Admin | `OPEN` |
 | C-02 | Campaigns | Copy implies campaign becomes Active when all sites approved; real launch is **Mark live** only | Planner, Client | `DONE` 2026-10-07 — Mark live / current-plan copy clarified |
-| C-03 | Campaigns | Client lacks commitment / hold / booking visibility on campaign review | Client | `OPEN` |
+| C-03 | Campaigns | Client lacks commitment / hold / booking visibility on campaign review | Client | `DONE` 2026-10-07 — client Holds & commitments panel (read-only) |
 | C-04 | Campaigns | Brand site requests need Skyarc “Ready for site requests” — gate not obvious on campaign spine | Client, Planner | `DONE` 2026-10-07 — ready/locked banners on campaign header |
 | MP-01 | Media Plans | Plan lines omit per-site vendor approval status (pending / approved / rejected) | Planner | `DONE` 2026-10-07 — list + detail show vendor approval badge |
 | MP-02 | Media Plans | No planner line-level discount / negotiated rate on media plan editor | Planner | `OPEN` |
@@ -94,7 +94,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | MT-03 | Mounting | No “installation / mount complete” stage vs survey metadata only | FO, Vendor, Planner | `NEEDED` |
 | MT-04 | Mounting | Mounting notes vs face material notes easy to confuse in wizard | Vendor | `DONE` 2026-10-07 — separate site mounting vs face material fields |
 | MT-05 | Mounting | FIELD_OPERATOR mounting/proof blocked on vendor-owned sites (edit RBAC) | FO, Vendor | `OPEN` → L-08 |
-| R-01 | Requests | Requests list treats APPROVED like done; does not surface pending vendor items on planner’s **current** plan | Planner, Vendor | `OPEN` |
+| R-01 | Requests | Requests list treats APPROVED like done; does not surface pending vendor items on planner’s **current** plan | Planner, Vendor | `DONE` 2026-10-07 — Needs action includes APPROVED + pending vendor lines |
 | M-01 | Map | *(fill on Map audit)* | | |
 | A-01 | Admin | *(fill on Admin onboard audit)* | | |
 | O-01 | Org / Account | *(fill on Org/Account audit)* | | |
