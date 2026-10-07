@@ -199,7 +199,8 @@ export default function LocationDetailScreen() {
           [
             ["Road", location?.road],
             ["Address", location?.address],
-            ["Notes", location?.mountingNotes],
+            ["Mounting", location?.mountingType],
+            ["Mounting notes", location?.mountingNotes],
           ] as const
         ).map(([label, value]) => (
           <View key={label} style={styles.detailRow}>

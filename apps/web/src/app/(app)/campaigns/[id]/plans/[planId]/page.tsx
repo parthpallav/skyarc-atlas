@@ -291,6 +291,26 @@ function planLifecycleBadge(status: string, isSiteRequest?: boolean) {
   };
 }
 
+function lineVendorApprovalBadge(status?: string | null) {
+  const value = (status ?? "PENDING").toUpperCase();
+  if (value === "APPROVED") {
+    return {
+      label: "Vendor ok",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    };
+  }
+  if (value === "REJECTED") {
+    return {
+      label: "Vendor no",
+      className: "border-rose-200 bg-rose-50 text-rose-800",
+    };
+  }
+  return {
+    label: "Vendor pending",
+    className: "border-amber-200 bg-amber-50 text-amber-900",
+  };
+}
+
 function BudgetMeter({
   allocated,
   budget,
@@ -828,6 +848,7 @@ export default function MediaPlanDetailPage() {
         {planItems.map((item, idx) => {
           const score = item.skyarcIndex?.overallScore ?? item.insights?.overallScore;
           const on = selectedItem?.id === item.id;
+          const vendorBadge = lineVendorApprovalBadge(item.approvalStatus);
           return (
             <li key={item.id}>
               <button
@@ -864,6 +885,14 @@ export default function MediaPlanDetailPage() {
                   <p className="truncate text-[10px] text-muted">
                     {item.location?.road ?? siteSpecLine(item)}
                   </p>
+                  <span
+                    className={cn(
+                      "mt-1 inline-flex rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                      vendorBadge.className
+                    )}
+                  >
+                    {vendorBadge.label}
+                  </span>
                 </div>
                 <div className="shrink-0 text-right">
                   {score != null ? (
@@ -952,6 +981,24 @@ export default function MediaPlanDetailPage() {
               </p>
             </div>
           </div>
+          {(() => {
+            const vendorBadge = lineVendorApprovalBadge(selectedItem.approvalStatus);
+            return (
+              <div className="border-b border-violet-100 bg-white px-4 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                  Vendor approval
+                </p>
+                <span
+                  className={cn(
+                    "mt-1 inline-flex rounded border px-2 py-0.5 text-[11px] font-bold",
+                    vendorBadge.className
+                  )}
+                >
+                  {vendorBadge.label}
+                </span>
+              </div>
+            );
+          })()}
 
           <div className="space-y-4 p-4">
             {selectedWhy ? (

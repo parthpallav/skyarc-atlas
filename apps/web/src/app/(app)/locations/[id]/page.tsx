@@ -23,7 +23,7 @@ import { formatInventoryType } from "@skyarc/shared";
 import { trackEntityView } from "@/lib/clarity-telemetry";
 import { useEffect, useMemo, useState } from "react";
 import { LocationDetailSkeleton } from "@/components/ui/skeleton";
-import { liveStatusBadge } from "@/components/slot-indicators";
+import { classicCapacityHint, liveStatusBadge } from "@/components/slot-indicators";
 import { DigitalAvailabilityPanel } from "@/components/digital-availability-panel";
 import { FlightDateRangePicker } from "@/components/flight-date-range-picker";
 import { parseLiveInventory } from "@/lib/live-inventory";
@@ -353,11 +353,14 @@ export default function LocationDetailPage() {
   const liveStatus =
     live?.status ??
     (typeof location.bookingStatus === "string" ? location.bookingStatus : null);
-  const badge = liveStatusBadge(liveStatus);
+  const badge = liveStatusBadge(liveStatus, { classic: !adtechBooking });
   const slotCapacity = live?.capacity ?? primaryFace?.slotCapacity ?? null;
   const slotUsed = live?.used ?? 0;
   const slotOpen = slotCapacity != null ? Math.max(0, slotCapacity - slotUsed) : null;
   const isDigital = Boolean(live?.isDigital || primaryFace?.isDigital);
+  const capacityHint = !adtechBooking
+    ? classicCapacityHint(slotOpen, slotCapacity, isDigital)
+    : null;
 
   const formatLabel = formatInventoryType(
     primaryFace?.inventoryType ??
@@ -480,11 +483,16 @@ export default function LocationDetailPage() {
               <div className="hidden lg:block">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-xs font-bold text-primary">{skyarcCode}</span>
-                  <span
-                    className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}
-                    title={badge.hint}
-                  >
-                    {badge.label}
+                  <span className="inline-flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}
+                      title={badge.hint}
+                    >
+                      {badge.label}
+                    </span>
+                    {capacityHint ? (
+                      <span className="text-[10px] tabular-nums text-muted">{capacityHint}</span>
+                    ) : null}
                   </span>
                   {isNetworkSite ? (
                     <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600">

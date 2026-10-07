@@ -55,7 +55,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | V-09 | Vendor | Classic prod: no slot-level block UI for digital truth | Vendor | `DEFERRED` (with D-02) |
 | V-10 | Vendor | Sites can save with no rate → planner pricing unavailable | Vendor, Planner | `OPEN` |
 | V-11 | Vendor | Planner costing weak without Skyarc client/base rate | Planner | `OPEN` |
-| V-12 | Vendor | “Show vendor details” can hide Pricing on owned vendor sites | Vendor, Admin | `OPEN` |
+| V-12 | Vendor | “Show vendor details” can hide Pricing on owned vendor sites | Vendor, Admin | `DONE` 2026-10-07 — owned vendors keep Pricing; showcase only hides for internal |
 | L-01 | Locations | Client: list can show rate; detail often “—” | Client | `DONE` 2026-10-07 — Overview reads client rate even without Rates tab |
 | L-02 | Locations | Map popups ≠ list card (no format / size / rate) | All browse | `DONE` 2026-10-07 — popup shows format · size · rate |
 | L-03 | Locations | Map “View details” drops flight `from`/`to` | All browse | `DONE` 2026-10-07 — detail href built with flight options |
@@ -66,7 +66,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | L-08 | Locations | FIELD_OPERATOR sees Add but edit only own-created (confusing) | FO | `DONE` 2026-10-07 — Survey site CTA + own-created edit copy |
 | L-09 | Locations | Client “Fit” copy not tied to selected dates | Client | `DONE` 2026-10-07 — Fit includes selected flight label |
 | L-10 | Locations | Planner cards: no vendor cost when client rate empty | Planner, Admin | `DONE` 2026-10-07 — vendor rate fallback labeled on list + detail |
-| L-11 | Locations | Availability chips (Partial/Held/Booked) loud without slot meters | Planner, Client | `OPEN` |
+| L-11 | Locations | Availability chips (Partial/Held/Booked) loud without slot meters | Planner, Client | `DONE` 2026-10-07 — classic quieter badges + free/capacity hint |
 | L-12 | Locations | VIEWER / VENDOR_OPS same screens as full roles, actions missing | VIEWER, VENDOR_OPS | `OPEN` |
 | T-01 | Trading | ACTIVE campaign amounts must lock when rates change later — **confirmed**: plan/swap re-reads live rates; no ACTIVE commercial lock | Planner, Vendor, Admin | `OPEN` → D-04 |
 | T-02 | Trading | No Quotation / PO / Work Order for inventory trading — **confirmed** absent in classic prod | Planner, Client, Vendor, Admin | `OPEN` → D-05 |
@@ -74,7 +74,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | C-02 | Campaigns | Copy implies campaign becomes Active when all sites approved; real launch is **Mark live** only | Planner, Client | `DONE` 2026-10-07 — Mark live / current-plan copy clarified |
 | C-03 | Campaigns | Client lacks commitment / hold / booking visibility on campaign review | Client | `OPEN` |
 | C-04 | Campaigns | Brand site requests need Skyarc “Ready for site requests” — gate not obvious on campaign spine | Client, Planner | `DONE` 2026-10-07 — ready/locked banners on campaign header |
-| MP-01 | Media Plans | Plan lines omit per-site vendor approval status (pending / approved / rejected) | Planner | `OPEN` |
+| MP-01 | Media Plans | Plan lines omit per-site vendor approval status (pending / approved / rejected) | Planner | `DONE` 2026-10-07 — list + detail show vendor approval badge |
 | MP-02 | Media Plans | No planner line-level discount / negotiated rate on media plan editor | Planner | `OPEN` |
 | MP-03 | Media Plans | Plan add/swap on APPROVED packs without lifecycle / commercial lock (feeds T-01) | Planner, Admin | `OPEN` |
 | MP-04 | Media Plans | Packs vs site-request drafts split across Campaign / Requests / Media Plans — no single “pending vendor” view for current plans | Planner | `OPEN` |
@@ -90,7 +90,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | P-07 | Proofs | Classic prod: creative / delivery / PoP not available post-launch (AdTech Bookings only) | Planner, Client, Vendor | `OPEN` → D-08 |
 | P-08 | Proofs | When proof upload ships: require ACTIVE + site on campaign (policy gap) | FO, Vendor, Admin | `NEEDED` |
 | MT-01 | Mounting | Mounting type not on location Overview for planners/clients/vendors (notes mostly admin) | Planner, Client, Vendor | `DONE` 2026-10-07 — Mounting on Overview Site context |
-| MT-02 | Mounting | Mobile field survey omits mounting type (web has type + notes) | FO | `OPEN` |
+| MT-02 | Mounting | Mobile field survey omits mounting type (web has type + notes) | FO | `DONE` 2026-10-07 — mobile edit + detail include mounting type |
 | MT-03 | Mounting | No “installation / mount complete” stage vs survey metadata only | FO, Vendor, Planner | `NEEDED` |
 | MT-04 | Mounting | Mounting notes vs face material notes easy to confuse in wizard | Vendor | `DONE` 2026-10-07 — separate site mounting vs face material fields |
 | MT-05 | Mounting | FIELD_OPERATOR mounting/proof blocked on vendor-owned sites (edit RBAC) | FO, Vendor | `OPEN` → L-08 |

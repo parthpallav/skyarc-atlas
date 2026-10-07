@@ -37,7 +37,11 @@ import { formatInr } from "@/lib/format";
 import { InventoryImportModal } from "@/components/inventory-import-modal";
 import { CampaignSiteDestination } from "@/components/campaign-site-destination";
 import { LocationGridSkeleton } from "@/components/ui/skeleton";
-import { SlotIndicators, liveStatusBadge } from "@/components/slot-indicators";
+import {
+  SlotIndicators,
+  classicCapacityHint,
+  liveStatusBadge,
+} from "@/components/slot-indicators";
 import {
   SiteDemandSignals,
   type SiteInterest,
@@ -127,9 +131,9 @@ const AVAIL_FILTERS: Array<{
   },
   {
     value: "PARTIAL",
-    label: "Partial",
-    hint: "Digital only — some ad places still free",
-    dot: "bg-sky-500",
+    label: "Limited",
+    hint: "Some capacity still open for these dates",
+    dot: "bg-sky-400",
   },
   {
     value: "HELD",
@@ -1051,7 +1055,7 @@ export default function LocationsPage() {
             );
             const live = loc.liveInventory;
             const status = effectiveStatus(loc);
-            const badge = liveStatusBadge(status);
+            const badge = liveStatusBadge(status, { classic: !adtechBooking });
             const full = isFullyUnavailable(loc);
             const clientRate = loc.skyarcCommercialView?.clientRateAmount ?? null;
             const vendorRate = loc.commercialView?.defaultRateAmount ?? null;
@@ -1064,6 +1068,10 @@ export default function LocationsPage() {
             const slotUsed = live?.used ?? 0;
             const slotOpen = slotCapacity != null ? Math.max(0, slotCapacity - slotUsed) : null;
             const isDigital = Boolean(live?.isDigital || face?.isDigital);
+            const capacityHint =
+              !adtechBooking
+                ? classicCapacityHint(slotOpen, slotCapacity, isDigital)
+                : null;
             const forRequestPick =
               !viewingHidden &&
               (isClient || isInternal || (isVendor && scope === "discovery"));
@@ -1122,11 +1130,16 @@ export default function LocationsPage() {
                     <span className="truncate font-mono text-[11px] font-bold text-primary">
                       {loc.skyarcSiteCode ?? `SKY-${loc.id.slice(0, 4).toUpperCase()}`}
                     </span>
-                    <span
-                      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}
-                      title={badge.hint}
-                    >
-                      {badge.short}
+                    <span className="flex shrink-0 flex-col items-end gap-0.5">
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}
+                        title={badge.hint}
+                      >
+                        {badge.short}
+                      </span>
+                      {capacityHint ? (
+                        <span className="text-[10px] tabular-nums text-muted">{capacityHint}</span>
+                      ) : null}
                     </span>
                   </div>
 
