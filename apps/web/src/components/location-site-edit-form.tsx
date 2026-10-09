@@ -353,7 +353,7 @@ export function LocationSiteEditForm({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label className={labelClass}>Mounting</label>
+            <label className={labelClass}>Site mounting</label>
             <input
               className={inputClass}
               value={mountingType}
@@ -362,11 +362,12 @@ export function LocationSiteEditForm({
             />
           </div>
           <div>
-            <label className={labelClass}>Mounting notes</label>
+            <label className={labelClass}>Site mounting notes</label>
             <input
               className={inputClass}
               value={mountingNotes}
               onChange={(e) => setMountingNotes(e.target.value)}
+              placeholder="Install access, height, traffic side…"
             />
           </div>
         </div>

@@ -41,3 +41,19 @@ NEXT_PUBLIC_ORBIT_UI=true
 ```
 
 Restart the web app after changing the flag.
+
+
+## MQTT ingest (optional)
+
+HTTPS enroll stays required. Devices may then publish heartbeats/telemetry over MQTT.
+
+See **[ORBIT_MQTT_HARDWARE_GUIDE.md](./ORBIT_MQTT_HARDWARE_GUIDE.md)** (partner contract) and **[ORBIT_MQTT_SETUP_LATER.md](./ORBIT_MQTT_SETUP_LATER.md)** (our broker setup + self-test).
+
+```bash
+ORBIT_MQTT_ENABLED=true
+ORBIT_MQTT_URL=mqtts://your-broker:8883
+ORBIT_MQTT_USERNAME=orbit-cloud-ingest
+ORBIT_MQTT_PASSWORD=***
+```
+
+Orbit Cloud logs `MQTT bridge subscribed` when connected. Without these env vars, only HTTPS ingest runs.

@@ -8,6 +8,10 @@ import { PageHeader } from "@/components/page-header";
 import { ConfirmModal } from "@/components/confirm-modal";
 import { usePermissions } from "@/hooks/use-permissions";
 import { CheckCircle2, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { showJourneyGaps } from "@/lib/feature-flags";
+
+type OrgKind = "VENDOR" | "CLIENT";
 
 interface OrganizationRow {
   id: string;
@@ -22,6 +26,7 @@ interface OrganizationRow {
 export default function AdminOrganizationsPage() {
   const queryClient = useQueryClient();
   const { isSuperAdmin, isAdmin, roleLabel } = usePermissions();
+  const [tab, setTab] = useState<OrgKind>("VENDOR");
   const [name, setName] = useState("");
   const [createError, setCreateError] = useState("");
   const [deleteError, setDeleteError] = useState("");
@@ -30,27 +35,32 @@ export default function AdminOrganizationsPage() {
     orgName: string;
     email: string;
     tempPassword?: string;
+    kind: OrgKind;
   } | null>(null);
 
+  const journeyGaps = showJourneyGaps();
+  const isCustomerTab = journeyGaps && tab === "CLIENT";
+
   const { data, isLoading, isError, error: listError } = useQuery({
-    queryKey: ["organizations"],
+    queryKey: ["organizations", tab],
     queryFn: async () => {
       const client = createWebApiClient();
-      const result = await client.listOrganizations(1, 100);
+      const result = await client.listOrganizations(1, 100, tab);
       return result.data as OrganizationRow[];
     },
   });
 
   const createMutation = useMutation({
-    mutationFn: async (vendorName: string) => {
+    mutationFn: async (payload: { name: string; type: OrgKind }) => {
       const client = createWebApiClient();
-      return client.createOrganization(vendorName);
+      return client.createOrganization(payload.name, payload.type);
     },
     onSuccess: async (res) => {
       setName("");
       setCreateError("");
       const createdData = res.data as {
         name: string;
+        type?: string;
         createdUser?: { email: string; tempPassword?: string };
       };
       if (createdData?.createdUser) {
@@ -58,12 +68,19 @@ export default function AdminOrganizationsPage() {
           orgName: createdData.name,
           email: createdData.createdUser.email,
           tempPassword: createdData.createdUser.tempPassword,
+          kind: tab,
         });
       }
       await queryClient.invalidateQueries({ queryKey: ["organizations"] });
     },
     onError: (err) => {
-      setCreateError(err instanceof Error ? err.message : "Failed to create vendor");
+      setCreateError(
+        err instanceof Error
+          ? err.message
+          : isCustomerTab
+            ? "Failed to create customer"
+            : "Failed to create vendor"
+      );
     },
   });
 
@@ -78,38 +95,82 @@ export default function AdminOrganizationsPage() {
       await queryClient.invalidateQueries({ queryKey: ["organizations"] });
     },
     onError: (err) => {
-      setDeleteError(err instanceof Error ? err.message : "Failed to remove vendor");
+      setDeleteError(
+        err instanceof Error
+          ? err.message
+          : isCustomerTab
+            ? "Failed to remove customer"
+            : "Failed to remove vendor"
+      );
     },
   });
 
   return (
     <div>
       <PageHeader
-        title="Vendor organizations"
+        title="Organizations"
         description={
           isSuperAdmin
-            ? "Manage media owner accounts and vendor access"
+            ? "Onboard media owners (vendors) and brand customers with login access"
             : isAdmin
-              ? `Signed in as ${roleLabel}. Only Super Admin can remove vendors.`
-              : "Manage media owner accounts and vendor access"
+              ? `Signed in as ${roleLabel}. Only Super Admin can remove organizations.`
+              : "Onboard media owners and brand customers"
         }
       />
 
+      {journeyGaps ? (
+        <div className="mb-5 inline-flex rounded-lg border border-primary/20 bg-white p-0.5">
+          {(
+            [
+              { id: "VENDOR" as const, label: "Vendors" },
+              { id: "CLIENT" as const, label: "Customers" },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                setTab(item.id);
+                setName("");
+                setCreateError("");
+                setCreatedUserNotice(null);
+                setDeleteError("");
+              }}
+              className={cn(
+                "rounded-md px-4 py-2 text-xs font-semibold transition-colors",
+                tab === item.id
+                  ? "bg-primary text-white"
+                  : "text-slate-600 hover:bg-violet-50"
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       <section className="card-surface p-5 sm:p-6 mb-6 max-w-xl">
-        <h2 className="font-semibold text-slate-900 mb-3">Create vendor</h2>
+        <h2 className="font-semibold text-slate-900 mb-1">
+          {isCustomerTab ? "Create customer" : "Create vendor"}
+        </h2>
+        <p className="mb-3 text-xs text-muted">
+          {isCustomerTab
+            ? "Creates a brand customer organization and a CLIENT_VIEWER login they can use to review campaigns and plans."
+            : "Creates a media-owner organization and a vendor admin login for inventory and requests."}
+        </p>
         <form
           className="flex flex-col sm:flex-row gap-3"
           onSubmit={(e) => {
             e.preventDefault();
             if (!name.trim()) return;
-            createMutation.mutate(name.trim());
+            createMutation.mutate({ name: name.trim(), type: journeyGaps ? tab : "VENDOR" });
           }}
         >
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Vendor company name"
+            placeholder={isCustomerTab ? "Customer / brand name" : "Vendor company name"}
             className="flex-1 rounded-lg border border-violet-200 px-3 py-2.5 text-sm"
           />
           <button
@@ -120,14 +181,19 @@ export default function AdminOrganizationsPage() {
             {createMutation.isPending ? "Creating…" : "Create"}
           </button>
         </form>
-        {createdUserNotice && (
+        {createdUserNotice && createdUserNotice.kind === tab ? (
           <div className="mt-4 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-slate-800 space-y-2">
             <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>Vendor Agency Created & Default Admin Provisioned</span>
+              <span>
+                {createdUserNotice.kind === "CLIENT"
+                  ? "Customer created & login provisioned"
+                  : "Vendor created & default admin provisioned"}
+              </span>
             </div>
             <p className="text-xs text-slate-600">
-              Agency: <strong className="text-slate-900">{createdUserNotice.orgName}</strong>
+              Organization:{" "}
+              <strong className="text-slate-900">{createdUserNotice.orgName}</strong>
             </p>
             <div className="p-3 bg-white border border-emerald-100 rounded-lg text-xs space-y-1 font-mono">
               <p>
@@ -143,7 +209,7 @@ export default function AdminOrganizationsPage() {
               their own password on the public /reset-password page.
             </p>
           </div>
-        )}
+        ) : null}
 
         {createError ? <p className="mt-3 text-sm text-red-700">{createError}</p> : null}
       </section>
@@ -151,35 +217,32 @@ export default function AdminOrganizationsPage() {
       {deleteError ? (
         <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {deleteError}
-          {deleteError.includes("404") || deleteError.toLowerCase().includes("not found") ? (
-            <span className="mt-1 block text-xs">
-              If this vendor was already removed, refresh the list. A 404 on DELETE often means the
-              API on the server has not been redeployed with vendor removal yet.
-            </span>
-          ) : null}
         </p>
       ) : null}
 
       {isError ? (
         <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {listError instanceof Error ? listError.message : "Could not load vendors."}
-          <span className="mt-1 block text-xs text-red-800/90">
-            Check that the Atlas API is running and <code className="text-[11px]">API_PROXY_TARGET</code>{" "}
-            on Vercel points to it. A 503 here is usually the API or proxy, not the vendor list page
-            itself.
-          </span>
+          {listError instanceof Error ? listError.message : "Could not load organizations."}
         </p>
       ) : null}
 
-      {isLoading && <p className="text-muted text-sm">Loading vendors…</p>}
+      {isLoading && (
+        <p className="text-muted text-sm">
+          Loading {isCustomerTab ? "customers" : "vendors"}…
+        </p>
+      )}
 
       <div className="card-surface overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 text-left">
             <tr>
-              <th className="px-4 py-3 font-medium text-slate-600">Vendor Agency</th>
+              <th className="px-4 py-3 font-medium text-slate-600">
+                {isCustomerTab ? "Customer" : "Vendor Agency"}
+              </th>
               <th className="px-4 py-3 font-medium text-slate-600">Status</th>
-              <th className="px-4 py-3 font-medium text-slate-600">Inventory Sites</th>
+              {!isCustomerTab ? (
+                <th className="px-4 py-3 font-medium text-slate-600">Inventory Sites</th>
+              ) : null}
               <th className="px-4 py-3 font-medium text-slate-600">Members</th>
               <th className="px-4 py-3 font-medium text-slate-600"></th>
             </tr>
@@ -209,9 +272,11 @@ export default function AdminOrganizationsPage() {
                     {org.status}
                   </span>
                 </td>
-                <td className="px-4 py-3 font-semibold text-slate-700">
-                  {org.locationCount} sites
-                </td>
+                {!isCustomerTab ? (
+                  <td className="px-4 py-3 font-semibold text-slate-700">
+                    {org.locationCount} sites
+                  </td>
+                ) : null}
                 <td className="px-4 py-3 text-muted text-xs">{org.memberCount} account(s)</td>
                 <td className="px-4 py-3 text-right">
                   <div className="inline-flex items-center gap-2">
@@ -219,11 +284,15 @@ export default function AdminOrganizationsPage() {
                       <button
                         type="button"
                         className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-40"
-                        disabled={org.locationCount > 0 || deleteMutation.isPending}
+                        disabled={
+                          (!isCustomerTab && org.locationCount > 0) || deleteMutation.isPending
+                        }
                         title={
-                          org.locationCount > 0
+                          !isCustomerTab && org.locationCount > 0
                             ? "Reassign or archive sites before removing"
-                            : "Remove vendor"
+                            : isCustomerTab
+                              ? "Remove customer"
+                              : "Remove vendor"
                         }
                         onClick={() => {
                           setDeleteError("");
@@ -246,8 +315,10 @@ export default function AdminOrganizationsPage() {
             ))}
             {!isLoading && (data ?? []).length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
-                  No vendor organizations yet.
+                <td colSpan={isCustomerTab ? 4 : 5} className="px-4 py-8 text-center text-muted">
+                  {isCustomerTab
+                    ? "No customer organizations yet."
+                    : "No vendor organizations yet."}
                 </td>
               </tr>
             )}
@@ -257,13 +328,13 @@ export default function AdminOrganizationsPage() {
 
       <ConfirmModal
         open={Boolean(deleteTarget)}
-        title="Remove vendor"
+        title={isCustomerTab ? "Remove customer" : "Remove vendor"}
         description={
           deleteTarget
-            ? `Permanently remove "${deleteTarget.name}" and its ${deleteTarget.memberCount} account(s)? This cannot be undone. Vendors with inventory sites must be cleaned up first.`
+            ? `Permanently remove "${deleteTarget.name}" and its ${deleteTarget.memberCount} account(s)? This cannot be undone.`
             : undefined
         }
-        confirmLabel="Remove vendor"
+        confirmLabel={isCustomerTab ? "Remove customer" : "Remove vendor"}
         danger
         busy={deleteMutation.isPending}
         onClose={() => {

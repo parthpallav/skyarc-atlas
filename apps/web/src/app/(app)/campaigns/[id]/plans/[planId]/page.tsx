@@ -19,7 +19,13 @@ import { createWebApiClient } from "@/lib/api";
 import { exportMediaPlanXlsx } from "@/lib/pulse-api";
 import { formatInr } from "@/lib/format";
 import { usePermissions } from "@/hooks/use-permissions";
-import { formatInventoryType, formatLighting, siteLabelForAudience } from "@skyarc/shared";
+import { showJourneyGaps } from "@/lib/feature-flags";
+import {
+  formatInventoryType,
+  formatLighting,
+  isCampaignPlanningLocked,
+  siteLabelForAudience,
+} from "@skyarc/shared";
 import { trackEntityView, trackBusinessEvent } from "@/lib/clarity-telemetry";
 import {
   SiteMetricsBars,
@@ -118,6 +124,8 @@ interface MediaPlanDetail {
   createdAt: string;
   canApprove?: boolean;
   canRespond?: boolean;
+  planningLocked?: boolean;
+  lifecycleStatus?: string;
   isSiteRequest?: boolean;
   ownedItemCount?: number;
   pricingVisible?: boolean;
@@ -288,6 +296,26 @@ function planLifecycleBadge(status: string, isSiteRequest?: boolean) {
   return {
     label: status || "Draft",
     className: "bg-slate-100 text-slate-700 border-slate-200",
+  };
+}
+
+function lineVendorApprovalBadge(status?: string | null) {
+  const value = (status ?? "PENDING").toUpperCase();
+  if (value === "APPROVED") {
+    return {
+      label: "Vendor ok",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    };
+  }
+  if (value === "REJECTED") {
+    return {
+      label: "Vendor no",
+      className: "border-rose-200 bg-rose-50 text-rose-800",
+    };
+  }
+  return {
+    label: "Vendor pending",
+    className: "border-amber-200 bg-amber-50 text-amber-900",
   };
 }
 
@@ -654,8 +682,21 @@ export default function MediaPlanDetailPage() {
   const pricingReady = plan.pricingVisible !== false && plan.status === "APPROVED";
   const showPendingVendor = isVendor && isDraftRequest && !plan.canRespond;
   const showClientPricing = Boolean(plan.pricingVisible) || isClient || isInternal;
-  const canApprove = Boolean(plan.canApprove) || (isInternal && (plan.status === "DRAFT" || plan.status === "PROPOSED"));
-  const canRespond = Boolean(plan.canRespond);
+  const missingStandardRateCount = isInternal
+    ? plan.items.filter(
+        (item) =>
+          (item.pricing?.clientRate == null || item.pricing.clientRate <= 0) &&
+          (item.pricing?.vendorRate != null && item.pricing.vendorRate > 0)
+      ).length
+    : 0;
+  const planningLocked =
+    showJourneyGaps() &&
+    (Boolean(plan.planningLocked) || isCampaignPlanningLocked(plan.lifecycleStatus));
+  const canApprove =
+    !planningLocked &&
+    (Boolean(plan.canApprove) ||
+      (isInternal && (plan.status === "DRAFT" || plan.status === "PROPOSED")));
+  const canRespond = !planningLocked && Boolean(plan.canRespond);
   const statusBadge = planLifecycleBadge(plan.status, plan.isSiteRequest);
   const displayName =
     plan.isSiteRequest || plan.status === "DRAFT"
@@ -702,6 +743,29 @@ export default function MediaPlanDetailPage() {
 
   const alerts = (
     <>
+      {planningLocked ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800">
+          <span className="font-semibold">
+            {plan.lifecycleStatus === "COMPLETED"
+              ? "Campaign completed"
+              : plan.lifecycleStatus === "CANCELLED"
+                ? "Campaign cancelled"
+                : "Campaign live"}
+            — planning locked.
+          </span>{" "}
+          Current plan and site mix cannot be changed.
+        </div>
+      ) : null}
+      {missingStandardRateCount > 0 ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          <span className="font-semibold">
+            {missingStandardRateCount} site
+            {missingStandardRateCount === 1 ? "" : "s"} lack a Standard rate.
+          </span>{" "}
+          Client pitches and Skyarc margin need the site Pricing → Standard rate; vendor card rate is
+          cost-only until then.
+        </div>
+      ) : null}
       {showPendingVendor ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
           <span className="font-semibold">Request pending.</span> Sites held for this flight;
@@ -711,7 +775,9 @@ export default function MediaPlanDetailPage() {
       {canRespond ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
           <p className="text-xs font-semibold text-slate-900">
-            Request for your inventory
+            {plan.status === "APPROVED"
+              ? "Confirm your sites on this current plan"
+              : "Request for your inventory"}
             {ownedItemCount ? ` · ${ownedItemCount}` : ""}
           </p>
           <div className="flex gap-1.5">
@@ -738,7 +804,7 @@ export default function MediaPlanDetailPage() {
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
           <p className="text-xs font-semibold text-slate-900">
             {plan.status === "PROPOSED"
-              ? "Set this pack as the current plan (hold + vendor approval; does not mark campaign live)"
+              ? "Set as current plan soft-holds sites for vendor approval. Campaign stays draft until Mark live."
               : "Site request — approve to book"}
           </p>
           <div className="flex gap-1.5">
@@ -828,6 +894,7 @@ export default function MediaPlanDetailPage() {
         {planItems.map((item, idx) => {
           const score = item.skyarcIndex?.overallScore ?? item.insights?.overallScore;
           const on = selectedItem?.id === item.id;
+          const vendorBadge = lineVendorApprovalBadge(item.approvalStatus);
           return (
             <li key={item.id}>
               <button
@@ -864,6 +931,14 @@ export default function MediaPlanDetailPage() {
                   <p className="truncate text-[10px] text-muted">
                     {item.location?.road ?? siteSpecLine(item)}
                   </p>
+                  <span
+                    className={cn(
+                      "mt-1 inline-flex rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                      vendorBadge.className
+                    )}
+                  >
+                    {vendorBadge.label}
+                  </span>
                 </div>
                 <div className="shrink-0 text-right">
                   {score != null ? (
@@ -898,7 +973,7 @@ export default function MediaPlanDetailPage() {
     }
 
     const rate = siteRate(selectedItem);
-    const canEditMix = isAdmin;
+    const canEditMix = isAdmin && !planningLocked;
 
     return (
       <div className={cn(workspacePanel, "rounded-2xl shadow-sm")}>
@@ -952,6 +1027,24 @@ export default function MediaPlanDetailPage() {
               </p>
             </div>
           </div>
+          {(() => {
+            const vendorBadge = lineVendorApprovalBadge(selectedItem.approvalStatus);
+            return (
+              <div className="border-b border-violet-100 bg-white px-4 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                  Vendor approval
+                </p>
+                <span
+                  className={cn(
+                    "mt-1 inline-flex rounded border px-2 py-0.5 text-[11px] font-bold",
+                    vendorBadge.className
+                  )}
+                >
+                  {vendorBadge.label}
+                </span>
+              </div>
+            );
+          })()}
 
           <div className="space-y-4 p-4">
             {selectedWhy ? (
@@ -1133,7 +1226,7 @@ export default function MediaPlanDetailPage() {
                 </button>
               </div>
             ) : null}
-            {isAdmin ? (
+            {isAdmin && !planningLocked ? (
               <button
                 type="button"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"

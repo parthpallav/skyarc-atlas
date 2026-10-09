@@ -33,10 +33,13 @@ export function CampaignCommitmentPanel({
   campaignId,
   canEdit,
   startDate,
+  audience = "internal",
 }: {
   campaignId: string;
   canEdit: boolean;
   startDate?: string | null;
+  /** Clients get a read-only hold/commitment view without Mark live. */
+  audience?: "internal" | "client";
 }) {
   const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
@@ -84,12 +87,18 @@ export function CampaignCommitmentPanel({
         ? "Pending approvals / commitments"
         : data.lifecycleStatus ?? "Draft";
 
+  const forClient = audience === "client";
+
   return (
     <section className="rounded-xl border border-primary/15 bg-white">
       <div className="border-b border-primary/10 px-4 py-3">
-        <h2 className="text-base font-bold text-slate-900">Inventory commitments</h2>
+        <h2 className="text-base font-bold text-slate-900">
+          {forClient ? "Holds & commitments" : "Inventory commitments"}
+        </h2>
         <p className="mt-0.5 text-sm text-muted">
-          Atlas booking ledger — vendor approval is not customer acceptance.
+          {forClient
+            ? "Sites soft-held or confirmed on your current plan for these flight dates. Going live is handled by Skyarc."
+            : "Holds and vendor confirmations for the current plan. Approving sites does not make the campaign live — use Mark live when ready."}
         </p>
       </div>
       <div className="space-y-3 p-4 text-sm">
@@ -116,7 +125,9 @@ export function CampaignCommitmentPanel({
 
         {(data.commitments ?? []).length === 0 ? (
           <p className="text-muted">
-            No holds or bookings yet. Set a current plan to soft-hold inventory for vendor approval.
+            {forClient
+              ? "No holds yet on this campaign. When Skyarc sets a current plan, soft-held sites appear here."
+              : "No holds or bookings yet. Set a current plan to soft-hold inventory for vendor approval."}
           </p>
         ) : (
           <ul className="space-y-2">
@@ -159,20 +170,35 @@ export function CampaignCommitmentPanel({
                 ))}
               </ul>
             ) : null}
-            {canEdit && data.lifecycleStatus !== "ACTIVE" ? (
-              <button
-                type="button"
-                className="btn-primary mt-3 px-3 py-1.5 text-xs"
-                disabled={!data.activation.ready || markLive.isPending}
-                onClick={() => markLive.mutate()}
-                title={
-                  data.activation.ready
-                    ? "Mark campaign live with audit trail"
-                    : "Resolve readiness blockers first"
-                }
-              >
-                {markLive.isPending ? "…" : "Mark live"}
-              </button>
+            {!forClient && canEdit && data.lifecycleStatus !== "ACTIVE" ? (
+              <div className="mt-3 space-y-1.5">
+                <p className="text-xs text-muted">
+                  Vendor approvals alone do not launch the campaign. Mark live is the only step that
+                  sets status to Active.
+                </p>
+                <button
+                  type="button"
+                  className="btn-primary px-3 py-1.5 text-xs"
+                  disabled={!data.activation.ready || markLive.isPending}
+                  onClick={() => markLive.mutate()}
+                  title={
+                    data.activation.ready
+                      ? "Mark campaign live with audit trail"
+                      : "Resolve readiness blockers first"
+                  }
+                >
+                  {markLive.isPending ? "…" : "Mark live"}
+                </button>
+              </div>
+            ) : null}
+            {forClient && data.activation ? (
+              <p className="mt-2 text-xs text-muted">
+                {data.activation.checks.pendingVendorItemCount > 0
+                  ? `${data.activation.checks.pendingVendorItemCount} site(s) still awaiting vendor confirmation.`
+                  : data.lifecycleStatus === "ACTIVE"
+                    ? "Campaign is live or scheduled."
+                    : "Waiting on Skyarc to mark the campaign live."}
+              </p>
             ) : null}
             {markLive.isError ? (
               <p className="mt-2 text-xs text-red-700">

@@ -67,3 +67,26 @@ export function campaignLifecycleDisplayLabel(input: {
   }
   return campaignLifecycleLabel(status);
 }
+
+/**
+ * After Mark live (or flight complete / cancel), campaign brief, dates, current plan,
+ * and plan mix are frozen — hierarchy below was already approved to authorize launch.
+ */
+export function isCampaignPlanningLocked(
+  status: CampaignLifecycleStatus | string | null | undefined
+): boolean {
+  return status === "ACTIVE" || status === "COMPLETED" || status === "CANCELLED";
+}
+
+/** User-facing reason when a locked campaign mutation is attempted. */
+export function campaignPlanningLockMessage(
+  status: CampaignLifecycleStatus | string | null | undefined
+): string {
+  if (status === "COMPLETED") {
+    return "This campaign is completed. Flight dates, brief, and media plans can no longer be changed.";
+  }
+  if (status === "CANCELLED") {
+    return "This campaign is cancelled. Planning changes are not allowed.";
+  }
+  return "This campaign is live. Flight dates, brief, current plan, and site mix are locked.";
+}

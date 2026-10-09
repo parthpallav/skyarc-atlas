@@ -127,7 +127,7 @@ export default function MapPage() {
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [flightFrom, setFlightFrom] = useState(defaults.from);
   const [flightTo, setFlightTo] = useState(defaults.to);
-  const [availFilter, setAvailFilter] = useState<AvailFilter>("BOOKABLE");
+  const [availFilter, setAvailFilter] = useState<AvailFilter>("ALL");
   const [cityFilter, setCityFilter] = useState<string>("");
   const [corridorFilter, setCorridorFilter] = useState<string>("");
   const [railCollapsed, setRailCollapsed] = useState(false);
@@ -136,7 +136,7 @@ export default function MapPage() {
   const markets = useMemo(() => listMarketCities(), []);
   const activeFilterCount =
     (cityFilter ? 1 : 0) +
-    (availFilter !== "BOOKABLE" ? 1 : 0) +
+    (availFilter !== "ALL" ? 1 : 0) +
     (corridorFilter ? 1 : 0);
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -286,16 +286,15 @@ export default function MapPage() {
       const isHighlighted = selectedLocationId === location.id;
       const el = createMapPinElement(location, { highlighted: isHighlighted });
 
-      const detailHref = `/locations/${location.id}?from=${flightFrom}&to=${flightTo}`;
       const clickPopup = new maplibregl.Popup({
         offset: 22,
         maxWidth: "300px",
         className: "map-location-click-popup",
       }).setHTML(
-        buildMapLocationCardHtml(location, "detail").replace(
-          /href="\/locations\/[^"]+"/,
-          `href="${detailHref}"`
-        )
+        buildMapLocationCardHtml(location, "detail", {
+          from: flightFrom,
+          to: flightTo,
+        })
       );
 
       const marker = new maplibregl.Marker({ element: el, anchor: "center" })

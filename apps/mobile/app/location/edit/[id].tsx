@@ -29,6 +29,7 @@ export default function EditLocationScreen() {
   const [name, setName] = useState("");
   const [road, setRoad] = useState("");
   const [address, setAddress] = useState("");
+  const [mountingType, setMountingType] = useState("");
   const [mountingNotes, setMountingNotes] = useState("");
   const [photos, setPhotos] = useState<Partial<Record<PhotoView, string>>>({});
   const [pendingViews, setPendingViews] = useState<Set<PhotoView>>(new Set());
@@ -43,6 +44,7 @@ export default function EditLocationScreen() {
       setName(String(data.name ?? ""));
       setRoad(String(data.road ?? ""));
       setAddress(String(data.address ?? ""));
+      setMountingType(String(data.mountingType ?? ""));
       setMountingNotes(String(data.mountingNotes ?? ""));
 
       const assetsRes = await client.listAssets(id);
@@ -87,6 +89,7 @@ export default function EditLocationScreen() {
         name: name.trim(),
         road: road.trim() || undefined,
         address: address.trim() || undefined,
+        mountingType: mountingType.trim() || undefined,
         mountingNotes: mountingNotes.trim() || undefined,
         surveyStatus: SurveyStatus.IN_PROGRESS,
       });
@@ -150,12 +153,20 @@ export default function EditLocationScreen() {
         <AppText variant="label">Address</AppText>
         <Input value={address} onChangeText={setAddress} placeholder="Address" style={styles.field} />
 
-        <AppText variant="label">Mounting notes</AppText>
+        <AppText variant="label">Site mounting</AppText>
+        <Input
+          value={mountingType}
+          onChangeText={setMountingType}
+          placeholder="e.g. Pole, Wall, Gantry"
+          style={styles.field}
+        />
+
+        <AppText variant="label">Site mounting notes</AppText>
         <Input
           value={mountingNotes}
           onChangeText={setMountingNotes}
           multiline
-          placeholder="Mounting details..."
+          placeholder="Install access, height, traffic side…"
           style={[styles.field, styles.textArea]}
         />
 

@@ -19,6 +19,7 @@ import {
 import { createWebApiClient } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
 import { PageHeaderSkeleton, Skeleton } from "@/components/ui/skeleton";
+import { showJourneyGaps } from "@/lib/feature-flags";
 
 interface OrgMember {
   id: string;
@@ -49,6 +50,9 @@ export default function AdminOrganizationDetailPage() {
   const [availabilityMessage, setAvailabilityMessage] = useState("");
   const [actionSuccess, setActionSuccess] = useState("");
   const [actionError, setActionError] = useState("");
+  const [newUserName, setNewUserName] = useState("");
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
 
   const { data: org, isLoading } = useQuery({
     queryKey: ["organization", id],
@@ -66,13 +70,13 @@ export default function AdminOrganizationDetailPage() {
       return client.updateOrganizationStatus(id, nextStatus);
     },
     onSuccess: async (_, nextStatus) => {
-      setActionSuccess(`Vendor agency status updated to ${nextStatus}.`);
+      setActionSuccess(`Organization status updated to ${nextStatus}.`);
       setActionError("");
       await queryClient.invalidateQueries({ queryKey: ["organization", id] });
       await queryClient.invalidateQueries({ queryKey: ["organizations"] });
     },
     onError: (err) => {
-      setActionError(err instanceof Error ? err.message : "Failed to update vendor status");
+      setActionError(err instanceof Error ? err.message : "Failed to update organization status");
     },
   });
 
@@ -84,7 +88,7 @@ export default function AdminOrganizationDetailPage() {
     },
     onSuccess: async () => {
       setEditingUserId(null);
-      setActionSuccess("Vendor admin email updated successfully.");
+      setActionSuccess("User email updated successfully.");
       setActionError("");
       await queryClient.invalidateQueries({ queryKey: ["organization", id] });
     },
@@ -105,6 +109,33 @@ export default function AdminOrganizationDetailPage() {
     },
     onError: (err) => {
       setActionError(err instanceof Error ? err.message : "Failed to generate reset link");
+    },
+  });
+
+  const createUserMutation = useMutation({
+    mutationFn: async (payload: {
+      name: string;
+      email: string;
+      password: string;
+      role: string;
+    }) => {
+      const client = createWebApiClient();
+      return client.createUser({
+        ...payload,
+        organizationId: id,
+      });
+    },
+    onSuccess: async () => {
+      setNewUserName("");
+      setNewUserEmail("");
+      setNewUserPassword("");
+      setActionSuccess("User created and linked to this organization.");
+      setActionError("");
+      await queryClient.invalidateQueries({ queryKey: ["organization", id] });
+      await queryClient.invalidateQueries({ queryKey: ["organizations"] });
+    },
+    onError: (err) => {
+      setActionError(err instanceof Error ? err.message : "Failed to create user");
     },
   });
 
@@ -139,7 +170,7 @@ export default function AdminOrganizationDetailPage() {
         className="inline-flex items-center gap-1 text-sm text-muted hover:text-slate-900 mb-4 font-medium"
       >
         <ArrowLeft className="w-4 h-4" />
-        Vendors
+        Organizations
       </Link>
 
       {isLoading && (
@@ -162,7 +193,13 @@ export default function AdminOrganizationDetailPage() {
         <div className="space-y-6">
           <PageHeader
             title={org.name}
-            description={`Media Owner / Vendor · ${org.status}`}
+            description={`${
+              org.type === "CLIENT"
+                ? "Brand customer"
+                : org.type === "INTERNAL"
+                  ? "Internal"
+                  : "Media owner / vendor"
+            } · ${org.status}`}
             action={
               <button
                 type="button"
@@ -177,12 +214,12 @@ export default function AdminOrganizationDetailPage() {
                 {isSuspended ? (
                   <>
                     <ShieldCheck className="w-4 h-4" />
-                    Activate Vendor
+                    Activate
                   </>
                 ) : (
                   <>
                     <ShieldAlert className="w-4 h-4" />
-                    Suspend Vendor
+                    Suspend
                   </>
                 )}
               </button>
@@ -208,10 +245,12 @@ export default function AdminOrganizationDetailPage() {
               <div>
                 <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <UserCheck className="w-5 h-5 text-primary" />
-                  Vendor Admin Access & Credentials
+                  {org.type === "CLIENT" ? "Customer access & credentials" : "Vendor admin access & credentials"}
                 </h2>
                 <p className="text-xs text-muted mt-0.5">
-                  Set their contact email, share activation/reset links, and verify access for this agency.
+                  {org.type === "CLIENT"
+                    ? "Set their login email, share activation/reset links, and verify customer access."
+                    : "Set their contact email, share activation/reset links, and verify access for this agency."}
                 </p>
               </div>
             </div>
@@ -337,9 +376,64 @@ export default function AdminOrganizationDetailPage() {
                 })
               )}
             </div>
+
+            {showJourneyGaps() ? (
+            <div className="rounded-xl border border-primary/15 bg-violet-50/40 p-4 space-y-3">
+              <h3 className="text-sm font-bold text-slate-900">Add user</h3>
+              <p className="text-xs text-muted">
+                {org.type === "CLIENT"
+                  ? "Add another brand login (CLIENT_VIEWER) for this customer."
+                  : "Add another vendor login for this media owner (VENDOR or VENDOR_OPS)."}
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input
+                  type="text"
+                  value={newUserName}
+                  onChange={(e) => setNewUserName(e.target.value)}
+                  placeholder="Full name"
+                  className="rounded-lg border border-violet-200 px-3 py-2 text-xs"
+                />
+                <input
+                  type="email"
+                  value={newUserEmail}
+                  onChange={(e) => setNewUserEmail(e.target.value)}
+                  placeholder="email@company.com"
+                  className="rounded-lg border border-violet-200 px-3 py-2 text-xs font-mono"
+                />
+                <input
+                  type="text"
+                  value={newUserPassword}
+                  onChange={(e) => setNewUserPassword(e.target.value)}
+                  placeholder="Temp password (min 8 chars)"
+                  className="rounded-lg border border-violet-200 px-3 py-2 text-xs font-mono sm:col-span-2"
+                />
+              </div>
+              <button
+                type="button"
+                className="btn-primary text-xs px-4 py-2 disabled:opacity-50"
+                disabled={
+                  createUserMutation.isPending ||
+                  !newUserName.trim() ||
+                  !newUserEmail.trim() ||
+                  newUserPassword.trim().length < 8
+                }
+                onClick={() =>
+                  createUserMutation.mutate({
+                    name: newUserName.trim(),
+                    email: newUserEmail.trim().toLowerCase(),
+                    password: newUserPassword.trim(),
+                    role: org.type === "CLIENT" ? "CLIENT_VIEWER" : "VENDOR",
+                  })
+                }
+              >
+                {createUserMutation.isPending ? "Creating…" : "Create user"}
+              </button>
+            </div>
+            ) : null}
           </section>
 
-          {/* Section 2: Request Inventory Availability Update */}
+          {/* Section 2: Request Inventory Availability Update (vendors only) */}
+          {org.type !== "CLIENT" ? (
           <section className="card-surface p-6 space-y-4">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <Send className="w-5 h-5 text-emerald-600" />
@@ -371,6 +465,7 @@ export default function AdminOrganizationDetailPage() {
               </button>
             </div>
           </section>
+          ) : null}
         </div>
       )}
     </div>

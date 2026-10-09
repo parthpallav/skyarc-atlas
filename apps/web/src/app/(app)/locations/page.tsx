@@ -19,7 +19,7 @@ import {
   Filter,
 } from "lucide-react";
 import { FileSpreadsheet } from "lucide-react";
-import { createWebApiClient } from "@/lib/api";
+import { createWebApiClient, listAllLocations } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { PageHeader } from "@/components/page-header";
 import { LocationCardMedia } from "@/components/location-card-media";
@@ -30,18 +30,23 @@ import {
   listMarketCities,
   corridorsForCity,
   locationMatchesCorridor,
+  UserRole,
   type InventoryTypeBucket,
 } from "@skyarc/shared";
 import { formatInr } from "@/lib/format";
 import { InventoryImportModal } from "@/components/inventory-import-modal";
 import { CampaignSiteDestination } from "@/components/campaign-site-destination";
 import { LocationGridSkeleton } from "@/components/ui/skeleton";
-import { SlotIndicators, liveStatusBadge } from "@/components/slot-indicators";
+import {
+  SlotIndicators,
+  classicCapacityHint,
+  liveStatusBadge,
+} from "@/components/slot-indicators";
 import {
   SiteDemandSignals,
   type SiteInterest,
 } from "@/components/site-demand-signals";
-import { showAdtechBooking } from "@/lib/feature-flags";
+import { showAdtechBooking, showJourneyGaps } from "@/lib/feature-flags";
 
 interface PreviewMediaItem {
   id: string;
@@ -74,7 +79,7 @@ interface Location {
     slotCapacity: number;
     isDigital: boolean;
   } | null;
-  commercialView?: { defaultRateAmount: number | null };
+  commercialView?: { defaultRateAmount: number | null; ratePeriod?: string | null };
   skyarcCommercialView?: {
     clientRateAmount: number | null;
     ratePeriod: string;
@@ -103,7 +108,7 @@ const TYPE_FILTERS: Array<{ value: TypeFilter; label: string }> = [
   { value: "digital", label: "Digital" },
   { value: "hoarding", label: "Static" },
   { value: "kiosk", label: "Kiosks" },
-  { value: "other", label: "Conceptual" },
+  { value: "other", label: "Transit & other" },
 ];
 
 const AVAIL_FILTERS: Array<{
@@ -115,7 +120,7 @@ const AVAIL_FILTERS: Array<{
   {
     value: "ALL",
     label: "All",
-    hint: "Every site in the catalog",
+    hint: "Every site in the catalog for these dates",
     dot: "bg-slate-400",
   },
   {
@@ -126,20 +131,20 @@ const AVAIL_FILTERS: Array<{
   },
   {
     value: "PARTIAL",
-    label: "Partial",
-    hint: "Digital only — some ad places still free",
-    dot: "bg-sky-500",
+    label: "Limited",
+    hint: "Some capacity still open for these dates",
+    dot: "bg-sky-400",
   },
   {
     value: "HELD",
     label: "On hold",
-    hint: "Temporarily reserved by another plan",
+    hint: "Soft-held by a media plan for these dates",
     dot: "bg-amber-500",
   },
   {
     value: "FULL",
     label: "Booked",
-    hint: "No open place for your campaign dates",
+    hint: "No open place for your selected dates",
     dot: "bg-rose-500",
   },
 ];
@@ -189,7 +194,8 @@ function locationBucket(loc: Location): InventoryTypeBucket {
 }
 
 export default function LocationsPage() {
-  const { isVendor, isReadOnly, isClient, isInternal, isAdmin } = usePermissions();
+  const { isVendor, isReadOnly, isClient, isInternal, isAdmin, user } = usePermissions();
+  const isFieldOperator = user?.role === UserRole.FIELD_OPERATOR;
   const audience = isClient ? "client" : isVendor ? "vendor" : "internal";
   const adtechBooking = showAdtechBooking();
   const queryClient = useQueryClient();
@@ -201,7 +207,7 @@ export default function LocationsPage() {
   const [cityFilters, setCityFilters] = useState<Set<string>>(new Set());
   const [stateFilters, setStateFilters] = useState<Set<string>>(new Set());
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
-  const [availFilter, setAvailFilter] = useState<AvailFilter>("BOOKABLE");
+  const [availFilter, setAvailFilter] = useState<AvailFilter>("ALL");
   const [sortBy, setSortBy] = useState<SortKey>("name");
   const [flightFrom, setFlightFrom] = useState(defaults.from);
   const [flightTo, setFlightTo] = useState(defaults.to);
@@ -272,19 +278,19 @@ export default function LocationsPage() {
       [...stateFilters].sort().join(","),
       [...roadFilters].sort().join(","),
     ],
-    queryFn: async () => {
-      const client = createWebApiClient();
-      const result = await client.listLocations(1, 250, isVendor ? scope : undefined, {
-        q: searchTerm.trim() || undefined,
-        from: flightFrom,
-        to: flightTo,
-        cities: cityFilters.size ? [...cityFilters] : undefined,
-        states: stateFilters.size ? [...stateFilters] : undefined,
-        corridors: roadFilters.size ? [...roadFilters] : undefined,
-        visibility,
-      });
-      return result.data as Location[];
-    },
+    queryFn: async () =>
+      listAllLocations<Location>(
+        {
+          q: searchTerm.trim() || undefined,
+          from: flightFrom,
+          to: flightTo,
+          cities: cityFilters.size ? [...cityFilters] : undefined,
+          states: stateFilters.size ? [...stateFilters] : undefined,
+          corridors: roadFilters.size ? [...roadFilters] : undefined,
+          visibility,
+        },
+        isVendor ? scope : undefined
+      ),
     retry: 2,
     refetchInterval: 30_000,
     staleTime: 10_000,
@@ -391,6 +397,28 @@ export default function LocationsPage() {
   const startIndex = (validCurrentPage - 1) * pageSize;
   const paginatedLocations = sortedLocations.slice(startIndex, startIndex + pageSize);
   const pageIds = paginatedLocations.map((l) => l.id);
+
+  /** Sites the current role may tick (admins always; others exclude fully booked). */
+  function isSelectableLocation(loc: Location): boolean {
+    if (canBulkGovern) return true;
+    if (viewingHidden) return false;
+    const forRequestPick =
+      isClient || isInternal || (isVendor && scope === "discovery");
+    if (!forRequestPick) return false;
+    return !isFullyUnavailable(loc);
+  }
+
+  const selectableFilteredIds = sortedLocations
+    .filter(isSelectableLocation)
+    .map((l) => l.id);
+  const selectablePageIds = paginatedLocations
+    .filter(isSelectableLocation)
+    .map((l) => l.id);
+  const allFilteredSelected =
+    selectableFilteredIds.length > 0 &&
+    selectableFilteredIds.every((id) => selected.has(id));
+  const allPageSelected =
+    selectablePageIds.length > 0 && selectablePageIds.every((id) => selected.has(id));
 
   const { data: interestPayload } = useQuery({
     queryKey: ["site-interest", pageIds.join(",")],
@@ -525,6 +553,22 @@ export default function LocationsPage() {
       ?.catch(() => undefined);
   };
 
+  function selectAllOnPage() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of selectablePageIds) next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllFiltered() {
+    setSelected(new Set(selectableFilteredIds));
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+  }
+
   const toggleRoad = (road: string) => {
     setRoadFilters((prev) => {
       const next = new Set(prev);
@@ -560,7 +604,9 @@ export default function LocationsPage() {
         description={
           viewingHidden
             ? `${(data ?? []).length} hidden · restore to return them to pitching`
-            : `${bookableCount} bookable for selected dates`
+            : isFieldOperator
+              ? `${bookableCount} bookable for selected dates · you can edit sites you created`
+              : `${bookableCount} bookable for selected dates`
         }
         action={
           <div className="flex items-center gap-1.5">
@@ -568,16 +614,20 @@ export default function LocationsPage() {
               <>
                 <Link href="/locations/new" className="btn-secondary gap-1.5 text-xs py-2 px-2.5">
                   <Plus className="w-4 h-4 text-primary" />
-                  <span className="hidden sm:inline">Add</span>
+                  <span className="hidden sm:inline">
+                    {isFieldOperator ? "Survey site" : "Add"}
+                  </span>
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => setIsImportModalOpen(true)}
-                  className="btn-secondary gap-1.5 text-xs py-2 px-2.5 hidden sm:inline-flex"
-                >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                  Import
-                </button>
+                {!isFieldOperator ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="btn-secondary gap-1.5 text-xs py-2 px-2.5 hidden sm:inline-flex"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                    Import
+                  </button>
+                ) : null}
               </>
             )}
             <Link href="/map" className="btn-primary gap-1.5 text-xs py-2 px-2.5">
@@ -906,22 +956,72 @@ export default function LocationsPage() {
         )}
       </div>
 
-      <p className="px-0.5 text-xs text-slate-600">
-        <strong className="text-slate-900">{totalItems}</strong>
-        {totalItems === 1 ? " site" : " sites"}
-        {typeFilter !== "ALL" ? (
-          <span className="text-muted">
-            {" "}
-            · {TYPE_FILTERS.find((t) => t.value === typeFilter)?.label}
-          </span>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
+        <p className="text-xs text-slate-600">
+          <strong className="text-slate-900">{totalItems}</strong>
+          {totalItems === 1 ? " site" : " sites"}
+          <span className="text-muted"> · full catalog for this filter</span>
+          {typeFilter !== "ALL" ? (
+            <span className="text-muted">
+              {" "}
+              · {TYPE_FILTERS.find((t) => t.value === typeFilter)?.label}
+            </span>
+          ) : null}
+          {roadFilters.size > 0 ? (
+            <span className="text-muted">
+              {" "}
+              · {roadFilters.size} corridor{roadFilters.size === 1 ? "" : "s"}
+            </span>
+          ) : null}
+          {selectableFilteredIds.length === 0 && totalItems > 0 ? (
+            <span className="text-amber-800">
+              {" "}
+              · none selectable (fully booked for these dates — try Open or widen flight)
+            </span>
+          ) : null}
+        </p>
+        {selectableFilteredIds.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <button
+              type="button"
+              className="font-semibold text-primary hover:underline disabled:opacity-40"
+              disabled={allPageSelected}
+              onClick={selectAllOnPage}
+            >
+              Select page ({selectablePageIds.length})
+            </button>
+            {showJourneyGaps() ? (
+              <>
+                <span className="text-muted" aria-hidden>
+                  ·
+                </span>
+                <button
+                  type="button"
+                  className="font-semibold text-primary hover:underline disabled:opacity-40"
+                  disabled={allFilteredSelected}
+                  onClick={selectAllFiltered}
+                >
+                  Select all ({selectableFilteredIds.length})
+                </button>
+              </>
+            ) : null}
+            {selected.size > 0 ? (
+              <>
+                <span className="text-muted" aria-hidden>
+                  ·
+                </span>
+                <button
+                  type="button"
+                  className="font-semibold text-slate-600 hover:underline"
+                  onClick={clearSelection}
+                >
+                  Clear
+                </button>
+              </>
+            ) : null}
+          </div>
         ) : null}
-        {roadFilters.size > 0 ? (
-          <span className="text-muted">
-            {" "}
-            · {roadFilters.size} corridor{roadFilters.size === 1 ? "" : "s"}
-          </span>
-        ) : null}
-      </p>
+      </div>
 
       {selected.size > 0 && (
         <div className="sticky top-[3.25rem] z-20 flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-white/95 px-3 py-2 shadow-md backdrop-blur">
@@ -1043,15 +1143,23 @@ export default function LocationsPage() {
             );
             const live = loc.liveInventory;
             const status = effectiveStatus(loc);
-            const badge = liveStatusBadge(status);
+            const badge = liveStatusBadge(status, { classic: !adtechBooking });
             const full = isFullyUnavailable(loc);
+            const clientRate = loc.skyarcCommercialView?.clientRateAmount ?? null;
+            const vendorRate = loc.commercialView?.defaultRateAmount ?? null;
             const rate =
-              loc.skyarcCommercialView?.clientRateAmount ??
-              (isVendor ? loc.commercialView?.defaultRateAmount : null);
+              clientRate ??
+              (isVendor || isInternal || isAdmin ? vendorRate : null);
+            const rateIsVendorFallback =
+              (isInternal || isAdmin) && clientRate == null && vendorRate != null;
             const slotCapacity = live?.capacity ?? face?.slotCapacity ?? null;
             const slotUsed = live?.used ?? 0;
             const slotOpen = slotCapacity != null ? Math.max(0, slotCapacity - slotUsed) : null;
             const isDigital = Boolean(live?.isDigital || face?.isDigital);
+            const capacityHint =
+              !adtechBooking
+                ? classicCapacityHint(slotOpen, slotCapacity, isDigital)
+                : null;
             const forRequestPick =
               !viewingHidden &&
               (isClient || isInternal || (isVendor && scope === "discovery"));
@@ -1110,11 +1218,16 @@ export default function LocationsPage() {
                     <span className="truncate font-mono text-[11px] font-bold text-primary">
                       {loc.skyarcSiteCode ?? `SKY-${loc.id.slice(0, 4).toUpperCase()}`}
                     </span>
-                    <span
-                      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}
-                      title={badge.hint}
-                    >
-                      {badge.short}
+                    <span className="flex shrink-0 flex-col items-end gap-0.5">
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}
+                        title={badge.hint}
+                      >
+                        {badge.short}
+                      </span>
+                      {capacityHint ? (
+                        <span className="text-[10px] tabular-nums text-muted">{capacityHint}</span>
+                      ) : null}
                     </span>
                   </div>
 
@@ -1156,9 +1269,17 @@ export default function LocationsPage() {
                     <p className="text-sm font-bold tabular-nums text-slate-900">
                       {rate != null ? (
                         <>
+                          {rateIsVendorFallback ? (
+                            <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                              Vendor
+                            </span>
+                          ) : null}
                           {formatInr(rate)}
                           <span className="text-[11px] font-normal text-muted">
-                            /{loc.skyarcCommercialView?.ratePeriod?.toLowerCase() ?? "mo"}
+                            /
+                            {loc.skyarcCommercialView?.ratePeriod?.toLowerCase() ??
+                              loc.commercialView?.ratePeriod?.toLowerCase() ??
+                              "mo"}
                           </span>
                         </>
                       ) : (

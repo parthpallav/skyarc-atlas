@@ -66,6 +66,8 @@ import {
   effectiveSlotCapacity,
   inventoryTypeBucket,
   isClientUser,
+  isCampaignPlanningLocked,
+  campaignPlanningLockMessage,
   isSiteRequestBrief,
   isVendorUser,
   parseSkyarcLocationCommercial,
@@ -76,6 +78,20 @@ import {
   skyarcRevenueFromRates
 } from "@skyarc/shared";
 import { loadPlatformConfig } from "../../lib/commercial-config.js";
+import {
+  campaignPlanningLockedForApi,
+  journeyGapsEnabled,
+} from "../../lib/journey-gaps.js";
+
+/** Block brief/dates/plan mix/current-plan changes after Mark live (or complete/cancel). */
+function assertCampaignPlanningEditable(campaign: {
+  lifecycleStatus?: string | null;
+}): void {
+  if (!journeyGapsEnabled()) return;
+  if (isCampaignPlanningLocked(campaign.lifecycleStatus)) {
+    throw validationError(campaignPlanningLockMessage(campaign.lifecycleStatus));
+  }
+}
 
 function sanitizeAlternatives(raw: unknown, showScores: boolean, forCustomer: boolean) {
   if (!Array.isArray(raw)) return [];
@@ -572,7 +588,10 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
               }
             : null,
           _count: campaign._count,
-          canEdit: canMutateCampaign(request.user, campaign),
+          planningLocked: campaignPlanningLockedForApi(campaign.lifecycleStatus),
+          canEdit:
+            canMutateCampaign(request.user, campaign) &&
+            !campaignPlanningLockedForApi(campaign.lifecycleStatus),
         };
       }),
       listMeta(query.page, query.limit, total)
@@ -627,7 +646,10 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
         campaign.mediaPlans.some(
           (p) => p.status === "DRAFT" && p.name.toLowerCase().includes("request")
         ),
-      canEdit: canMutateCampaign(request.user, campaign),
+      planningLocked: campaignPlanningLockedForApi(campaign.lifecycleStatus),
+      canEdit:
+        canMutateCampaign(request.user, campaign) &&
+        !campaignPlanningLockedForApi(campaign.lifecycleStatus),
       mediaPlans: campaign.mediaPlans.map((plan) => ({
         ...plan,
         isPrimary: primaryPlan?.id === plan.id,
@@ -726,6 +748,12 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
           alreadyLive: true,
         });
       }
+      if (
+        journeyGapsEnabled() &&
+        isCampaignPlanningLocked(campaign.lifecycleStatus)
+      ) {
+        throw validationError(campaignPlanningLockMessage(campaign.lifecycleStatus));
+      }
       try {
         const result = await markCampaignLive(prisma, {
           campaignId: id,
@@ -820,6 +848,7 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
     });
     if (!existing) throw notFound("Campaign not found");
     if (!canMutateCampaign(request.user, existing)) throw forbidden();
+    assertCampaignPlanningEditable(existing);
 
     const body = updateCampaignBodySchema.parse(request.body ?? {});
     const advertiserId = await resolveAdvertiserId(body);
@@ -871,6 +900,7 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
     const existing = await prisma.campaign.findUnique({ where: { id } });
     if (!existing) throw notFound("Campaign not found");
     if (!canMutateCampaign(request.user, existing)) throw forbidden();
+    assertCampaignPlanningEditable(existing);
     await prisma.campaign.delete({ where: { id } });
     return success({ deleted: true, id });
   });
@@ -883,6 +913,8 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
       const campaignId = uuidSchema.parse((request.params as { id: string }).id);
       const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
       if (!campaign) throw notFound("Campaign not found");
+      if (!canMutateCampaign(request.user, campaign)) throw forbidden();
+      assertCampaignPlanningEditable(campaign);
 
       const body = updateCampaignBriefBodySchema.parse(request.body);
       const hasStructured = Boolean(
@@ -918,6 +950,8 @@ export async function campaignRoutes(fastify: FastifyInstance, ai: AIProvider) {
         include: { brief: true },
       });
       if (!campaign?.brief?.sourceText) throw notFound("Campaign brief not found");
+      if (!canMutateCampaign(request.user, campaign)) throw forbidden();
+      assertCampaignPlanningEditable(campaign);
 
       try {
         const result = await ai.completeStructured({
@@ -1159,6 +1193,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
       if (!campaign) throw notFound("Campaign not found");
       if (!canMutateCampaign(request.user, campaign)) throw forbidden();
+      assertCampaignPlanningEditable(campaign);
 
       const preview = await getMediaPlanPlanningPreview(prisma, campaignId);
       if (!preview) throw notFound("Campaign not found");
@@ -1177,6 +1212,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
       if (!campaign) throw notFound("Campaign not found");
       if (!canMutateCampaign(request.user, campaign)) throw forbidden();
+      assertCampaignPlanningEditable(campaign);
 
       const body = optimizeMediaPlanBodySchema.parse(request.body ?? {});
 
@@ -1220,6 +1256,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
               startDate: true,
               endDate: true,
               createdByUserId: true,
+              lifecycleStatus: true,
               brief: { select: { structuredRequirementsJson: true } },
             },
           },
@@ -1250,11 +1287,33 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
         isSiteRequest,
         lifecycleStatus: (serialized as { campaign?: { lifecycleStatus?: string } }).campaign
           ?.lifecycleStatus,
-        canApprove: canApproveMediaPlan(request.user) && (plan.status === "DRAFT" || plan.status === "PROPOSED"),
-        canRespond:
-          canRespondToSiteRequest(request.user) &&
-          plan.status === "DRAFT" &&
-          ownedItemCount > 0,
+        planningLocked: campaignPlanningLockedForApi(
+          (serialized as { campaign?: { lifecycleStatus?: string } }).campaign?.lifecycleStatus
+        ),
+        canApprove:
+          !campaignPlanningLockedForApi(
+            (serialized as { campaign?: { lifecycleStatus?: string } }).campaign?.lifecycleStatus
+          ) &&
+          canApproveMediaPlan(request.user) &&
+          (plan.status === "DRAFT" || plan.status === "PROPOSED"),
+        canRespond: journeyGapsEnabled()
+          ? !campaignPlanningLockedForApi(
+              (serialized as { campaign?: { lifecycleStatus?: string } }).campaign
+                ?.lifecycleStatus
+            ) &&
+            canRespondToSiteRequest(request.user) &&
+            ownedItemCount > 0 &&
+            (plan.status === "DRAFT" ||
+              (plan.status === "APPROVED" &&
+                plan.items.some(
+                  (item) =>
+                    item.inventory.screen.location.organizationId === orgId &&
+                    ((item as { approvalStatus?: string }).approvalStatus ?? "PENDING") ===
+                      "PENDING"
+                )))
+          : canRespondToSiteRequest(request.user) &&
+            plan.status === "DRAFT" &&
+            ownedItemCount > 0,
         ownedItemCount,
         pricingVisible:
           !isVendorUser(request.user) || plan.status === "APPROVED",
@@ -1274,6 +1333,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
       if (!campaign) throw notFound("Campaign not found");
       if (!canMutateCampaign(request.user, campaign)) throw forbidden();
+      assertCampaignPlanningEditable(campaign);
 
       const plan = await prisma.mediaPlan.findFirst({
         where: { id: planId, campaignId },
@@ -1428,6 +1488,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
           ],
         }
       : {};
+    const vendorOrgId = request.user.organizationId ?? "__none__";
     const vendorScope = isVendorUser(request.user)
       ? {
           OR: [
@@ -1438,12 +1499,29 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
                 some: {
                   inventory: {
                     screen: {
-                      location: { organizationId: request.user.organizationId ?? "__none__" },
+                      location: { organizationId: vendorOrgId },
                     },
                   },
                 },
               },
             },
+            ...(journeyGapsEnabled()
+              ? [
+                  {
+                    status: "APPROVED" as const,
+                    items: {
+                      some: {
+                        approvalStatus: "PENDING" as const,
+                        inventory: {
+                          screen: {
+                            location: { organizationId: vendorOrgId },
+                          },
+                        },
+                      },
+                    },
+                  },
+                ]
+              : []),
           ],
         }
       : {};
@@ -1470,6 +1548,13 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
               brief: { select: { structuredRequirementsJson: true } },
             },
           },
+          ...(journeyGapsEnabled()
+            ? {
+                items: {
+                  select: { approvalStatus: true },
+                },
+              }
+            : {}),
           _count: { select: { items: true } },
         },
       }),
@@ -1483,7 +1568,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
           isSiteRequestBrief(briefJson) ||
           plan.status === "DRAFT" ||
           plan.name.toLowerCase().includes("request");
-        return {
+        const base = {
           ...plan,
           campaign: plan.campaign
             ? {
@@ -1502,7 +1587,29 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
                 ? Number(plan.totalBudget)
                 : null,
           isSiteRequest,
-          canApprove: canApproveMediaPlan(request.user) && (plan.status === "DRAFT" || plan.status === "PROPOSED"),
+          canApprove:
+            canApproveMediaPlan(request.user) &&
+            (plan.status === "DRAFT" || plan.status === "PROPOSED"),
+        };
+        if (!journeyGapsEnabled()) {
+          return base;
+        }
+        const pendingVendorItemCount = (
+          plan as { items?: { approvalStatus: string }[] }
+        ).items?.filter((item) => item.approvalStatus === "PENDING").length ?? 0;
+        const { items: _items, ...planRest } = plan as typeof plan & {
+          items: { approvalStatus: string }[];
+        };
+        return {
+          ...planRest,
+          campaign: base.campaign,
+          totalBudget: base.totalBudget,
+          isSiteRequest: base.isSiteRequest,
+          pendingVendorItemCount,
+          needsVendorAction: plan.status === "APPROVED" && pendingVendorItemCount > 0,
+          canApprove:
+            !campaignPlanningLockedForApi(plan.campaign?.lifecycleStatus) &&
+            base.canApprove,
         };
       }),
       listMeta(query.page, query.limit, total)
@@ -1518,6 +1625,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
       if (!campaign) throw notFound("Campaign not found");
       if (!canMutateCampaign(request.user, campaign)) throw forbidden();
+      assertCampaignPlanningEditable(campaign);
 
       const body = buildMediaPlanFromSelectionBodySchema.parse(request.body);
       // Site requests (vendors + planners picking sites) are DRAFT until approved
@@ -1569,9 +1677,13 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
 
       const plan = await prisma.mediaPlan.findFirst({
         where: { id: planId, campaignId },
-        include: { items: { select: { inventoryId: true } } },
+        include: {
+          items: { select: { inventoryId: true } },
+          campaign: { select: { lifecycleStatus: true } },
+        },
       });
       if (!plan) throw notFound("Media plan not found");
+      assertCampaignPlanningEditable(plan.campaign);
 
       // DRAFT site requests or PROPOSED planner packs → APPROVED | REJECTED
       const canTransition =
@@ -1672,7 +1784,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
     }
   );
 
-  /** Vendor approves/rejects their owned sites inside a draft site request. */
+  /** Vendor approves/rejects owned sites on a draft request or current (APPROVED) plan. */
   fastify.post(
     "/campaigns/:campaignId/media-plans/:planId/respond",
     { preHandler: [fastify.authenticate] },
@@ -1687,6 +1799,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       const plan = await prisma.mediaPlan.findFirst({
         where: { id: planId, campaignId, status: { in: ["DRAFT", "APPROVED"] } },
         include: {
+          campaign: { select: { lifecycleStatus: true } },
           items: {
             include: {
               inventory: {
@@ -1698,7 +1811,8 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
           },
         },
       });
-      if (!plan) throw notFound("Draft request not found");
+      if (!plan) throw notFound("Media plan not found");
+      assertCampaignPlanningEditable(plan.campaign);
 
       const ownedItems = plan.items.filter(
         (item) => item.inventory.screen.location.organizationId === orgId
@@ -1707,13 +1821,24 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
         throw forbidden("This request has no inventory from your organization");
       }
 
+      const respondPool = journeyGapsEnabled()
+        ? ownedItems.filter(
+            (item) =>
+              ((item as { approvalStatus?: string }).approvalStatus ?? "PENDING") === "PENDING"
+          )
+        : ownedItems;
+
       const targetIds = body.inventoryIds?.length
-        ? ownedItems
+        ? respondPool
             .filter((item) => body.inventoryIds!.includes(item.inventoryId))
             .map((item) => item.id)
-        : ownedItems.map((item) => item.id);
+        : respondPool.map((item) => item.id);
       if (targetIds.length === 0) {
-        throw validationError("No matching owned sites in this request");
+        throw validationError(
+          journeyGapsEnabled() && respondPool.length === 0
+            ? "No pending sites left for your organization on this plan"
+            : "No matching owned sites in this request"
+        );
       }
 
       const inventoryIds = plan.items
@@ -1788,6 +1913,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
               startDate: true,
               endDate: true,
               createdByUserId: true,
+              lifecycleStatus: true,
               brief: { select: { structuredRequirementsJson: true } },
             },
           },
@@ -1796,6 +1922,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       });
       if (!plan) throw notFound("Media plan not found");
       if (!canMutateCampaign(request.user, plan.campaign)) throw forbidden();
+      assertCampaignPlanningEditable(plan.campaign);
 
       const currentItem = plan.items.find((item) => item.id === itemId);
       if (!currentItem) throw notFound("Plan item not found");
@@ -1896,6 +2023,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
               startDate: true,
               endDate: true,
               createdByUserId: true,
+              lifecycleStatus: true,
               brief: { select: { structuredRequirementsJson: true } },
             },
           },
@@ -1904,6 +2032,7 @@ export async function mediaPlanRoutes(fastify: FastifyInstance, env: Env) {
       });
       if (!plan) throw notFound("Media plan not found");
       if (!canMutateCampaign(request.user, plan.campaign)) throw forbidden();
+      assertCampaignPlanningEditable(plan.campaign);
       if (plan.items.some((item) => item.inventoryId === body.inventoryId)) {
         throw validationError("That site is already in this plan.");
       }

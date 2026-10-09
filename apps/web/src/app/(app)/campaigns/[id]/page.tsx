@@ -20,6 +20,7 @@ import { formatDateIn, durationDaysBetweenIso } from "@/lib/dates";
 import { CampaignSummary } from "@/components/campaign-summary";
 import { CampaignReservationPanel } from "@/components/campaign-reservation-panel";
 import { CampaignCommitmentPanel } from "@/components/campaign-commitment-panel";
+import { showJourneyGaps } from "@/lib/feature-flags";
 import { showAdtechBooking } from "@/lib/feature-flags";
 import { PageHeaderSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -63,6 +64,7 @@ interface CampaignDetail {
   endDate?: string | null;
   createdByUserId?: string | null;
   canEdit?: boolean;
+  planningLocked?: boolean;
   isSiteRequest?: boolean;
   readyForSiteRequests?: boolean;
   readyForSiteRequestsAt?: string | null;
@@ -389,17 +391,41 @@ export default function CampaignDetailPage() {
             {error}
           </p>
         ) : null}
+        {showJourneyGaps() &&
+        (campaign.planningLocked ||
+          campaign.lifecycleStatus === "ACTIVE" ||
+          campaign.lifecycleStatus === "COMPLETED" ||
+          campaign.lifecycleStatus === "CANCELLED") ? (
+          <div className="mt-3 max-w-xl rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <p className="text-sm font-semibold text-slate-900">
+              {campaign.lifecycleStatus === "COMPLETED"
+                ? "Campaign completed — planning locked"
+                : campaign.lifecycleStatus === "CANCELLED"
+                  ? "Campaign cancelled — planning locked"
+                  : "Campaign live — planning locked"}
+            </p>
+            <p className="mt-0.5 text-sm text-muted">
+              Flight dates, brief, current plan, and site mix cannot be changed after launch.
+            </p>
+          </div>
+        ) : null}
         {!isSiteRequest ? (
           <div className="mt-3">
             {campaign.readyForSiteRequests ? (
-              <p className="text-sm text-emerald-800">
-                <span className="font-semibold">Ready for site requests.</span> Brands can send
-                sites to media owners.
-              </p>
+              <div className="max-w-xl rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                <p className="text-sm font-semibold text-emerald-900">
+                  Ready for site requests
+                </p>
+                <p className="mt-0.5 text-sm text-emerald-800">
+                  Brands can send sites to media owners from Locations. This does not mark the
+                  campaign live.
+                </p>
+              </div>
             ) : campaign.canMarkReady ? (
-              <div className="flex max-w-xl flex-wrap items-center gap-3 rounded-lg border border-primary/15 bg-primary/[0.04] px-3 py-2.5">
-                <p className="min-w-0 flex-1 text-sm text-slate-700">
-                  Unlock site requests for brands
+              <div className="flex max-w-xl flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                <p className="min-w-0 flex-1 text-sm text-amber-950">
+                  <span className="font-semibold">Site requests locked.</span> Mark ready so brands
+                  can send inventory to media owners.
                 </p>
                 <button
                   type="button"
@@ -407,11 +433,18 @@ export default function CampaignDetailPage() {
                   disabled={readyMutation.isPending}
                   onClick={() => readyMutation.mutate()}
                 >
-                  {readyMutation.isPending ? "…" : "Mark ready"}
+                  {readyMutation.isPending ? "…" : "Mark ready for site requests"}
                 </button>
               </div>
             ) : (
-              <p className="text-sm text-muted">Waiting for Skyarc to mark ready.</p>
+              <div className="max-w-xl rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                <p className="text-sm font-semibold text-slate-900">
+                  Waiting for Skyarc to mark ready
+                </p>
+                <p className="mt-0.5 text-sm text-muted">
+                  Brands cannot send site requests until Skyarc unlocks this campaign.
+                </p>
+              </div>
             )}
           </div>
         ) : null}
@@ -479,8 +512,8 @@ export default function CampaignDetailPage() {
               </h2>
               <p className="mt-0.5 text-sm text-muted">
                 {adtechBooking
-                  ? "Open a plan to curate sites. Use Set as current plan to lock the pack for hold & vendor approval."
-                  : "Open a plan to curate sites. Use Set as current plan to choose the pack for this campaign."}
+                  ? "Open a plan to curate sites. Set as current plan soft-holds inventory for vendor approval — it does not mark the campaign live."
+                  : "Open a plan to curate sites. Set as current plan chooses the pack — Mark live is a separate step when you are ready to launch."}
               </p>
             </div>
             <div>
@@ -540,11 +573,12 @@ export default function CampaignDetailPage() {
           </aside>
         </div>
 
-        {!isSiteRequest && !isClient ? (
+        {!isSiteRequest ? (
           <CampaignCommitmentPanel
             campaignId={campaign.id}
-            canEdit={canEdit}
+            canEdit={canEdit && !isClient}
             startDate={campaign.startDate}
+            audience={isClient ? "client" : "internal"}
           />
         ) : null}
 

@@ -30,3 +30,14 @@ pnpm orbit:dev
 5. Atlas `GET /api/v1/screens/:id/orbit-status` shows summary
 
 Smoke: `LOCATION_ID=... pnpm orbit:e2e`
+
+
+## MQTT
+
+Optional. Set `ORBIT_MQTT_ENABLED=true` and `ORBIT_MQTT_URL` so Orbit Cloud subscribes to your broker.
+
+Devices: username = `orbitDeviceId`, password = `deviceSecret` from enroll.
+
+Topics: `orbit/skyarc/{deviceId}/heartbeat` · `…/telemetry`
+
+Partner guide: `docs/architecture/ORBIT_MQTT_HARDWARE_GUIDE.md`

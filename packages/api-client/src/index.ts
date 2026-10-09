@@ -675,6 +675,53 @@ export class ApiClient {
     );
   }
 
+  async uploadLiveCampaignProof(
+    locationId: string,
+    campaignId: string,
+    file: Blob,
+    contentType: string
+  ): Promise<ApiResponse<unknown>> {
+    const assetId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (ch) => {
+            const n = (Math.random() * 16) | 0;
+            const v = ch === "x" ? n : (n & 0x3) | 0x8;
+            return v.toString(16);
+          });
+    const byteSize =
+      typeof (file as Blob).size === "number" ? (file as Blob).size : 0;
+    const presign = await this.presignAsset(locationId, {
+      assetId,
+      kind: "CAMPAIGN_LIVE_PROOF",
+      campaignId,
+      contentType,
+      byteSize,
+    });
+    const uploadResponse = await fetch(presign.data.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: file,
+    });
+    if (!uploadResponse.ok) {
+      throw new Error(`Storage upload failed (${uploadResponse.status})`);
+    }
+    return this.confirmAsset(locationId, assetId, { byteSize });
+  }
+
+  listLiveProofTargets(locationId: string) {
+    return this.request<{
+      campaigns: Array<{
+        id: string;
+        name: string;
+        advertiserName: string;
+        startDate: string | null;
+        endDate: string | null;
+      }>;
+      canUpload: boolean;
+    }>(`/locations/${locationId}/live-proof-targets`);
+  }
+
   async uploadLocationPhoto(
     locationId: string,
     view: string,
@@ -1132,14 +1179,15 @@ export class ApiClient {
     }>("/organizations/me");
   }
 
-  listOrganizations(page = 1, limit = 20) {
-    return this.request<unknown[]>(`/organizations?page=${page}&limit=${limit}`);
+  listOrganizations(page = 1, limit = 20, type: "VENDOR" | "CLIENT" | "ALL" = "VENDOR") {
+    const typeQ = type ? `&type=${encodeURIComponent(type)}` : "";
+    return this.request<unknown[]>(`/organizations?page=${page}&limit=${limit}${typeQ}`);
   }
 
-  createOrganization(name: string) {
+  createOrganization(name: string, type: "VENDOR" | "CLIENT" = "VENDOR") {
     return this.request<unknown>("/organizations", {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, type }),
     });
   }
 
@@ -1189,6 +1237,19 @@ export class ApiClient {
     }>(`/organizations/${id}/request-availability`, {
       method: "POST",
       body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  createUser(data: {
+    email: string;
+    password: string;
+    name: string;
+    role: string;
+    organizationId?: string;
+  }) {
+    return this.request<unknown>("/users", {
+      method: "POST",
+      body: JSON.stringify(data),
     });
   }
 
