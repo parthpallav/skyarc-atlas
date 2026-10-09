@@ -1179,14 +1179,15 @@ export class ApiClient {
     }>("/organizations/me");
   }
 
-  listOrganizations(page = 1, limit = 20) {
-    return this.request<unknown[]>(`/organizations?page=${page}&limit=${limit}`);
+  listOrganizations(page = 1, limit = 20, type: "VENDOR" | "CLIENT" | "ALL" = "VENDOR") {
+    const typeQ = type ? `&type=${encodeURIComponent(type)}` : "";
+    return this.request<unknown[]>(`/organizations?page=${page}&limit=${limit}${typeQ}`);
   }
 
-  createOrganization(name: string) {
+  createOrganization(name: string, type: "VENDOR" | "CLIENT" = "VENDOR") {
     return this.request<unknown>("/organizations", {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, type }),
     });
   }
 
@@ -1236,6 +1237,19 @@ export class ApiClient {
     }>(`/organizations/${id}/request-availability`, {
       method: "POST",
       body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  createUser(data: {
+    email: string;
+    password: string;
+    name: string;
+    role: string;
+    organizationId?: string;
+  }) {
+    return this.request<unknown>("/users", {
+      method: "POST",
+      body: JSON.stringify(data),
     });
   }
 

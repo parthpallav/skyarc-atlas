@@ -19,7 +19,13 @@ import { createWebApiClient } from "@/lib/api";
 import { exportMediaPlanXlsx } from "@/lib/pulse-api";
 import { formatInr } from "@/lib/format";
 import { usePermissions } from "@/hooks/use-permissions";
-import { formatInventoryType, formatLighting, siteLabelForAudience } from "@skyarc/shared";
+import { showJourneyGaps } from "@/lib/feature-flags";
+import {
+  formatInventoryType,
+  formatLighting,
+  isCampaignPlanningLocked,
+  siteLabelForAudience,
+} from "@skyarc/shared";
 import { trackEntityView, trackBusinessEvent } from "@/lib/clarity-telemetry";
 import {
   SiteMetricsBars,
@@ -118,6 +124,8 @@ interface MediaPlanDetail {
   createdAt: string;
   canApprove?: boolean;
   canRespond?: boolean;
+  planningLocked?: boolean;
+  lifecycleStatus?: string;
   isSiteRequest?: boolean;
   ownedItemCount?: number;
   pricingVisible?: boolean;
@@ -681,8 +689,14 @@ export default function MediaPlanDetailPage() {
           (item.pricing?.vendorRate != null && item.pricing.vendorRate > 0)
       ).length
     : 0;
-  const canApprove = Boolean(plan.canApprove) || (isInternal && (plan.status === "DRAFT" || plan.status === "PROPOSED"));
-  const canRespond = Boolean(plan.canRespond);
+  const planningLocked =
+    showJourneyGaps() &&
+    (Boolean(plan.planningLocked) || isCampaignPlanningLocked(plan.lifecycleStatus));
+  const canApprove =
+    !planningLocked &&
+    (Boolean(plan.canApprove) ||
+      (isInternal && (plan.status === "DRAFT" || plan.status === "PROPOSED")));
+  const canRespond = !planningLocked && Boolean(plan.canRespond);
   const statusBadge = planLifecycleBadge(plan.status, plan.isSiteRequest);
   const displayName =
     plan.isSiteRequest || plan.status === "DRAFT"
@@ -729,6 +743,19 @@ export default function MediaPlanDetailPage() {
 
   const alerts = (
     <>
+      {planningLocked ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800">
+          <span className="font-semibold">
+            {plan.lifecycleStatus === "COMPLETED"
+              ? "Campaign completed"
+              : plan.lifecycleStatus === "CANCELLED"
+                ? "Campaign cancelled"
+                : "Campaign live"}
+            — planning locked.
+          </span>{" "}
+          Current plan and site mix cannot be changed.
+        </div>
+      ) : null}
       {missingStandardRateCount > 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
           <span className="font-semibold">
@@ -946,7 +973,7 @@ export default function MediaPlanDetailPage() {
     }
 
     const rate = siteRate(selectedItem);
-    const canEditMix = isAdmin;
+    const canEditMix = isAdmin && !planningLocked;
 
     return (
       <div className={cn(workspacePanel, "rounded-2xl shadow-sm")}>
@@ -1199,7 +1226,7 @@ export default function MediaPlanDetailPage() {
                 </button>
               </div>
             ) : null}
-            {isAdmin ? (
+            {isAdmin && !planningLocked ? (
               <button
                 type="button"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"

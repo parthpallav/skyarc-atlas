@@ -20,6 +20,7 @@ import { formatDateIn, durationDaysBetweenIso } from "@/lib/dates";
 import { CampaignSummary } from "@/components/campaign-summary";
 import { CampaignReservationPanel } from "@/components/campaign-reservation-panel";
 import { CampaignCommitmentPanel } from "@/components/campaign-commitment-panel";
+import { showJourneyGaps } from "@/lib/feature-flags";
 import { showAdtechBooking } from "@/lib/feature-flags";
 import { PageHeaderSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -63,6 +64,7 @@ interface CampaignDetail {
   endDate?: string | null;
   createdByUserId?: string | null;
   canEdit?: boolean;
+  planningLocked?: boolean;
   isSiteRequest?: boolean;
   readyForSiteRequests?: boolean;
   readyForSiteRequestsAt?: string | null;
@@ -388,6 +390,24 @@ export default function CampaignDetailPage() {
           <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </p>
+        ) : null}
+        {showJourneyGaps() &&
+        (campaign.planningLocked ||
+          campaign.lifecycleStatus === "ACTIVE" ||
+          campaign.lifecycleStatus === "COMPLETED" ||
+          campaign.lifecycleStatus === "CANCELLED") ? (
+          <div className="mt-3 max-w-xl rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <p className="text-sm font-semibold text-slate-900">
+              {campaign.lifecycleStatus === "COMPLETED"
+                ? "Campaign completed — planning locked"
+                : campaign.lifecycleStatus === "CANCELLED"
+                  ? "Campaign cancelled — planning locked"
+                  : "Campaign live — planning locked"}
+            </p>
+            <p className="mt-0.5 text-sm text-muted">
+              Flight dates, brief, current plan, and site mix cannot be changed after launch.
+            </p>
+          </div>
         ) : null}
         {!isSiteRequest ? (
           <div className="mt-3">

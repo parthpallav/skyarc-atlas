@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
+import { showJourneyGaps } from "@/lib/feature-flags";
 import { createWebApiClient } from "@/lib/api";
 import { isoToYmd } from "@/lib/dates";
 import { PageHeader } from "@/components/page-header";
@@ -18,6 +19,8 @@ interface CampaignEditData {
   endDate?: string | null;
   createdByUserId?: string | null;
   canEdit?: boolean;
+  planningLocked?: boolean;
+  lifecycleStatus?: string;
   advertiser?: { name: string };
   brief?: {
     sourceText?: string | null;
@@ -91,6 +94,35 @@ export default function EditCampaignPage() {
 
   if (isLoading || !campaign || !initial) {
     return <div className="max-w-3xl mx-auto w-full pb-12 text-sm text-muted">Loading campaign…</div>;
+  }
+
+  if (
+    showJourneyGaps() &&
+    (campaign.planningLocked ||
+      campaign.lifecycleStatus === "ACTIVE" ||
+      campaign.lifecycleStatus === "COMPLETED" ||
+      campaign.lifecycleStatus === "CANCELLED")
+  ) {
+    return (
+      <div className="max-w-3xl mx-auto w-full pb-12">
+        <p className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+          This campaign is{" "}
+          {campaign.lifecycleStatus === "COMPLETED"
+            ? "completed"
+            : campaign.lifecycleStatus === "CANCELLED"
+              ? "cancelled"
+              : "live"}
+          . Flight dates, brief, and budget can no longer be changed.
+        </p>
+        <Link
+          href={`/campaigns/${id}`}
+          className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to campaign
+        </Link>
+      </div>
+    );
   }
 
   if (!campaign.canEdit && !canMutateCampaign(campaign)) {

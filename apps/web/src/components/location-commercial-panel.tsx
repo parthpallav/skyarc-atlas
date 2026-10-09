@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { showJourneyGaps } from "@/lib/feature-flags";
 import { createWebApiClient } from "@/lib/api";
 
 interface CommercialView {
@@ -77,6 +78,7 @@ export function LocationCommercialPanel({
   if (!commercialView && !canWrite) return null;
 
   const missingRate =
+    showJourneyGaps() &&
     canWrite &&
     !defaultRateAmount.trim() &&
     (commercialView?.defaultRateAmount == null || commercialView.defaultRateAmount <= 0);
@@ -147,7 +149,7 @@ export function LocationCommercialPanel({
               <input
                 type="number"
                 min={1}
-                required
+                required={showJourneyGaps()}
                 placeholder="e.g. 150000"
                 value={defaultRateAmount}
                 onChange={(e) => setDefaultRateAmount(e.target.value)}
@@ -200,7 +202,7 @@ export function LocationCommercialPanel({
           ) : null}
           <button
             type="submit"
-            disabled={saveMutation.isPending || !defaultRateAmount.trim()}
+            disabled={saveMutation.isPending || (showJourneyGaps() && !defaultRateAmount.trim())}
             className="btn-primary px-5 py-2.5 text-sm disabled:opacity-50"
           >
             {saveMutation.isPending ? "Saving…" : "Save vendor card rate"}

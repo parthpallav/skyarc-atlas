@@ -21,3 +21,11 @@ export function showOrbitUi(): boolean {
 export function showAdtechBooking(): boolean {
   return process.env.NEXT_PUBLIC_ADTECH_BOOKING === "true";
 }
+
+/**
+ * Journey-gap UX and API companion behaviors (planning lock, admin customers, live proofs,
+ * vendor pending on active plans, etc.). Opt-in only; production default is classic main UX.
+ */
+export function showJourneyGaps(): boolean {
+  return process.env.NEXT_PUBLIC_JOURNEY_GAPS === "true";
+}

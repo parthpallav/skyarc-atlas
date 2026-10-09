@@ -34,6 +34,7 @@ import {
   assertCanMutateLiveProof,
   listLiveProofTargetCampaigns,
 } from "../../lib/live-proof.js";
+import { journeyGapsEnabled } from "../../lib/journey-gaps.js";
 
 async function serializeAsset(
   asset: {
@@ -241,6 +242,9 @@ export async function assetRoutes(
       if (isClientUser(request.user) || isReadOnly(request.user)) {
         return success({ campaigns: [] as const, canUpload: false });
       }
+      if (!journeyGapsEnabled()) {
+        return success({ campaigns: [] as const, canUpload: false });
+      }
       const campaigns = await listLiveProofTargetCampaigns(locationId);
       return success({
         campaigns,
@@ -258,13 +262,19 @@ export async function assetRoutes(
       if (!location) throw notFound("Location not found");
 
       const body = presignAssetBodySchema.parse(request.body);
+      if (
+        !canWriteLocation(request.user, location) ||
+        isReadOnly(request.user)
+      ) {
+        throw forbidden();
+      }
       if (body.kind === AssetKind.CAMPAIGN_LIVE_PROOF) {
         if (!body.campaignId) {
           throw validationError("campaignId is required for live campaign proof photos");
         }
-        await assertCanMutateLiveProof(request.user, location, body.campaignId);
-      } else if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
-        throw forbidden();
+        if (journeyGapsEnabled()) {
+          await assertCanMutateLiveProof(request.user, location, body.campaignId);
+        }
       }
       if (
         (body.kind === AssetKind.PHOTO || body.kind === AssetKind.CAMPAIGN_LIVE_PROOF) &&
@@ -358,7 +368,11 @@ export async function assetRoutes(
 
       if (asset.kind === AssetKind.CAMPAIGN_LIVE_PROOF) {
         if (!asset.campaignId) throw forbidden();
-        await assertCanMutateLiveProof(request.user, location, asset.campaignId);
+        if (journeyGapsEnabled()) {
+          await assertCanMutateLiveProof(request.user, location, asset.campaignId);
+        } else if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
+          throw forbidden();
+        }
       } else if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
         throw forbidden();
       }
@@ -466,7 +480,11 @@ export async function assetRoutes(
 
       if (asset.kind === AssetKind.CAMPAIGN_LIVE_PROOF) {
         if (!asset.campaignId) throw forbidden();
-        await assertCanMutateLiveProof(request.user, location, asset.campaignId);
+        if (journeyGapsEnabled()) {
+          await assertCanMutateLiveProof(request.user, location, asset.campaignId);
+        } else if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
+          throw forbidden();
+        }
       } else if (!canWriteLocation(request.user, location) || isReadOnly(request.user)) {
         throw forbidden();
       }

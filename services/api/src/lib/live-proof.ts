@@ -12,6 +12,7 @@ import {
 } from "@skyarc/shared";
 import { prisma } from "./prisma.js";
 import { forbidden, validationError } from "./errors.js";
+import { journeyGapsEnabled } from "./journey-gaps.js";
 
 export type LiveProofCampaignRow = {
   id: string;
@@ -105,6 +106,18 @@ export async function assertCanMutateLiveProof(
   location: LocationRecord,
   campaignId: string
 ): Promise<LiveProofCampaignRow> {
+  if (!journeyGapsEnabled()) {
+    if (!canWriteLocation(user, location) || isReadOnly(user)) {
+      throw forbidden();
+    }
+    return {
+      id: campaignId,
+      name: "",
+      advertiserName: "",
+      startDate: null,
+      endDate: null,
+    };
+  }
   if (isReadOnly(user) || isClientUser(user)) {
     throw forbidden();
   }

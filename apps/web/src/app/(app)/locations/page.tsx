@@ -46,7 +46,7 @@ import {
   SiteDemandSignals,
   type SiteInterest,
 } from "@/components/site-demand-signals";
-import { showAdtechBooking } from "@/lib/feature-flags";
+import { showAdtechBooking, showJourneyGaps } from "@/lib/feature-flags";
 
 interface PreviewMediaItem {
   id: string;
@@ -398,6 +398,28 @@ export default function LocationsPage() {
   const paginatedLocations = sortedLocations.slice(startIndex, startIndex + pageSize);
   const pageIds = paginatedLocations.map((l) => l.id);
 
+  /** Sites the current role may tick (admins always; others exclude fully booked). */
+  function isSelectableLocation(loc: Location): boolean {
+    if (canBulkGovern) return true;
+    if (viewingHidden) return false;
+    const forRequestPick =
+      isClient || isInternal || (isVendor && scope === "discovery");
+    if (!forRequestPick) return false;
+    return !isFullyUnavailable(loc);
+  }
+
+  const selectableFilteredIds = sortedLocations
+    .filter(isSelectableLocation)
+    .map((l) => l.id);
+  const selectablePageIds = paginatedLocations
+    .filter(isSelectableLocation)
+    .map((l) => l.id);
+  const allFilteredSelected =
+    selectableFilteredIds.length > 0 &&
+    selectableFilteredIds.every((id) => selected.has(id));
+  const allPageSelected =
+    selectablePageIds.length > 0 && selectablePageIds.every((id) => selected.has(id));
+
   const { data: interestPayload } = useQuery({
     queryKey: ["site-interest", pageIds.join(",")],
     queryFn: async () => {
@@ -530,6 +552,22 @@ export default function LocationsPage() {
       .touchLocationPresence?.(id, "list")
       ?.catch(() => undefined);
   };
+
+  function selectAllOnPage() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of selectablePageIds) next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllFiltered() {
+    setSelected(new Set(selectableFilteredIds));
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+  }
 
   const toggleRoad = (road: string) => {
     setRoadFilters((prev) => {
@@ -918,23 +956,72 @@ export default function LocationsPage() {
         )}
       </div>
 
-      <p className="px-0.5 text-xs text-slate-600">
-        <strong className="text-slate-900">{totalItems}</strong>
-        {totalItems === 1 ? " site" : " sites"}
-        <span className="text-muted"> · full catalog for this filter</span>
-        {typeFilter !== "ALL" ? (
-          <span className="text-muted">
-            {" "}
-            · {TYPE_FILTERS.find((t) => t.value === typeFilter)?.label}
-          </span>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
+        <p className="text-xs text-slate-600">
+          <strong className="text-slate-900">{totalItems}</strong>
+          {totalItems === 1 ? " site" : " sites"}
+          <span className="text-muted"> · full catalog for this filter</span>
+          {typeFilter !== "ALL" ? (
+            <span className="text-muted">
+              {" "}
+              · {TYPE_FILTERS.find((t) => t.value === typeFilter)?.label}
+            </span>
+          ) : null}
+          {roadFilters.size > 0 ? (
+            <span className="text-muted">
+              {" "}
+              · {roadFilters.size} corridor{roadFilters.size === 1 ? "" : "s"}
+            </span>
+          ) : null}
+          {selectableFilteredIds.length === 0 && totalItems > 0 ? (
+            <span className="text-amber-800">
+              {" "}
+              · none selectable (fully booked for these dates — try Open or widen flight)
+            </span>
+          ) : null}
+        </p>
+        {selectableFilteredIds.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <button
+              type="button"
+              className="font-semibold text-primary hover:underline disabled:opacity-40"
+              disabled={allPageSelected}
+              onClick={selectAllOnPage}
+            >
+              Select page ({selectablePageIds.length})
+            </button>
+            {showJourneyGaps() ? (
+              <>
+                <span className="text-muted" aria-hidden>
+                  ·
+                </span>
+                <button
+                  type="button"
+                  className="font-semibold text-primary hover:underline disabled:opacity-40"
+                  disabled={allFilteredSelected}
+                  onClick={selectAllFiltered}
+                >
+                  Select all ({selectableFilteredIds.length})
+                </button>
+              </>
+            ) : null}
+            {selected.size > 0 ? (
+              <>
+                <span className="text-muted" aria-hidden>
+                  ·
+                </span>
+                <button
+                  type="button"
+                  className="font-semibold text-slate-600 hover:underline"
+                  onClick={clearSelection}
+                >
+                  Clear
+                </button>
+              </>
+            ) : null}
+          </div>
         ) : null}
-        {roadFilters.size > 0 ? (
-          <span className="text-muted">
-            {" "}
-            · {roadFilters.size} corridor{roadFilters.size === 1 ? "" : "s"}
-          </span>
-        ) : null}
-      </p>
+      </div>
 
       {selected.size > 0 && (
         <div className="sticky top-[3.25rem] z-20 flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-white/95 px-3 py-2 shadow-md backdrop-blur">

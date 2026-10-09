@@ -17,6 +17,7 @@ import { formatDateIn } from "@/lib/dates";
 import { PageHeader } from "@/components/page-header";
 import { CampaignCardSkeleton } from "@/components/ui/skeleton";
 import { usePermissions } from "@/hooks/use-permissions";
+import { showJourneyGaps } from "@/lib/feature-flags";
 
 type ListFilter = "ALL" | "PENDING" | "APPROVED" | "REJECTED";
 
@@ -42,7 +43,11 @@ interface RequestRow {
 }
 
 function requestStatusMeta(row: RequestRow) {
-  if (row.needsVendorAction || (row.status === "APPROVED" && (row.pendingVendorItemCount ?? 0) > 0)) {
+  if (
+    showJourneyGaps() &&
+    (row.needsVendorAction ||
+      (row.status === "APPROVED" && (row.pendingVendorItemCount ?? 0) > 0))
+  ) {
     return {
       label:
         (row.pendingVendorItemCount ?? 0) > 0
@@ -78,6 +83,13 @@ function flightLabel(start?: string | null, end?: string | null) {
 }
 
 function isActionableRequestRow(row: RequestRow) {
+  if (!showJourneyGaps()) {
+    return (
+      Boolean(row.isSiteRequest) ||
+      row.status === "DRAFT" ||
+      row.name.toLowerCase().includes("request")
+    );
+  }
   const pendingOnCurrentPlan =
     row.status === "APPROVED" && (row.pendingVendorItemCount ?? 0) > 0;
   return (
@@ -89,6 +101,7 @@ function isActionableRequestRow(row: RequestRow) {
 }
 
 function isPendingAction(row: RequestRow) {
+  if (!showJourneyGaps()) return row.status === "DRAFT";
   return (
     row.status === "DRAFT" ||
     (row.status === "APPROVED" && (row.pendingVendorItemCount ?? 0) > 0)
@@ -97,9 +110,13 @@ function isPendingAction(row: RequestRow) {
 
 function matchesFilter(row: RequestRow, filter: ListFilter) {
   if (filter === "ALL") return true;
-  if (filter === "PENDING") return isPendingAction(row);
+  if (filter === "PENDING") {
+    return showJourneyGaps() ? isPendingAction(row) : row.status === "DRAFT";
+  }
   if (filter === "APPROVED") {
-    return row.status === "APPROVED" && (row.pendingVendorItemCount ?? 0) === 0;
+    return showJourneyGaps()
+      ? row.status === "APPROVED" && (row.pendingVendorItemCount ?? 0) === 0
+      : row.status === "APPROVED";
   }
   if (filter === "REJECTED") return row.status === "REJECTED";
   return true;
@@ -108,7 +125,7 @@ function matchesFilter(row: RequestRow, filter: ListFilter) {
 export default function RequestsPage() {
   const { isVendor, isInternal } = usePermissions();
   const [searchTerm, setSearchTerm] = useState("");
-  const [listFilter, setListFilter] = useState<ListFilter>("PENDING");
+  const [listFilter, setListFilter] = useState<ListFilter>(showJourneyGaps() ? "PENDING" : "ALL");
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["site-requests", searchTerm],
@@ -120,7 +137,9 @@ export default function RequestsPage() {
     // Near real-time: pick up vendor/admin approvals without a full refresh
     refetchInterval: (query) => {
       const rows = query.state.data as RequestRow[] | undefined;
-      const pending = rows?.some((r) => isPendingAction(r)) ?? false;
+      const pending = showJourneyGaps()
+        ? (rows?.some((r) => isPendingAction(r)) ?? false)
+        : (rows?.some((r) => r.status === "DRAFT") ?? false);
       return pending ? 12_000 : false;
     },
   });
@@ -133,8 +152,10 @@ export default function RequestsPage() {
 
   const stats = useMemo(() => {
     const pending = rows.filter((r) => isPendingAction(r)).length;
-    const approved = rows.filter(
-      (r) => r.status === "APPROVED" && (r.pendingVendorItemCount ?? 0) === 0
+    const approved = rows.filter((r) =>
+      showJourneyGaps()
+        ? r.status === "APPROVED" && (r.pendingVendorItemCount ?? 0) === 0
+        : r.status === "APPROVED"
     ).length;
     const rejected = rows.filter((r) => r.status === "REJECTED").length;
     return { total: rows.length, pending, approved, rejected };
@@ -287,7 +308,9 @@ export default function RequestsPage() {
             const status = requestStatusMeta(row);
             const siteCount = row._count?.items ?? 0;
             const href =
-              row.status === "APPROVED" && (row.pendingVendorItemCount ?? 0) > 0
+              showJourneyGaps() &&
+              row.status === "APPROVED" &&
+              (row.pendingVendorItemCount ?? 0) > 0
                 ? `/campaigns/${row.campaignId}/plans/${row.id}`
                 : `/requests/${row.campaignId}/${row.id}`;
             const pendingLines = row.pendingVendorItemCount ?? 0;

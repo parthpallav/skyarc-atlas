@@ -16,7 +16,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { ImageGallery } from "@/components/image-gallery";
 import { LocationInventoryPanel } from "@/components/location-inventory-panel";
 import { LocationOrbitTab } from "@/components/location-orbit-tab";
-import { showAdtechBooking, showOrbitUi } from "@/lib/feature-flags";
+import { showAdtechBooking, showJourneyGaps, showOrbitUi } from "@/lib/feature-flags";
 import { LocationCommercialPanel } from "@/components/location-commercial-panel";
 import { LocationSkyarcPricingPanel } from "@/components/location-skyarc-pricing-panel";
 import { formatInventoryType } from "@skyarc/shared";
@@ -805,16 +805,18 @@ export default function LocationDetailPage() {
                   isLoading={campaignHistoryLoading}
                   redactNames={isClient}
                 />
-                <LocationLiveProofPanel
-                  locationId={id}
-                  assets={assets}
-                  isClient={isClient}
-                  canUpload={
-                    !isClient &&
-                    !isReadOnly &&
-                    (canEdit || isFieldOperator || isVendor || isInternal)
-                  }
-                />
+                {showJourneyGaps() ? (
+                  <LocationLiveProofPanel
+                    locationId={id}
+                    assets={assets}
+                    isClient={isClient}
+                    canUpload={
+                      !isClient &&
+                      !isReadOnly &&
+                      (canEdit || isFieldOperator || isVendor || isInternal)
+                    }
+                  />
+                ) : null}
               </div>
             </div>
           </section>

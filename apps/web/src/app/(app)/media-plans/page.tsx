@@ -16,6 +16,7 @@ import { createWebApiClient } from "@/lib/api";
 import { formatInr, formatInrCompact } from "@/lib/format";
 import { formatDateIn } from "@/lib/dates";
 import { PageHeader } from "@/components/page-header";
+import { showJourneyGaps } from "@/lib/feature-flags";
 import { CampaignCardSkeleton } from "@/components/ui/skeleton";
 import { usePermissions } from "@/hooks/use-permissions";
 
@@ -76,6 +77,7 @@ function isPlanningPlan(plan: MediaPlanListRow) {
 }
 
 function hasVendorPending(plan: MediaPlanListRow) {
+  if (!showJourneyGaps()) return false;
   return (
     Boolean(plan.needsVendorAction) ||
     (plan.status === "APPROVED" && (plan.pendingVendorItemCount ?? 0) > 0)
@@ -121,7 +123,7 @@ export default function MediaPlansPage() {
     { id: "ALL", label: "All", count: stats.total },
     { id: "PROPOSED", label: "Proposed", count: stats.proposed },
     { id: "APPROVED", label: "Approved", count: stats.approved },
-    ...(!isVendor && !isClient
+    ...(showJourneyGaps() && !isVendor && !isClient
       ? [
           {
             id: "VENDOR_PENDING" as const,

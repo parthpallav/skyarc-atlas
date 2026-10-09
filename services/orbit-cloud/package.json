@@ -18,6 +18,7 @@
     "@prisma/client": "^6.1.0",
     "@skyarc/shared": "workspace:*",
     "fastify": "^5.2.0",
+    "mqtt": "^5.10.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

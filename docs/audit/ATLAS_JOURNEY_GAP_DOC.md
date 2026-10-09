@@ -68,7 +68,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | L-10 | Locations | Planner cards: no vendor cost when client rate empty | Planner, Admin | `DONE` 2026-10-07 — vendor rate fallback labeled on list + detail |
 | L-11 | Locations | Availability chips (Partial/Held/Booked) loud without slot meters | Planner, Client | `DONE` 2026-10-07 — classic quieter badges + free/capacity hint |
 | L-12 | Locations | VIEWER / VENDOR_OPS same screens as full roles, actions missing | VIEWER, VENDOR_OPS | `DONE` 2026-10-07 — app-shell view-only banner + role labels |
-| T-01 | Trading | ACTIVE campaign amounts must lock when rates change later — **confirmed**: plan/swap re-reads live rates; no ACTIVE commercial lock | Planner, Vendor, Admin | `OPEN` → D-04 |
+| T-01 | Trading | ACTIVE campaign amounts must lock when rates change later — **confirmed**: plan/swap re-reads live rates; no ACTIVE commercial lock | Planner, Vendor, Admin | `DONE` 2026-10-07 — ACTIVE/COMPLETED/CANCELLED freeze brief, dates, current plan, swap/add (allocated amounts stay on plan lines) |
 | T-02 | Trading | No Quotation / PO / Work Order for inventory trading — **confirmed** absent in classic prod | Planner, Client, Vendor, Admin | `OPEN` → D-05 |
 | C-01 | Campaigns | Vendor cannot approve sites on planner **current plan** in classic UI (Requests = DRAFT-only; booking respond AdTech-gated) | Planner, Vendor, Admin | `DONE` 2026-10-07 — canRespond on APPROVED + pending-only respond |
 | C-02 | Campaigns | Copy implies campaign becomes Active when all sites approved; real launch is **Mark live** only | Planner, Client | `DONE` 2026-10-07 — Mark live / current-plan copy clarified |
@@ -76,7 +76,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | C-04 | Campaigns | Brand site requests need Skyarc “Ready for site requests” — gate not obvious on campaign spine | Client, Planner | `DONE` 2026-10-07 — ready/locked banners on campaign header |
 | MP-01 | Media Plans | Plan lines omit per-site vendor approval status (pending / approved / rejected) | Planner | `DONE` 2026-10-07 — list + detail show vendor approval badge |
 | MP-02 | Media Plans | No planner line-level discount / negotiated rate on media plan editor | Planner | `OPEN` |
-| MP-03 | Media Plans | Plan add/swap on APPROVED packs without lifecycle / commercial lock (feeds T-01) | Planner, Admin | `OPEN` |
+| MP-03 | Media Plans | Plan add/swap on APPROVED packs without lifecycle / commercial lock (feeds T-01) | Planner, Admin | `DONE` 2026-10-07 — planningLocked when ACTIVE/COMPLETED/CANCELLED |
 | MP-04 | Media Plans | Packs vs site-request drafts split across Campaign / Requests / Media Plans — no single “pending vendor” view for current plans | Planner | `DONE` 2026-10-07 — Media Plans Vendor pending filter + Requests |
 | B-01 | Bookings | Bookings **stage UI** not in classic product (by design) — holds/ledger may still run under plans; do not add Bookings nav as a journey stage | Planner, Admin | `ACCEPTED` → D-08 |
 | B-02 | Bookings | Vendor confirm via AdTech booking path — N/A for classic journey; track under **C-01 / R-01** | Planner, Vendor | `ACCEPTED` → D-08 |
@@ -96,9 +96,10 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | MT-05 | Mounting | FIELD_OPERATOR mounting/proof blocked on vendor-owned sites (edit RBAC) | FO, Vendor | `OPEN` → L-08 |
 | R-01 | Requests | Requests list treats APPROVED like done; does not surface pending vendor items on planner’s **current** plan | Planner, Vendor | `DONE` 2026-10-07 — Needs action includes APPROVED + pending vendor lines |
 | M-01 | Map | *(fill on Map audit)* | | |
-| A-01 | Admin | *(fill on Admin onboard audit)* | | |
+| A-01 | Admin | No UI to create brand **customer** org / user — Admin Organizations was vendor-only (API createUser existed) | Admin, SA | `DONE` 2026-10-07 — Organizations Vendors/Customers tabs + create customer + Add user on detail |
 | O-01 | Org / Account | *(fill on Org/Account audit)* | | |
 | G-01 | Gated | *(confirm AdTech/Orbit stay out of classic prod)* | | |
+| G-02 | Gated / Digital | Classic prod: Digital Availability + slot meters hidden (`NEXT_PUBLIC_ADTECH_BOOKING=false` on main). Customer has no end-to-end slot pick/book path — only plan soft-holds. Slot UX lives behind AdTech (D-08) | Client, Planner | `OPEN` → D-08; do not unhide without product call |
 | CAL-01 | Calendar | No dedicated **Calendar** route/nav for booked sites + availability in one place | Client, Planner | `OPEN` / `NEEDED` |
 | CAL-02 | Calendar | No multi-site month/grid (sites × dates) for CLIENT_VIEWER | Client | `OPEN` |
 | CAL-03 | Calendar | Browse chips show Open/Held/Booked for selected flight — not who/which campaign booked the site | Client, Planner | `OPEN` |
@@ -106,7 +107,7 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 | CAL-05 | Calendar | Classic prod: no Bookings list / Availability tab (AdTech off) — not a substitute for calendar | Client | `ACCEPTED` → D-08 |
 | CAL-06 | Calendar | Client campaign review has no calendar of their booked/held sites (aligns C-03) | Client | `OPEN` |
 | SW-01 | Plan swap | Client self-serve swap/add UI missing (`canEditMix` false for clients); API only if campaign creator | Client | `OPEN` |
-| SW-02 | Plan swap | No plan-status / ACTIVE lifecycle guard on swap/add | Planner, Admin | `OPEN` → MP-03, T-01 |
+| SW-02 | Plan swap | No plan-status / ACTIVE lifecycle guard on swap/add | Planner, Admin | `DONE` 2026-10-07 → MP-03, T-01 |
 | SW-03 | Plan swap | Swap on APPROVED/current plan does not reset vendor line approval / re-confirm | Planner, Vendor | `OPEN` → C-01 |
 | SW-04 | Plan swap | Swap omits refreshed why/insights pitch copy for replaced line | Planner | `OPEN` |
 | SW-05 | Plan swap | Vendor has no substitute path on current plan (planner-only swap) | Vendor | `OPEN` → confirm product |
@@ -229,7 +230,18 @@ When an audit finishes, append gaps below (keep IDs stable: `V-##`, `L-##`, …)
 
 ### Requests — deep dive pending (R-01 already from joint audit)
 
-### Admin onboard — pending
+### Admin onboard — 2026-10-07 (partial)
+
+**Matches**
+- Create vendor + auto login; suspend/activate; reset links
+- **NEW:** Customers tab — create CLIENT org + CLIENT_VIEWER login; Add user on org detail
+
+**Gaps**
+- A-01 closed for customer create
+- V-01 still OPEN (VENDOR_OPS invite path / multi-user clarity)
+- No first-class “create MEDIA_PLANNER / internal user” directory (only via API / seed)
+
+### Admin onboard — remaining
 
 ### Org / Account — pending
 
