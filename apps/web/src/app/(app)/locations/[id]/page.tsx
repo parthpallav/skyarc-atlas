@@ -242,6 +242,7 @@ export default function LocationDetailPage() {
         canViewClientPricing: Boolean(authUser && canViewClientPricing),
         orbitUiEnabled: showOrbitUi(),
         adtechBookingEnabled: adtechBooking,
+        faceCount: typeof location?.faceCount === "number" ? location.faceCount : null,
       }),
     [
       isClient,
@@ -255,6 +256,7 @@ export default function LocationDetailPage() {
       authUser,
       canViewClientPricing,
       adtechBooking,
+      location?.faceCount,
     ]
   );
 
@@ -316,20 +318,6 @@ export default function LocationDetailPage() {
           }
         | undefined)
     : undefined;
-
-  // Admin metadata always surfaces vendor rate/margin when the API returns them.
-  const adminCommercial =
-    gates.showAdminTab
-      ? ((location.commercialView as
-          | {
-              marginPercent: number | null;
-              defaultRateAmount: number | null;
-              ratePeriod: string | null;
-              currency: string;
-              usesOrgDefaultMargin: boolean;
-            }
-          | undefined) ?? commercialView)
-      : undefined;
 
   // Rates tab is internal-only, but clients still need client rate on Overview (matches list cards).
   const skyarcCommercialView =
@@ -743,6 +731,12 @@ export default function LocationDetailPage() {
                     {showMediaOwner ? (
                       <OverviewRow label="Media owner" value={String(location.mediaOwner)} />
                     ) : null}
+                    {showVendorMediaCode ? (
+                      <OverviewRow label="Vendor media code" value={String(location.vendorMediaCode)} />
+                    ) : null}
+                    {isInternal && location.surveyStatus ? (
+                      <OverviewRow label="Survey status" value={String(location.surveyStatus)} />
+                    ) : null}
                     {location.mountingType ? (
                       <OverviewRow
                         label="Mounting"
@@ -869,60 +863,6 @@ export default function LocationDetailPage() {
 
         {tab === "orbit" && gates.showOrbitTab ? (
           <LocationOrbitTab locationId={id} canWrite={false} />
-        ) : null}
-
-        {tab === "admin" && gates.showAdminTab ? (
-          <section className="rounded-2xl border border-violet-100 bg-white p-5 shadow-card sm:p-6">
-            <h2 className="mb-4 font-semibold text-slate-900">Admin metadata</h2>
-            <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
-              {showMediaOwner ? (
-                <div>
-                  <dt className="text-xs font-medium text-muted">Media owner</dt>
-                  <dd className="mt-0.5 text-slate-900">{String(location.mediaOwner)}</dd>
-                </div>
-              ) : null}
-              {showVendorMediaCode ? (
-                <div>
-                  <dt className="text-xs font-medium text-muted">Vendor media code</dt>
-                  <dd className="mt-0.5 font-mono text-slate-900">
-                    {String(location.vendorMediaCode)}
-                  </dd>
-                </div>
-              ) : null}
-              <div>
-                <dt className="text-xs font-medium text-muted">Vendor rate</dt>
-                <dd className="mt-0.5 font-semibold tabular-nums text-slate-900">
-                  {adminCommercial?.defaultRateAmount != null
-                    ? `${adminCommercial.currency} ${adminCommercial.defaultRateAmount.toLocaleString()} / ${adminCommercial.ratePeriod ?? "monthly"}`
-                    : "—"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted">Margin</dt>
-                <dd className="mt-0.5 font-semibold tabular-nums text-slate-900">
-                  {adminCommercial?.marginPercent != null
-                    ? `${adminCommercial.marginPercent}%${
-                        adminCommercial.usesOrgDefaultMargin ? " · org default" : ""
-                      }`
-                    : adminCommercial?.usesOrgDefaultMargin
-                      ? "Org default"
-                      : "—"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-muted">Survey status</dt>
-                <dd className="mt-0.5 text-slate-900">{String(location.surveyStatus ?? "—")}</dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-muted">Mounting notes</dt>
-                <dd className="mt-0.5 text-slate-900">{String(location.mountingNotes ?? "—")}</dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-muted">Address</dt>
-                <dd className="mt-0.5 text-slate-900">{String(location.address ?? "—")}</dd>
-              </div>
-            </dl>
-          </section>
         ) : null}
       </div>
 

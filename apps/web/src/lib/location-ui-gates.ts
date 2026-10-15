@@ -42,6 +42,8 @@ export interface LocationUiGateInput {
   orbitUiEnabled: boolean;
   /** NEXT_PUBLIC_ADTECH_BOOKING === "true" — digital slot meters / Availability tab. */
   adtechBookingEnabled: boolean;
+  /** Total number of inventory faces. If <= 1, hide Faces detail tab (single-face specs on Overview). */
+  faceCount?: number | null;
 }
 
 export interface LocationUiGates {
@@ -94,6 +96,7 @@ export function resolveLocationUiGates(input: LocationUiGateInput): LocationUiGa
     canViewClientPricing,
     orbitUiEnabled,
     adtechBookingEnabled,
+    faceCount,
   } = input;
 
   const canOpenEdit = canEdit && !isClient && !isReadOnly && (isOwned || isInternal);
@@ -109,11 +112,15 @@ export function resolveLocationUiGates(input: LocationUiGateInput): LocationUiGa
   const showSkyarcPricing = !isClient && canViewClientPricing;
   const canEditSkyarcPricing = showSkyarcPricing && !isReadOnly && canOpenEdit;
 
-  const showFacesTab = (isOwned || isInternal) && !isClient;
+  // Single-face locations surface their specs and details directly on Overview.
+  // Faces tab is only needed on detail when multiple faces exist.
+  const hasMultipleFaces = faceCount == null || faceCount > 1;
+  const showFacesTab = (isOwned || isInternal) && !isClient && hasMultipleFaces;
   const showRatesTab = showVendorCommercial || showSkyarcPricing;
   // Orbit: never vendors or clients — internal/admin + feature flag only.
   const showOrbitTab = orbitUiEnabled && isInternal && !isVendor && !isClient;
-  const showAdminTab = isAdmin;
+  // Admin tab is retired: rates & margin are unified on Rates tab; physical metadata on Overview.
+  const showAdminTab = false;
   // Digital availability / slot meters are AdTech-only (classic UX stays media-plan focused).
   const showAvailabilityTab = adtechBookingEnabled;
 
@@ -124,7 +131,8 @@ export function resolveLocationUiGates(input: LocationUiGateInput): LocationUiGa
 
   const showEditPhotos = canOpenEdit;
   const showEditSite = canOpenEdit;
-  const showEditFaces = canOpenEdit && showFacesTab;
+  // In edit modal, planners/vendors can always manage or add faces.
+  const showEditFaces = canOpenEdit && (isOwned || isInternal) && !isClient;
   const showEditIndex = canOpenEdit && canEditScoreInputs;
   const showEditPricing =
     canOpenEdit && (showVendorCommercial || canEditSkyarcPricing || showSkyarcPricing);

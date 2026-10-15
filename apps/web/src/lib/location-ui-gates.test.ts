@@ -128,6 +128,26 @@ describe("resolveLocationUiGates", () => {
     expect(gates.showAvailabilityTab).toBe(true);
     expect(gates.detailTabs.map((t) => t.id)).toContain("availability");
   });
+
+  it("retires admin tab from detailTabs even for admins", () => {
+    const gates = resolveLocationUiGates(base({ isAdmin: true }));
+    expect(gates.showAdminTab).toBe(false);
+    expect(gates.detailTabs.map((t) => t.id)).not.toContain("admin");
+  });
+
+  it("hides Faces detail tab when faceCount is 1", () => {
+    const gates = resolveLocationUiGates(base({ faceCount: 1 }));
+    expect(gates.showFacesTab).toBe(false);
+    expect(gates.detailTabs.map((t) => t.id)).not.toContain("faces");
+    // Can still edit faces in edit modal
+    expect(gates.showEditFaces).toBe(true);
+  });
+
+  it("shows Faces detail tab when site has multiple faces", () => {
+    const gates = resolveLocationUiGates(base({ faceCount: 2 }));
+    expect(gates.showFacesTab).toBe(true);
+    expect(gates.detailTabs.map((t) => t.id)).toContain("faces");
+  });
 });
 
 describe("resolveEditTab", () => {
