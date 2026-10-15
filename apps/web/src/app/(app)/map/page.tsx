@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -8,6 +10,7 @@ import {
   Search,
   X,
   MapPin,
+  LayoutGrid,
   Navigation,
   CalendarDays,
   ChevronLeft,
@@ -110,7 +113,7 @@ function locationInMarketCity(loc: MapLocationPin, cityName: string): boolean {
 const AVAIL_OPTIONS: Array<{ value: AvailFilter; label: string; dot: string }> = [
   { value: "ALL", label: "All", dot: "bg-slate-400" },
   { value: "BOOKABLE", label: "Open", dot: "bg-emerald-500" },
-  { value: "PARTIAL", label: "Partial", dot: "bg-sky-500" },
+  { value: "PARTIAL", label: "Limited", dot: "bg-sky-500" },
   { value: "HELD", label: "Hold", dot: "bg-amber-500" },
   { value: "FULL", label: "Booked", dot: "bg-rose-500" },
 ];
@@ -122,13 +125,19 @@ export default function MapPage() {
   const hoverPopupRef = useRef<maplibregl.Popup | null>(null);
   const defaults = useMemo(() => defaultFlight(), []);
 
-  const [searchTerm, setSearchTerm] = useState("");
+  const searchParams = useSearchParams();
+  const paramFrom = searchParams.get("from");
+  const paramTo = searchParams.get("to");
+  const paramCity = searchParams.get("city");
+  const paramQ = searchParams.get("q");
+
+  const [searchTerm, setSearchTerm] = useState(paramQ ?? "");
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [flightFrom, setFlightFrom] = useState(defaults.from);
-  const [flightTo, setFlightTo] = useState(defaults.to);
+  const [flightFrom, setFlightFrom] = useState(paramFrom ?? defaults.from);
+  const [flightTo, setFlightTo] = useState(paramTo ?? defaults.to);
   const [availFilter, setAvailFilter] = useState<AvailFilter>("ALL");
-  const [cityFilter, setCityFilter] = useState<string>("");
+  const [cityFilter, setCityFilter] = useState<string>(paramCity ?? "");
   const [corridorFilter, setCorridorFilter] = useState<string>("");
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -575,9 +584,24 @@ export default function MapPage() {
       {/* Desktop toolbar only — mobile filters live in a sheet over the map */}
       <div className={cn(workspaceStickyHeader, "hidden bg-white/80 md:block")}>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="mr-1 min-w-0">
-            <h1 className="text-sm font-bold tracking-tight text-slate-900">Network Map</h1>
-            <p className="text-[10px] text-muted">{formatFlightLabel(flightFrom, flightTo)}</p>
+          <div className="mr-1 min-w-0 flex items-center gap-3">
+            <div>
+              <h1 className="text-sm font-bold tracking-tight text-slate-900">Network Map</h1>
+              <p className="text-[10px] text-muted">{formatFlightLabel(flightFrom, flightTo)}</p>
+            </div>
+            <div className="inline-flex items-center rounded-lg border border-violet-200 bg-white p-0.5 text-xs font-semibold">
+              <Link
+                href={`/locations?from=${flightFrom}&to=${flightTo}${cityFilter ? `&city=${encodeURIComponent(cityFilter)}` : ""}${searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ""}`}
+                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-slate-600 transition-colors hover:bg-violet-50 hover:text-primary"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Grid
+              </Link>
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-white">
+                <MapPin className="h-3.5 w-3.5" />
+                Map
+              </span>
+            </div>
           </div>
           {flightDatesBlock}
           {citySelectBlock}

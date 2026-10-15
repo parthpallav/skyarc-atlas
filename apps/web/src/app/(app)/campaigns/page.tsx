@@ -206,11 +206,15 @@ export default function CampaignsPage() {
     <div className="space-y-4 pb-16 sm:pb-8">
       <PageHeader
         title="Campaigns"
-        description="Briefs, flight dates, and media plans — site requests live under Requests"
+        description="Briefs, flight dates, and media plans — site requests live under Approvals"
         action={
           <div className="flex flex-wrap items-center gap-1.5">
             <Link href="/requests" className="btn-secondary gap-1.5 text-xs py-2 px-2.5">
-              Requests
+              Approvals
+            </Link>
+            <Link href="/media-plans" className="btn-secondary gap-1.5 text-xs py-2 px-2.5">
+              <Layers className="h-4 w-4 text-primary" />
+              <span className="hidden sm:inline">Media plans</span>
             </Link>
             <Link
               href="/locations"

@@ -84,7 +84,27 @@ describe("Smart Excel Inventory Importer", () => {
   const localWebpulse = "/Users/rudra-pc/Downloads/Webpulse inventory_availability_2_19Aug2026.xlsx";
   const localVeda = "/Users/rudra-pc/Downloads/Media Availability - 21st August 2026.xlsx";
 
-  if (existsSync(localWebpulse)) {
+  let canReadWebpulse = false;
+  try {
+    if (existsSync(localWebpulse)) {
+      readFileSync(localWebpulse);
+      canReadWebpulse = true;
+    }
+  } catch {
+    canReadWebpulse = false;
+  }
+
+  let canReadVeda = false;
+  try {
+    if (existsSync(localVeda)) {
+      readFileSync(localVeda);
+      canReadVeda = true;
+    }
+  } catch {
+    canReadVeda = false;
+  }
+
+  if (canReadWebpulse) {
     it("parses local Webpulse availability excel file if present", async () => {
       const fileBuffer = readFileSync(localWebpulse).buffer;
       const result = await parseInventoryExcel(fileBuffer);
@@ -93,7 +113,7 @@ describe("Smart Excel Inventory Importer", () => {
     });
   }
 
-  if (existsSync(localVeda)) {
+  if (canReadVeda) {
     it("parses local Veda / Media Availability excel file if present", async () => {
       const fileBuffer = readFileSync(localVeda).buffer;
       const result = await parseInventoryExcel(fileBuffer);

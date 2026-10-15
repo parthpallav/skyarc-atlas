@@ -171,13 +171,13 @@ export default function RequestsPage() {
   return (
     <div className="space-y-4 pb-16 sm:pb-8">
       <PageHeader
-        title="Site Requests"
+        title={isVendor ? "Site Requests" : "Approvals & Requests"}
         description={
           isVendor
-            ? "Inbound asks on your inventory — including current-plan lines still waiting on you"
+            ? "Inbound asks on your inventory — including current-plan lines waiting on your confirmation"
             : isInternal
-              ? "Soft-hold site requests plus current plans with vendor lines still pending"
-              : "Soft-hold asks from Locations. Separate from campaign media plans."
+              ? "Track vendor line approvals on active plans and inbound site requests"
+              : "Track site requests and campaign plan approvals"
         }
         action={
           <Link href="/locations" className="btn-secondary gap-1.5 text-xs py-2 px-2.5">

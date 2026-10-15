@@ -11,7 +11,12 @@ import {
   Settings,
   Users,
 } from "lucide-react";
-import { canAccessAdmin, canAccessCampaigns, isVendorRole } from "@skyarc/shared";
+import {
+  canAccessAdmin,
+  canAccessCampaigns,
+  isClientUser,
+  isVendorRole,
+} from "@skyarc/shared";
 import type { StoredUser } from "./api";
 import { toAuthUser } from "./permissions";
 import { showAdtechBooking } from "./feature-flags";
@@ -28,6 +33,7 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
   const authUser = toAuthUser(user);
   const adtech = showAdtechBooking();
 
+  // Media Owners (Vendors)
   if (isVendorRole(user.role)) {
     return [
       { href: "/locations", label: "My Inventory", icon: MapPin },
@@ -38,6 +44,17 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
     ];
   }
 
+  // Brand Customers (Clients) — focused on campaigns and site exploration
+  if (isClientUser(authUser)) {
+    return [
+      { href: "/campaigns", label: "Campaigns", icon: Megaphone },
+      { href: "/locations", label: "Browse Sites", icon: MapPin },
+      { href: "/requests", label: "Requests", icon: Send },
+      { href: "/map", label: "Map", icon: Map },
+    ];
+  }
+
+  // Planners and Admins — streamlined primary workflow (<= 7 items)
   const links: NavLink[] = [];
 
   if (canAccessCampaigns(authUser)) {
@@ -48,8 +65,7 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
 
   if (canAccessCampaigns(authUser)) {
     links.push({ href: "/campaigns", label: "Campaigns", icon: Megaphone });
-    links.push({ href: "/requests", label: "Requests", icon: Send });
-    links.push({ href: "/media-plans", label: "Media Plans", icon: Layers });
+    links.push({ href: "/requests", label: "Approvals", icon: Send });
     if (adtech) {
       links.push({ href: "/bookings", label: "Bookings", icon: CalendarCheck2 });
     }

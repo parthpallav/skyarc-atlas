@@ -17,6 +17,7 @@ import {
   Eye,
   ArrowUpDown,
   Filter,
+  LayoutGrid,
 } from "lucide-react";
 import { FileSpreadsheet } from "lucide-react";
 import { createWebApiClient, listAllLocations } from "@/lib/api";
@@ -630,10 +631,19 @@ export default function LocationsPage() {
                 ) : null}
               </>
             )}
-            <Link href="/map" className="btn-primary gap-1.5 text-xs py-2 px-2.5">
-              <MapPin className="w-4 h-4" />
-              Map
-            </Link>
+            <div className="inline-flex items-center rounded-lg border border-violet-200 bg-white p-0.5 text-xs font-semibold">
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-white">
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Grid
+              </span>
+              <Link
+                href={`/map?from=${flightFrom}&to=${flightTo}${cityFilters.size === 1 ? `&city=${encodeURIComponent(Array.from(cityFilters)[0])}` : ""}${searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ""}`}
+                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-slate-600 transition-colors hover:bg-violet-50 hover:text-primary"
+              >
+                <MapPin className="h-3.5 w-3.5" />
+                Map
+              </Link>
+            </div>
           </div>
         }
       />

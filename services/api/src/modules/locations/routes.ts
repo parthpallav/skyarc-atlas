@@ -274,6 +274,7 @@ function serializeLocation(
     isOwned: owned,
     score,
     inventoryTypes,
+    faceCount: flatInventories.length,
     ...(primaryFace ? { primaryFace } : {}),
     ...(commercial ? { commercial } : {}),
     ...(canViewClientPricing(user) && skyarcCommercialView
