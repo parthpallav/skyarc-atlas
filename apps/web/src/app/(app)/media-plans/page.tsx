@@ -16,10 +16,11 @@ import { createWebApiClient } from "@/lib/api";
 import { formatInr, formatInrCompact } from "@/lib/format";
 import { formatDateIn } from "@/lib/dates";
 import { PageHeader } from "@/components/page-header";
+import { showJourneyGaps } from "@/lib/feature-flags";
 import { CampaignCardSkeleton } from "@/components/ui/skeleton";
 import { usePermissions } from "@/hooks/use-permissions";
 
-type ListFilter = "ALL" | "PROPOSED" | "APPROVED";
+type ListFilter = "ALL" | "PROPOSED" | "APPROVED" | "VENDOR_PENDING";
 
 interface MediaPlanListRow {
   id: string;
@@ -30,6 +31,8 @@ interface MediaPlanListRow {
   campaignId: string;
   canApprove?: boolean;
   isSiteRequest?: boolean;
+  pendingVendorItemCount?: number;
+  needsVendorAction?: boolean;
   campaign?: {
     name: string;
     startDate?: string | null;
@@ -73,10 +76,19 @@ function isPlanningPlan(plan: MediaPlanListRow) {
   return true;
 }
 
+function hasVendorPending(plan: MediaPlanListRow) {
+  if (!showJourneyGaps()) return false;
+  return (
+    Boolean(plan.needsVendorAction) ||
+    (plan.status === "APPROVED" && (plan.pendingVendorItemCount ?? 0) > 0)
+  );
+}
+
 function matchesFilter(plan: MediaPlanListRow, filter: ListFilter) {
   if (filter === "ALL") return true;
   if (filter === "PROPOSED") return plan.status === "PROPOSED";
   if (filter === "APPROVED") return plan.status === "APPROVED";
+  if (filter === "VENDOR_PENDING") return hasVendorPending(plan);
   return true;
 }
 
@@ -103,13 +115,23 @@ export default function MediaPlansPage() {
   const stats = useMemo(() => {
     const proposed = rows.filter((p) => p.status === "PROPOSED").length;
     const approved = rows.filter((p) => p.status === "APPROVED").length;
-    return { total: rows.length, proposed, approved };
+    const vendorPending = rows.filter(hasVendorPending).length;
+    return { total: rows.length, proposed, approved, vendorPending };
   }, [rows]);
 
   const filters: { id: ListFilter; label: string; count?: number }[] = [
     { id: "ALL", label: "All", count: stats.total },
     { id: "PROPOSED", label: "Proposed", count: stats.proposed },
     { id: "APPROVED", label: "Approved", count: stats.approved },
+    ...(showJourneyGaps() && !isVendor && !isClient
+      ? [
+          {
+            id: "VENDOR_PENDING" as const,
+            label: "Vendor pending",
+            count: stats.vendorPending,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -135,11 +157,12 @@ export default function MediaPlansPage() {
       />
 
       {!isVendor && !isClient ? (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[
             { label: "Total", value: stats.total },
             { label: "Proposed", value: stats.proposed },
             { label: "Approved", value: stats.approved },
+            { label: "Vendor pending", value: stats.vendorPending },
           ].map((kpi) => (
             <div key={kpi.label} className="card-surface px-3 py-2.5">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
@@ -295,6 +318,9 @@ export default function MediaPlansPage() {
                       </p>
                       <p className="mt-0.5 font-medium text-slate-800">
                         {siteCount} {siteCount === 1 ? "site" : "sites"}
+                        {(plan.pendingVendorItemCount ?? 0) > 0
+                          ? ` · ${plan.pendingVendorItemCount} vendor pending`
+                          : null}
                       </p>
                       <p className="text-[11px] text-muted">
                         {plan.totalBudget != null

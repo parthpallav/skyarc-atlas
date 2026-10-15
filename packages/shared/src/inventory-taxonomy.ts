@@ -26,7 +26,7 @@ export type StaticLighting = (typeof StaticLighting)[keyof typeof StaticLighting
 export const INVENTORY_CLASS_LABELS: Record<InventoryClass, string> = {
   DIGITAL: "Digital",
   STATIC: "Static",
-  CONCEPTUAL: "Conceptual",
+  CONCEPTUAL: "Transit & other",
 };
 
 export const DIGITAL_SUBTYPE_LABELS: Record<DigitalSubtype, string> = {

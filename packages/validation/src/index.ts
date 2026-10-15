@@ -110,6 +110,8 @@ export const organizationSchema = z.object({
 
 export const createOrganizationBodySchema = z.object({
   name: z.string().min(1).max(200),
+  /** VENDOR (media owner) or CLIENT (brand customer). Default VENDOR for back-compat. */
+  type: z.enum([OrganizationType.VENDOR, OrganizationType.CLIENT]).default(OrganizationType.VENDOR),
 });
 
 export const updateOrganizationStatusBodySchema = z.object({

@@ -24,6 +24,7 @@ import { loadPlatformConfig } from "../../lib/commercial-config.js";
 import { forbidden, notFound, validationError } from "../../lib/errors.js";
 import { canManageOrganizations, isReadOnly } from "../../lib/rbac.js";
 import { success, listMeta } from "../../lib/response.js";
+import { journeyGapsEnabled } from "../../lib/journey-gaps.js";
 
 /** Active inventory only — archived sites do not block vendor removal. */
 const organizationListCounts = {
@@ -220,7 +221,23 @@ export async function organizationRoutes(fastify: FastifyInstance) {
 
     const query = paginationQuerySchema.parse(request.query);
     const skip = (query.page - 1) * query.limit;
-    const where = { type: OrganizationType.VENDOR };
+    const where = journeyGapsEnabled()
+      ? (() => {
+          const typeParam =
+            typeof (request.query as { type?: string }).type === "string"
+              ? (request.query as { type: string }).type.toUpperCase()
+              : "VENDOR";
+          const orgType =
+            typeParam === "CLIENT"
+              ? OrganizationType.CLIENT
+              : typeParam === "ALL"
+                ? null
+                : OrganizationType.VENDOR;
+          return orgType
+            ? { type: orgType }
+            : { type: { in: [OrganizationType.VENDOR, OrganizationType.CLIENT] } };
+        })()
+      : { type: OrganizationType.VENDOR };
 
     const [organizations, total] = await Promise.all([
       prisma.organization.findMany({
@@ -243,29 +260,48 @@ export async function organizationRoutes(fastify: FastifyInstance) {
     if (!canManageOrganizations(request.user)) throw forbidden();
 
     const body = createOrganizationBodySchema.parse(request.body);
+    const orgType = journeyGapsEnabled() && body.type === OrganizationType.CLIENT
+      ? OrganizationType.CLIENT
+      : OrganizationType.VENDOR;
     const org = await prisma.organization.create({
       data: {
         name: body.name,
-        type: OrganizationType.VENDOR,
+        type: orgType,
         status: OrganizationStatus.ACTIVE,
       },
       include: organizationListCounts,
     });
 
-    const cleanSlug = body.name.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const userEmail = `${cleanSlug || "vendor"}@skyarcads.com`;
-    const defaultPassword = "VendorPassword123!";
+    const cleanSlug =
+      body.name.toLowerCase().replace(/[^a-z0-9]/g, "") ||
+      (orgType === OrganizationType.CLIENT ? "customer" : "vendor");
+    const userEmail = `${cleanSlug}@skyarcads.com`;
+    // Prefer distinct defaults so seeded demos don't collide awkwardly
+    const defaultPassword =
+      orgType === OrganizationType.CLIENT ? "CustomerPassword123!" : "VendorPassword123!";
+    const userRole =
+      orgType === OrganizationType.CLIENT ? UserRole.CLIENT_VIEWER : UserRole.VENDOR;
+    const userName =
+      orgType === OrganizationType.CLIENT
+        ? `${body.name} Customer`
+        : `${body.name} Admin`;
 
     let createdUser: { id: string; email: string; name: string; tempPassword?: string } | null = null;
-    const existing = await prisma.user.findUnique({ where: { email: userEmail } });
-    if (!existing) {
+    let email = userEmail;
+    // If slug email taken, suffix with short id so create still succeeds
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      email = `${cleanSlug}.${org.id.slice(0, 8)}@skyarcads.com`;
+    }
+    const clash = await prisma.user.findUnique({ where: { email } });
+    if (!clash) {
       const passwordHash = await argon2.hash(defaultPassword);
       const newUser = await prisma.user.create({
         data: {
-          email: userEmail,
-          name: `${body.name} Admin`,
+          email,
+          name: userName,
           passwordHash,
-          role: UserRole.VENDOR,
+          role: userRole,
           organizationId: org.id,
         },
       });
@@ -314,7 +350,10 @@ export async function organizationRoutes(fastify: FastifyInstance) {
         include: organizationListCounts,
       });
       if (!org) throw notFound("Organization not found");
-      if (org.type !== OrganizationType.VENDOR) {
+      if (org.type !== OrganizationType.VENDOR && org.type !== OrganizationType.CLIENT) {
+        throw validationError("Only vendor or customer organizations can be removed here");
+      }
+      if (!journeyGapsEnabled() && org.type !== OrganizationType.VENDOR) {
         throw validationError("Only vendor organizations can be removed here");
       }
       if (org._count.locations > 0) {

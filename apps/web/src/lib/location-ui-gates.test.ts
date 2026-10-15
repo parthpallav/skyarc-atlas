@@ -75,6 +75,36 @@ describe("resolveLocationUiGates", () => {
     expect(gates.canOpenEdit).toBe(false);
   });
 
+  it("keeps Pricing for owned vendors when showcase hides vendor details", () => {
+    const gates = resolveLocationUiGates(
+      base({
+        isVendor: true,
+        isInternal: false,
+        isOwned: true,
+        canEdit: true,
+        canViewClientPricing: false,
+        showVendorDetails: false,
+      })
+    );
+    expect(gates.showVendorCommercial).toBe(true);
+    expect(gates.showRatesTab).toBe(true);
+    expect(gates.showEditPricing).toBe(true);
+  });
+
+  it("hides vendor commercial for internals when showcase mode is on", () => {
+    const gates = resolveLocationUiGates(
+      base({
+        isInternal: true,
+        isVendor: false,
+        isOwned: true,
+        showVendorDetails: false,
+        canViewClientPricing: true,
+      })
+    );
+    expect(gates.showVendorCommercial).toBe(false);
+    expect(gates.showSkyarcPricing).toBe(true);
+  });
+
   it("orders edit tabs Photos then Site first", () => {
     const gates = resolveLocationUiGates(base());
     expect(gates.editTabs[0]?.id).toBe("photos");

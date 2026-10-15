@@ -997,15 +997,17 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
         updatedAt: string;
       }> = [];
 
+      const redact = isClientUser(request.user);
       for (const plan of plans) {
         if (seen.has(plan.campaignId)) continue;
         seen.add(plan.campaignId);
+        const idx = campaigns.length + 1;
         campaigns.push({
-          campaignId: plan.campaignId,
-          campaignName: plan.campaign.name,
-          advertiserName: plan.campaign.advertiser.name,
-          planId: plan.id,
-          planName: plan.name,
+          campaignId: redact ? "" : plan.campaignId,
+          campaignName: redact ? "Recently planned on this site" : plan.campaign.name,
+          advertiserName: redact ? `Brand campaign ${idx}` : plan.campaign.advertiser.name,
+          planId: redact ? "" : plan.id,
+          planName: redact ? "Plan activity" : plan.name,
           planStatus: plan.status,
           startDate: plan.campaign.startDate?.toISOString() ?? null,
           endDate: plan.campaign.endDate?.toISOString() ?? null,
@@ -1014,7 +1016,7 @@ export async function locationRoutes(fastify: FastifyInstance, env: Env) {
         if (campaigns.length >= limit) break;
       }
 
-      return success({ campaigns, total: campaigns.length });
+      return success({ campaigns, total: campaigns.length, redacted: redact });
     }
   );
 

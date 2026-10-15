@@ -116,6 +116,7 @@ export function LocationInventoryWizard({
   const [widthFt, setWidthFt] = useState("");
   const [heightFt, setHeightFt] = useState("");
   const [slotCapacity, setSlotCapacity] = useState("6");
+  const [materialNotes, setMaterialNotes] = useState("");
   const [conceptNotes, setConceptNotes] = useState("");
 
   // Production (digital)
@@ -267,7 +268,7 @@ export function LocationInventoryWizard({
                   widthFt: w,
                   heightFt: h,
                   lighting: staticLighting,
-                  materialNotes: mountingNotes.trim() || null,
+                  materialNotes: materialNotes.trim() || null,
                 }
               : {
                   widthFt: w,
@@ -460,7 +461,7 @@ export function LocationInventoryWizard({
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label className={labelClass}>Mounting</label>
+              <label className={labelClass}>Site mounting</label>
               <input
                 className={inputClass}
                 value={mountingType}
@@ -469,12 +470,17 @@ export function LocationInventoryWizard({
               />
             </div>
             <div>
-              <label className={labelClass}>Mounting notes</label>
+              <label className={labelClass}>Site mounting notes</label>
               <input
                 className={inputClass}
                 value={mountingNotes}
                 onChange={(e) => setMountingNotes(e.target.value)}
+                placeholder="Install access, height, traffic side…"
               />
+              <p className="mt-1 text-xs text-muted">
+                Site hardware / install — not face material (vinyl, flex). Face material is on the
+                format step.
+              </p>
             </div>
           </div>
         </div>
@@ -598,6 +604,21 @@ export function LocationInventoryWizard({
                 onChange={(e) => setSlotCapacity(e.target.value)}
                 inputMode="numeric"
               />
+            </div>
+          ) : null}
+
+          {inventoryClass === InventoryClass.STATIC ? (
+            <div>
+              <label className={labelClass}>Face material notes</label>
+              <input
+                className={inputClass}
+                value={materialNotes}
+                onChange={(e) => setMaterialNotes(e.target.value)}
+                placeholder="e.g. Vinyl, Flex, Backlit skin"
+              />
+              <p className="mt-1 text-xs text-muted">
+                Face surface / print material — separate from site mounting above.
+              </p>
             </div>
           ) : null}
 

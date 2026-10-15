@@ -2,12 +2,15 @@ import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import { z } from "zod";
-import type { Prisma } from "./generated/prisma/index.js";
 import type { OrbitEnv } from "./env.js";
 import { prisma } from "./prisma.js";
 import { hashSecret, randomToken } from "./crypto.js";
-import { applyHeartbeat } from "./state.js";
-import { flushOutbox } from "./events.js";
+import {
+  orbitMqttDeviceTopics,
+  orbitMqttAclHints,
+  ORBIT_TENANT_ID,
+} from "@skyarc/shared";
+import { ingestHeartbeat, ingestTelemetry } from "./ingest.js";
 
 type DeviceAuthRequest = FastifyRequest & {
   orbitDevice?: { id: string; revokedAt: Date | null; credentialHash: string | null };
@@ -115,11 +118,21 @@ export async function buildOrbitApp(env: OrbitEnv) {
       }),
     ]);
 
+    const tenantId = claim.device.tenantId || ORBIT_TENANT_ID;
     return {
       orbitDeviceId: claim.deviceId,
       deviceSecret,
       skyarcScreenCode: claim.device.skyarcScreenCode,
       atlasScreenId: claim.device.atlasScreenId,
+      mqtt: {
+        topics: orbitMqttDeviceTopics({ tenantId, deviceId: claim.deviceId }),
+        acl: orbitMqttAclHints({ tenantId, deviceId: claim.deviceId }),
+        auth: {
+          username: claim.deviceId,
+          password: deviceSecret,
+        },
+        note: "Publish heartbeat/telemetry over MQTT using these credentials after your broker ACL is configured. HTTPS ingest remains supported.",
+      },
     };
   });
 
@@ -136,18 +149,7 @@ export async function buildOrbitApp(env: OrbitEnv) {
   app.post("/ingest/v1/heartbeat", async (request) => {
     await deviceAuth(request as DeviceAuthRequest);
     const device = (request as DeviceAuthRequest).orbitDevice!;
-    const now = new Date();
-    await prisma.orbitTelemetry.create({
-      data: {
-        deviceId: device.id,
-        observedAt: now,
-        kind: "heartbeat",
-        payloadJson: { at: now.toISOString() },
-      },
-    });
-    await applyHeartbeat(device.id, now);
-    await flushOutbox(env);
-    return { ok: true };
+    return ingestHeartbeat(env, device.id);
   });
 
   app.post("/ingest/v1/telemetry", async (request) => {
@@ -168,18 +170,30 @@ export async function buildOrbitApp(env: OrbitEnv) {
       })
       .parse(request.body);
 
-    const now = new Date();
-    await prisma.orbitTelemetry.createMany({
-      data: body.samples.map((s) => ({
-        deviceId: device.id,
-        observedAt: s.observedAt ? new Date(s.observedAt) : now,
-        kind: s.kind,
-        payloadJson: s.payload as Prisma.InputJsonValue,
-      })),
-    });
-    await applyHeartbeat(device.id, now);
-    await flushOutbox(env);
-    return { ok: true, accepted: body.samples.length };
+    return ingestTelemetry(env, device.id, body.samples);
+  });
+
+  /** Partner / ops: MQTT topic + ACL hints for an enrolled device (service auth). */
+  app.get("/mqtt/v1/devices/:id/connection", async (request) => {
+    await serviceAuth(request);
+    const id = z.string().uuid().parse((request.params as { id: string }).id);
+    const device = await prisma.orbitDevice.findUnique({ where: { id } });
+    if (!device || device.revokedAt) {
+      const err = new Error("Device not found") as Error & { statusCode: number };
+      err.statusCode = 404;
+      throw err;
+    }
+    const tenantId = device.tenantId || ORBIT_TENANT_ID;
+    return {
+      mqttEnabled: env.ORBIT_MQTT_ENABLED,
+      brokerUrlHint: env.ORBIT_MQTT_URL ?? null,
+      tenantId,
+      orbitDeviceId: device.id,
+      topics: orbitMqttDeviceTopics({ tenantId, deviceId: device.id }),
+      acl: orbitMqttAclHints({ tenantId, deviceId: device.id }),
+      enrollNote:
+        "MQTT username = orbitDeviceId; password = deviceSecret from POST /provision/v1/enroll (shown once).",
+    };
   });
 
   return app;

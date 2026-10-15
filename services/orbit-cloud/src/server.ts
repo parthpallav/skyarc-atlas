@@ -34,6 +34,7 @@ import { buildOrbitApp } from "./app.js";
 import { prisma } from "./prisma.js";
 import { flushOutbox } from "./events.js";
 import { markStaleDevicesOffline } from "./state.js";
+import { startOrbitMqttBridge, type OrbitMqttBridge } from "./mqtt/bridge.js";
 
 const env = loadOrbitEnv();
 const app = await buildOrbitApp(env);
@@ -51,7 +52,21 @@ setInterval(async () => {
   }
 }, 15_000);
 
+let mqttBridge: OrbitMqttBridge | null = null;
+try {
+  mqttBridge = await startOrbitMqttBridge(env, app.log);
+} catch (err) {
+  app.log.error({ err }, "MQTT bridge failed to start — HTTPS ingest still available");
+}
+
 const shutdown = async () => {
+  if (mqttBridge) {
+    try {
+      await mqttBridge.stop();
+    } catch (err) {
+      app.log.error({ err }, "MQTT bridge stop failed");
+    }
+  }
   await app.close();
   await prisma.$disconnect();
   process.exit(0);

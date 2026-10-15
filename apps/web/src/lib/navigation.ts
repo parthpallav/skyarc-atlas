@@ -58,7 +58,7 @@ export function getNavLinks(user: StoredUser | null): NavLink[] {
   links.push({ href: "/map", label: "Map", icon: Map });
 
   if (canAccessAdmin(authUser)) {
-    links.push({ href: "/admin/organizations", label: "Vendors", icon: Users });
+    links.push({ href: "/admin/organizations", label: "Organizations", icon: Users });
     links.push({ href: "/admin/settings", label: "Settings", icon: Settings });
   }
 

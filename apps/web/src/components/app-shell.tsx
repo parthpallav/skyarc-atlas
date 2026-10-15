@@ -8,12 +8,14 @@ import { SkyarcLogo } from "./skyarc-logo";
 import { MobileBottomNav } from "./mobile-bottom-nav";
 import { cn } from "@/lib/utils";
 import { safeGetItem, safeSetItem } from "@/lib/safe-storage";
+import { usePermissions } from "@/hooks/use-permissions";
 
 const SIDEBAR_COLLAPSED_KEY = "skyarc-sidebar-collapsed";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isMapRoute = pathname === "/map";
+  const { isLegacyViewOnly, roleLabel } = usePermissions();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -117,6 +119,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             "md:pb-8"
           )}
         >
+          {isLegacyViewOnly && !isMapRoute ? (
+            <p className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-700 sm:mb-4">
+              Signed in as {roleLabel || "view-only"} — you can browse the same screens as editors;
+              create, edit, approve, and delete actions stay hidden.
+            </p>
+          ) : null}
           {children}
         </main>
 

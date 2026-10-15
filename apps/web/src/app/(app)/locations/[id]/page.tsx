@@ -16,20 +16,21 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { ImageGallery } from "@/components/image-gallery";
 import { LocationInventoryPanel } from "@/components/location-inventory-panel";
 import { LocationOrbitTab } from "@/components/location-orbit-tab";
-import { showAdtechBooking, showOrbitUi } from "@/lib/feature-flags";
+import { showAdtechBooking, showJourneyGaps, showOrbitUi } from "@/lib/feature-flags";
 import { LocationCommercialPanel } from "@/components/location-commercial-panel";
 import { LocationSkyarcPricingPanel } from "@/components/location-skyarc-pricing-panel";
 import { formatInventoryType } from "@skyarc/shared";
 import { trackEntityView } from "@/lib/clarity-telemetry";
 import { useEffect, useMemo, useState } from "react";
 import { LocationDetailSkeleton } from "@/components/ui/skeleton";
-import { liveStatusBadge } from "@/components/slot-indicators";
+import { classicCapacityHint, liveStatusBadge } from "@/components/slot-indicators";
 import { DigitalAvailabilityPanel } from "@/components/digital-availability-panel";
 import { FlightDateRangePicker } from "@/components/flight-date-range-picker";
 import { parseLiveInventory } from "@/lib/live-inventory";
 import { SiteDemandSignals } from "@/components/site-demand-signals";
 import { LocationScoreIntel } from "@/components/location-score-intel";
 import { LocationCampaignProof } from "@/components/location-campaign-proof";
+import { LocationLiveProofPanel } from "@/components/location-live-proof-panel";
 import { CampaignSiteDestination } from "@/components/campaign-site-destination";
 import { formatInr } from "@/lib/format";
 import {
@@ -46,6 +47,11 @@ interface AssetRow {
   sortOrder?: number;
   contentType?: string;
   uploadStatus: string;
+  campaignId?: string | null;
+  campaignName?: string | null;
+  advertiserName?: string | null;
+  flightStart?: string | null;
+  flightEnd?: string | null;
 }
 
 function isoDateLocal(d: Date) {
@@ -77,7 +83,9 @@ export default function LocationDetailPage() {
     isAdmin,
     authUser,
     canViewClientPricing,
+    user,
   } = usePermissions();
+  const isFieldOperator = user?.role === "FIELD_OPERATOR";
 
   const flight = useMemo(() => {
     const fromParam = searchParams.get("from");
@@ -323,17 +331,19 @@ export default function LocationDetailPage() {
           | undefined) ?? commercialView)
       : undefined;
 
-  const skyarcCommercialView = gates.showSkyarcPricing
-    ? (location.skyarcCommercialView as
-        | {
-            clientRateAmount: number | null;
-            ratePeriod: string | null;
-            currency: string;
-            notes: string | null;
-            premium?: boolean;
-          }
-        | undefined)
-    : undefined;
+  // Rates tab is internal-only, but clients still need client rate on Overview (matches list cards).
+  const skyarcCommercialView =
+    gates.showSkyarcPricing || (isClient && canViewClientPricing)
+      ? (location.skyarcCommercialView as
+          | {
+              clientRateAmount: number | null;
+              ratePeriod: string | null;
+              currency: string;
+              notes: string | null;
+              premium?: boolean;
+            }
+          | undefined)
+      : undefined;
 
   const live = parseLiveInventory(location.liveInventory);
   const primaryFace = location.primaryFace as
@@ -349,11 +359,14 @@ export default function LocationDetailPage() {
   const liveStatus =
     live?.status ??
     (typeof location.bookingStatus === "string" ? location.bookingStatus : null);
-  const badge = liveStatusBadge(liveStatus);
+  const badge = liveStatusBadge(liveStatus, { classic: !adtechBooking });
   const slotCapacity = live?.capacity ?? primaryFace?.slotCapacity ?? null;
   const slotUsed = live?.used ?? 0;
   const slotOpen = slotCapacity != null ? Math.max(0, slotCapacity - slotUsed) : null;
   const isDigital = Boolean(live?.isDigital || primaryFace?.isDigital);
+  const capacityHint = !adtechBooking
+    ? classicCapacityHint(slotOpen, slotCapacity, isDigital)
+    : null;
 
   const formatLabel = formatInventoryType(
     primaryFace?.inventoryType ??
@@ -368,9 +381,23 @@ export default function LocationDetailPage() {
     location.skyarcSiteCode ?? `SKY-${id.slice(0, 4).toUpperCase()}`
   );
 
+  const vendorRateFromApi =
+    commercialView?.defaultRateAmount ??
+    (isInternal
+      ? (
+          location.commercialView as
+            | { defaultRateAmount?: number | null }
+            | undefined
+        )?.defaultRateAmount ?? null
+      : null);
   const rateAmount =
     skyarcCommercialView?.clientRateAmount ??
-    (isOwned && isVendor ? commercialView?.defaultRateAmount : null);
+    (isOwned && isVendor ? vendorRateFromApi : null) ??
+    (isInternal ? vendorRateFromApi : null);
+  const rateIsVendorFallback =
+    isInternal &&
+    skyarcCommercialView?.clientRateAmount == null &&
+    vendorRateFromApi != null;
   const ratePeriod =
     skyarcCommercialView?.ratePeriod?.toLowerCase() ??
     commercialView?.ratePeriod?.toLowerCase() ??
@@ -462,11 +489,16 @@ export default function LocationDetailPage() {
               <div className="hidden lg:block">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-xs font-bold text-primary">{skyarcCode}</span>
-                  <span
-                    className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}
-                    title={badge.hint}
-                  >
-                    {badge.label}
+                  <span className="inline-flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${badge.className}`}
+                      title={badge.hint}
+                    >
+                      {badge.label}
+                    </span>
+                    {capacityHint ? (
+                      <span className="text-[10px] tabular-nums text-muted">{capacityHint}</span>
+                    ) : null}
                   </span>
                   {isNetworkSite ? (
                     <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
@@ -538,13 +570,13 @@ export default function LocationDetailPage() {
                   />
                 ) : null}
                 <FactCell
-                  label="Rate"
+                  label={rateIsVendorFallback ? "Vendor rate" : "Rate"}
                   value={
                     rateAmount != null
                       ? `${formatInr(rateAmount)}/${ratePeriod}`
                       : isNetworkSite
                         ? "After approval"
-                        : "—"
+                        : "Rate on request"
                   }
                   emphasize={rateAmount != null}
                   muted={rateAmount == null && isNetworkSite}
@@ -577,6 +609,24 @@ export default function LocationDetailPage() {
                 <p className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
                   View-only network inventory. Request this site for your campaign window — Superadmin
                   or a media planner approves, then you get the priced plan.
+                </p>
+              ) : null}
+              {isFieldOperator && !canEdit ? (
+                <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-700">
+                  Field operators can edit sites they created. This site is view-only for you —
+                  ask a planner or admin for changes.
+                </p>
+              ) : null}
+              {rateIsVendorFallback && canEdit ? (
+                <p className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
+                  Showing vendor card rate — set a Standard rate on Pricing so pitches and media
+                  plans use client-facing costing with Skyarc margin.
+                </p>
+              ) : null}
+              {rateIsVendorFallback && !canEdit && isInternal ? (
+                <p className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
+                  Vendor rate only — ask an admin to set the Standard (client) rate for full planner
+                  costing.
                 </p>
               ) : null}
             </div>
@@ -693,6 +743,21 @@ export default function LocationDetailPage() {
                     {showMediaOwner ? (
                       <OverviewRow label="Media owner" value={String(location.mediaOwner)} />
                     ) : null}
+                    {location.mountingType ? (
+                      <OverviewRow
+                        label="Mounting"
+                        value={
+                          location.mountingNotes
+                            ? `${String(location.mountingType)} — ${String(location.mountingNotes)}`
+                            : String(location.mountingType)
+                        }
+                      />
+                    ) : location.mountingNotes ? (
+                      <OverviewRow
+                        label="Mounting notes"
+                        value={String(location.mountingNotes)}
+                      />
+                    ) : null}
                     {adtechBooking && isDigital && slotCapacity != null ? (
                       <OverviewRow
                         label="Ad places open"
@@ -713,7 +778,7 @@ export default function LocationDetailPage() {
                     {isClient ? (
                       <OverviewRow
                         label="Fit"
-                        value={`${roadLabel} — strong daily exposure for this flight.`}
+                        value={`${roadLabel} — strong daily exposure for ${formatFlightLabel(flight.from, flight.to)}.`}
                       />
                     ) : null}
                     {isNetworkSite ? (
@@ -740,29 +805,17 @@ export default function LocationDetailPage() {
                   isLoading={campaignHistoryLoading}
                   redactNames={isClient}
                 />
-                {assets && assets.some((a) => a.kind === "CAMPAIGN_LIVE_PROOF" && a.url) ? (
-                  <div className="rounded-2xl border border-violet-100 bg-white p-5 shadow-card">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                      Live on site
-                    </p>
-                    <h3 className="mt-0.5 text-sm font-semibold text-slate-900">Campaign proof photos</h3>
-                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      {assets
-                        .filter((a) => a.kind === "CAMPAIGN_LIVE_PROOF" && a.url)
-                        .map((a) => (
-                          <a
-                            key={a.id}
-                            href={a.url!}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="relative aspect-[4/3] overflow-hidden rounded-lg bg-slate-100"
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={a.url!} alt="Campaign live proof" className="h-full w-full object-cover" />
-                          </a>
-                        ))}
-                    </div>
-                  </div>
+                {showJourneyGaps() ? (
+                  <LocationLiveProofPanel
+                    locationId={id}
+                    assets={assets}
+                    isClient={isClient}
+                    canUpload={
+                      !isClient &&
+                      !isReadOnly &&
+                      (canEdit || isFieldOperator || isVendor || isInternal)
+                    }
+                  />
                 ) : null}
               </div>
             </div>

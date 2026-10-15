@@ -98,13 +98,13 @@ export function resolveLocationUiGates(input: LocationUiGateInput): LocationUiGa
 
   const canOpenEdit = canEdit && !isClient && !isReadOnly && (isOwned || isInternal);
 
-  // Vendor rates: never clients; never network vendors; own vendor yes;
-  // internal only when platform showVendorDetails.
+  // Vendor rates: never clients; never network vendors.
+  // Owned vendors always see their own commercial (showcase mode must not hide Pricing).
+  // Internal users respect platform showVendorDetails (client screen-share mode).
   const showVendorCommercial =
     !isClient &&
-    showVendorDetails &&
     isOwned &&
-    (isVendor || isInternal);
+    (isVendor || (isInternal && showVendorDetails));
 
   const showSkyarcPricing = !isClient && canViewClientPricing;
   const canEditSkyarcPricing = showSkyarcPricing && !isReadOnly && canOpenEdit;

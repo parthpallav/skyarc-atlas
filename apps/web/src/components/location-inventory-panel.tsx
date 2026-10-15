@@ -337,6 +337,8 @@ export function LocationInventoryPanel({
         <h2 className="font-semibold text-slate-900">Faces</h2>
         <p className="mt-1 text-sm text-muted">
           Each face is a sellable screen on this site — rename, remove, or set products here.
+          Optional face rates override site Standard rate for that product only; site Vendor card
+          rate is set under Pricing.
         </p>
       </div>
 

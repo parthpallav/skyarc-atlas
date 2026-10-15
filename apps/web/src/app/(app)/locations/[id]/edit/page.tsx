@@ -354,18 +354,35 @@ export default function LocationEditPage() {
 
         {activeTab === "pricing" && gates.showEditPricing ? (
           <div className="space-y-4">
-            {gates.showVendorCommercial ? (
-              <LocationCommercialPanel
-                locationId={id}
-                canWrite
-                commercialView={commercialView}
-              />
-            ) : null}
+            <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3 text-sm text-slate-700">
+              <p className="font-semibold text-slate-900">Which rate wins?</p>
+              <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-muted">
+                <li>
+                  <span className="font-medium text-slate-800">Standard rate</span> — client-facing;
+                  used on cards and media plans.
+                </li>
+                <li>
+                  <span className="font-medium text-slate-800">Vendor card rate</span> — B2B cost;
+                  fallback only when Standard rate is empty (weak planner margin view).
+                </li>
+                <li>
+                  <span className="font-medium text-slate-800">Face rate (Faces tab)</span> — optional
+                  per-face override for digital products.
+                </li>
+              </ol>
+            </div>
             {gates.showSkyarcPricing ? (
               <LocationSkyarcPricingPanel
                 locationId={id}
                 canWrite={gates.canEditSkyarcPricing}
                 skyarcCommercialView={skyarcCommercialView}
+              />
+            ) : null}
+            {gates.showVendorCommercial ? (
+              <LocationCommercialPanel
+                locationId={id}
+                canWrite
+                commercialView={commercialView}
               />
             ) : null}
           </div>

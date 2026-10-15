@@ -129,7 +129,7 @@ export function createWebApiClient() {
   });
 }
 
-/** Fetches every location page (API max limit is 100 per request). */
+/** Fetches every location page (API max limit is 250 per request). */
 export async function listAllLocations<T = unknown>(
   filters?: {
     q?: string;
@@ -140,21 +140,25 @@ export async function listAllLocations<T = unknown>(
     states?: string[];
     corridors?: string[];
     type?: string;
-  }
+    visibility?: "active" | "hidden" | "all";
+  },
+  scope?: "mine" | "discovery" | "all"
 ): Promise<T[]> {
   const client = createWebApiClient();
   const all: T[] = [];
-  const limit = 100;
+  const limit = 250;
   let page = 1;
 
   while (true) {
-    const result = await client.listLocations(page, limit, undefined, filters);
+    const result = await client.listLocations(page, limit, scope, filters);
     const batch = result.data as T[];
     all.push(...batch);
 
     const total = Number((result.meta as { total?: number }).total ?? batch.length);
     if (all.length >= total || batch.length < limit) break;
     page += 1;
+    // Safety: avoid runaway loops on bad meta
+    if (page > 40) break;
   }
 
   return all;

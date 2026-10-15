@@ -1,3 +1,5 @@
+import { formatInventoryType } from "@skyarc/shared";
+
 export type MapLiveInventory = {
   status: "AVAILABLE" | "ON_HOLD" | "UNAVAILABLE" | "PARTIAL";
   isDigital?: boolean;
@@ -20,6 +22,14 @@ export interface MapLocationPin {
   state?: string | null;
   coverImageUrl?: string | null;
   inventoryTypes?: string[];
+  primaryFace?: {
+    inventoryType?: string | null;
+    widthFt?: number | null;
+    heightFt?: number | null;
+    sizeLabel?: string | null;
+  } | null;
+  skyarcCommercialView?: { clientRateAmount?: number | null; currency?: string | null } | null;
+  commercialView?: { defaultRateAmount?: number | null; currency?: string | null } | null;
   liveInventory?: MapLiveInventory | null;
   bookingStatus?: "AVAILABLE" | "UNAVAILABLE" | "ON_HOLD" | null;
 }
@@ -114,9 +124,31 @@ export function createMapPinElement(
   return el;
 }
 
+function pinRateLabel(location: MapLocationPin): string {
+  const amount =
+    location.skyarcCommercialView?.clientRateAmount ??
+    location.commercialView?.defaultRateAmount ??
+    null;
+  if (amount == null || !Number.isFinite(Number(amount))) return "";
+  const currency =
+    location.skyarcCommercialView?.currency ??
+    location.commercialView?.currency ??
+    "INR";
+  try {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(Number(amount));
+  } catch {
+    return `${currency} ${Number(amount).toLocaleString("en-IN")}`;
+  }
+}
+
 export function buildMapLocationCardHtml(
   location: MapLocationPin,
-  mode: "hover" | "detail"
+  mode: "hover" | "detail",
+  options?: { from?: string; to?: string }
 ): string {
   const code = location.skyarcSiteCode ? escapeHtml(location.skyarcSiteCode) : "";
   const name = escapeHtml(location.name);
@@ -126,18 +158,34 @@ export function buildMapLocationCardHtml(
   const status = pinLiveStatus(location);
   const statusLabel =
     status === "UNAVAILABLE"
-      ? "Booked"
+      ? "Booked for dates"
       : status === "ON_HOLD"
-        ? "On hold"
+        ? "On hold for dates"
         : status === "PARTIAL"
-          ? "Partial"
-          : "Open";
+          ? "Partial for dates"
+          : "Open for dates";
   const live = location.liveInventory;
   const slots =
     live?.capacity != null
       ? `${Math.max(0, (live.capacity ?? 0) - (live.used ?? 0))}/${live.capacity} free`
       : "";
+  const face = location.primaryFace;
+  const rawType = face?.inventoryType ?? location.inventoryTypes?.[0] ?? null;
+  const formatLabel = rawType ? escapeHtml(formatInventoryType(rawType)) : "";
+  const sizeLabel = face?.sizeLabel
+    ? escapeHtml(face.sizeLabel)
+    : face?.widthFt != null && face?.heightFt != null
+      ? escapeHtml(`${face.widthFt}×${face.heightFt} ft`)
+      : "";
+  const rateLabel = escapeHtml(pinRateLabel(location));
+  const metaBits = [formatLabel, sizeLabel, rateLabel].filter(Boolean).join(" · ");
   const image = imageBlock(location, mode === "hover" ? 140 : 180);
+  const from = (options?.from ?? "").trim();
+  const to = (options?.to ?? "").trim();
+  const detailHref =
+    from && to
+      ? `/locations/${location.id}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+      : `/locations/${location.id}`;
 
   if (mode === "hover") {
     return `<div class="map-popup-card">
@@ -145,6 +193,7 @@ export function buildMapLocationCardHtml(
       <div class="map-popup-body">
         <strong class="map-popup-title">${title}</strong>
         ${road && road !== name ? `<span class="map-popup-road">${road}</span>` : !code ? (road ? `<span class="map-popup-road">${road}</span>` : "") : `<span class="map-popup-road">${name}</span>`}
+        ${metaBits ? `<span class="map-popup-road">${metaBits}</span>` : ""}
         <span class="map-popup-road">${statusLabel}${slots ? ` · ${slots}` : ""}${city ? ` · ${city}` : ""}</span>
       </div>
     </div>`;
@@ -157,9 +206,10 @@ export function buildMapLocationCardHtml(
       <strong class="map-popup-title">${title}</strong>
       ${road ? `<span class="map-popup-road">${road}</span>` : ""}
       ${city ? `<span class="map-popup-road">${city}</span>` : ""}
+      ${metaBits ? `<span class="map-popup-road">${metaBits}</span>` : ""}
       <span class="map-popup-road">${statusLabel}${slots ? ` · ${slots}` : ""}</span>
       <span class="map-popup-coords">${coords}</span>
-      <a href="/locations/${location.id}?from=&to=" class="map-popup-link" data-location-id="${escapeHtml(location.id)}">View details →</a>
+      <a href="${detailHref}" class="map-popup-link" data-location-id="${escapeHtml(location.id)}">View details →</a>
     </div>
   </div>`;
 }
