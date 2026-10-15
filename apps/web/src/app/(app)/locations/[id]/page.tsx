@@ -842,8 +842,7 @@ export default function LocationDetailPage() {
 
         {tab === "rates" && gates.showRatesTab ? (
           <div className="space-y-4">
-            {/* Vendors keep card rate on Rates; admins see vendor rate + margin under Admin. */}
-            {showVendorCommercial && !gates.showAdminTab ? (
+            {showVendorCommercial ? (
               <LocationCommercialPanel
                 locationId={id}
                 canWrite={false}
