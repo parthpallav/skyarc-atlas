@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "status": "design-only",
+  "baselineCommit": "3d76f65448c2541fa214958ef17f9a659e1e4484",
+  "groups": [
+    {"id":"catalog","owner":"Atlas","audiences":["customer","planner","vendor","field","admin"],"dependsOn":[],"offBehavior":"Preserve existing inventory and references; discovery is a launch prerequisite.","runtimeStatus":"planned"},
+    {"id":"planning","owner":"Atlas","audiences":["customer","planner","admin"],"dependsOn":["catalog"],"offBehavior":"Preserve saved plans and read access; block new plan generation. Core launch profile keeps manual planning enabled.","runtimeStatus":"planned"},
+    {"id":"campaigns","owner":"Atlas","audiences":["customer","planner","vendor","admin"],"dependsOn":["planning"],"offBehavior":"Preserve campaign history, existing commitments, expiry and reconciliation; disable new campaign mutations only where explicitly specified.","runtimeStatus":"planned"},
+    {"id":"proposals","owner":"Pulse/Atlas export adapter","audiences":["customer","planner","admin"],"dependsOn":["campaigns"],"offBehavior":"Disable new exports/shares; retain authorized access to previously issued documents.","runtimeStatus":"planned"},
+    {"id":"intelligence","owner":"Atlas","audiences":["planner","admin"],"dependsOn":["planning"],"offBehavior":"Stop optional AI work and hide recommendations; retain manual planning and clearly labelled historical outputs.","runtimeStatus":"planned"},
+    {"id":"traffic","owner":"Atlas traffic adapter","audiences":["customer","planner","admin"],"dependsOn":["catalog"],"offBehavior":"Stop collection and hide current enrichment; preserve lawful historical evidence with source and age. Never replace unavailable counts with zero.","runtimeStatus":"planned"},
+    {"id":"booking","owner":"Atlas","audiences":["customer","planner","vendor","admin"],"dependsOn":["campaigns"],"offBehavior":"Disable new optional AdTech booking entry points; preserve classic holds, existing booking reads, expiry, cancellation and obligation reconciliation.","runtimeStatus":"planned"},
+    {"id":"payments","owner":"Atlas payment adapter","audiences":["customer","planner","admin"],"dependsOn":["booking"],"offBehavior":"Stop new payment intents; retain authenticated callbacks, reconciliation, refunds and history for existing obligations.","runtimeStatus":"planned"},
+    {"id":"delivery","owner":"Atlas/Pulse","audiences":["customer","planner","vendor","field","admin"],"dependsOn":["campaigns"],"offBehavior":"Preserve existing proofs and commitment history; disable optional new collection/reporting only as documented per action.","runtimeStatus":"planned"},
+    {"id":"orbit","owner":"Orbit","audiences":["planner","admin"],"dependsOn":["catalog"],"offBehavior":"Stop new enrollment and planned optional analytics; revoke/disable collection deliberately, retain required existing-device operational cleanup and lawful history.","runtimeStatus":"planned"},
+    {"id":"messaging","owner":"Bridge","audiences":["planner","admin"],"dependsOn":["proposals"],"offBehavior":"Stop new sends and cancel unsent optional work; settle existing delivery receipts without duplicate sends.","runtimeStatus":"planned"}
+  ],
+  "profiles": {
+    "december-customer": ["catalog","planning","campaigns","proposals"],
+    "december-planner": ["catalog","planning","campaigns","proposals","intelligence"]
+  }
+}

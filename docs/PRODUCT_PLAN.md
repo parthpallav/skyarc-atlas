@@ -1,5 +1,7 @@
 # Skyarc Atlas — Product Plan
 
+> Historical scope and implementation notes. For the December 2026 release organisation, feature groups and merge process, use [ATLAS_LEAN_LAUNCH_PLAN.md](releases/ATLAS_LEAN_LAUNCH_PLAN.md). Validate old status claims against current code and the journey gap register. This file is not current launch-readiness evidence.
+
 **Status:** Single source of truth for product, architecture, and roadmap  
 **Last updated:** 2026-09-08  
 **Branch:** `feature/organizations-rbac` (in progress)

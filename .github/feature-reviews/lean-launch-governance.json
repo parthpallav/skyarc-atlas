@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "summary": "Document the Atlas lean launch and introduce deterministic feature-review governance without changing runtime product behaviour.",
+  "groups": [
+    "catalog",
+    "planning",
+    "campaigns",
+    "proposals",
+    "intelligence",
+    "traffic",
+    "booking",
+    "payments",
+    "delivery",
+    "orbit",
+    "messaging"
+  ],
+  "reviewedPaths": [
+    ".github/pull_request_template.md",
+    ".github/workflows/ci.yml",
+    "AGENTS.md",
+    "README.md",
+    "config/feature-groups.json",
+    "docs/LEAN_LAUNCH_AUDIT.md",
+    "docs/PRODUCT_PLAN.md",
+    "docs/releases/ATLAS_LEAN_LAUNCH_PLAN.md",
+    "docs/releases/PRE_MERGE_REVIEW_PROMPT.md",
+    "scripts/check-feature-review.mjs",
+    "scripts/check-feature-review.test.mjs"
+  ],
+  "checks": {
+    "preservation": {
+      "status": "passed",
+      "evidence": "No application behaviour, schemas, dependencies or existing product gates changed. The previous baseline audit is retained and linked."
+    },
+    "customer": {
+      "status": "not-applicable",
+      "evidence": "This PR documents the customer journey only; no customer routes, UI or response serializers were changed."
+    },
+    "planner": {
+      "status": "not-applicable",
+      "evidence": "This PR documents the planner journey only; no planner routes, UI or planning algorithms were changed."
+    },
+    "flagsOnOff": {
+      "status": "not-applicable",
+      "evidence": "Registry is explicitly design-only and runtimeStatus is planned for every group. No operational flag switching is claimed or enabled."
+    },
+    "authorization": {
+      "status": "not-applicable",
+      "evidence": "No product access control changed. CI token permissions are limited to contents read. Required remote human approval and protected governance are documented, not configured."
+    },
+    "integrations": {
+      "status": "not-applicable",
+      "evidence": "No provider calls, credentials, callbacks or service configuration changed. Future adapter properties and failure handling are documented."
+    },
+    "migrationRollback": {
+      "status": "passed",
+      "evidence": "No schema or data migration. Revert the documentation and CI commit to restore prior repository governance without touching application data."
+    },
+    "validation": {
+      "status": "passed",
+      "evidence": "Executed node scripts/check-feature-review.mjs, node --test scripts/check-feature-review.test.mjs (9 passed), and git diff --check. CLI fixture rejects missing evidence and accepts a completed record."
+    },
+    "documentation": {
+      "status": "passed",
+      "evidence": "Lean launch plan, pre-merge prompt, registry, root development instructions, PR template and historical-plan links updated together. Runtime implementation and remote-enforcement limits are explicit."
+    }
+  }
+}

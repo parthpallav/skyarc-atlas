@@ -2,11 +2,37 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'release/**']
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
 
 jobs:
+  feature-review:
+    name: Feature review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate feature registry and checker
+        run: |
+          node scripts/check-feature-review.mjs
+          node --test scripts/check-feature-review.test.mjs
+      - name: Validate final PR or merge-queue review record
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        env:
+          REVIEW_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          REVIEW_HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        run: node scripts/check-feature-review.mjs --base "$REVIEW_BASE" --head "$REVIEW_HEAD"
+
   quality:
     runs-on: ubuntu-latest
     steps:
@@ -22,7 +48,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma client
         run: pnpm db:generate

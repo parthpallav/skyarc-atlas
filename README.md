@@ -90,7 +90,9 @@ docs/            OpenAPI specification
 
 ## Product plan
 
-See **[`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md)** — single source of truth for vision, architecture, RBAC, inventory, commercial terms, PDF export, and unified roadmap.
+For the December 2026 lean release, start with **[the lean launch and development contract](docs/releases/ATLAS_LEAN_LAUNCH_PLAN.md)**, **[the feature-group registry](config/feature-groups.json)** and **[the pre-merge review prompt](docs/releases/PRE_MERGE_REVIEW_PROMPT.md)**. The registry is a design contract; runtime flag wiring remains planned.
+
+See **[`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md)** for historical product scope and implementation notes; verify its dated status claims against current source and the journey gap register.
 
 ## Phases (foundation — complete)
 

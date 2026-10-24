@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "summary": "Adjust the December launch schedule around Parth\u2019s provisional two-week mid-November absence without changing product behaviour.",
+  "groups": [
+    "planning",
+    "campaigns"
+  ],
+  "reviewedPaths": [
+    "docs/LEAN_LAUNCH_AUDIT.md",
+    "docs/releases/ATLAS_LEAN_LAUNCH_PLAN.md"
+  ],
+  "checks": {
+    "preservation": {
+      "status": "passed",
+      "evidence": "Documentation-only schedule change. All product capabilities, application code, permissions, feature groups and release gates remain unchanged."
+    },
+    "customer": {
+      "status": "not-applicable",
+      "evidence": "This PR documents the customer journey only; no customer routes, UI or response serializers were changed."
+    },
+    "planner": {
+      "status": "not-applicable",
+      "evidence": "This PR documents the planner journey only; no planner routes, UI or planning algorithms were changed."
+    },
+    "flagsOnOff": {
+      "status": "not-applicable",
+      "evidence": "Registry is explicitly design-only and runtimeStatus is planned for every group. No operational flag switching is claimed or enabled."
+    },
+    "authorization": {
+      "status": "not-applicable",
+      "evidence": "No product access control changed. CI token permissions are limited to contents read. Required remote human approval and protected governance are documented, not configured."
+    },
+    "integrations": {
+      "status": "not-applicable",
+      "evidence": "No provider calls, credentials, callbacks or service configuration changed. Future adapter properties and failure handling are documented."
+    },
+    "migrationRollback": {
+      "status": "passed",
+      "evidence": "No schema or runtime change. Revert this schedule document commit to restore the prior planning dates without any data impact."
+    },
+    "validation": {
+      "status": "passed",
+      "evidence": "Checked the schedule replacement and provisional-date wording; git diff --check and the existing feature registry validator pass. No application tests required for schedule text."
+    },
+    "documentation": {
+      "status": "passed",
+      "evidence": "The release plan now owns the schedule; the baseline audit links to it so duplicate date tables cannot drift. Absence dates are explicitly provisional."
+    }
+  }
+}
